@@ -35,7 +35,9 @@
     "src/kernel/ports.ts",
     "src/kernel/types.ts",
     "tests/s1/kernel-ports.test.ts",
-    "tests/s2/.gitkeep"
+    "tests/s2/.gitkeep",
+    "src/storage/file-store.ts",
+    "tests/s2/file-store.test.ts"
   ],
   "modified": [],
   "skipped": [],
@@ -46,8 +48,6 @@
     "bash scripts/verify.sh",
     "pnpm exec prettier --write src tests"
   ],
-  "logs": [
-    ".git/hx-init/logs/ or .agents/logs/"
-  ],
-  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule)."
+  "logs": [".git/hx-init/logs/ or .agents/logs/"],
+  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试."
 }

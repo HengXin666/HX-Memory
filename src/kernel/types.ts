@@ -35,6 +35,9 @@ export interface MemoryEntry {
   ts: Timestamps;
   status?: MemoryStatus;
   relations?: Relation[];
+  /** Confirmation record for kind:"rule" (human gate). Machine proposals must NOT set this. */
+  confirmedBy?: string;
+  confirmedAt?: string;
 }
 
 export interface Query {
