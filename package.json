@@ -1,0 +1,40 @@
+{
+  "name": "@hx/hx-memory",
+  "version": "0.1.0",
+  "description": "HX-Memory: self-maintained pluggable agent memory layer (Port-Adapter kernel: DSH/Codex adapters + pluggable storage + generalization engine)",
+  "private": false,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.10.0",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:s1": "vitest run tests/s1",
+    "test:s2": "vitest run tests/s2",
+    "lint": "tsc --noEmit && vitest run --passWithNoTests",
+    "verify": "bash scripts/verify.sh",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

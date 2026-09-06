@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/strip_emoji.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking emoji symbols"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/clean_chars.sh\"",
+            "timeout": 15,
+            "statusMessage": "Cleaning invisible chars"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/format_ts.sh\"",
+            "timeout": 120,
+            "statusMessage": "Formatting (prettier)"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/verify_ts.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running repository verification"
+          }
+        ]
+      }
+    ]
+  }
+}

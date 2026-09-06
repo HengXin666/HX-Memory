@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/strip_emoji.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking emoji symbols"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/clean_chars.sh\"",
+            "timeout": 15,
+            "statusMessage": "Cleaning invisible chars"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/format_ts.sh\"",
+            "timeout": 120,
+            "statusMessage": "Formatting (prettier)"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.codex/hooks/verify_ts.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running repository verification"
+          }
+        ]
+      }
+    ]
+  }
+}

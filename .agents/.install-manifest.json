@@ -1,0 +1,53 @@
+{
+  "tool": "hx-engineering-scaffold",
+  "mode": "init",
+  "created": [
+    "package.json",
+    "tsconfig.json",
+    "tsconfig.build.json",
+    ".gitignore",
+    "LICENSE",
+    ".agents/.install-manifest.json",
+    ".agents/rules/engineering.md",
+    ".agents/rules/docs.md",
+    ".agents/hooks/strip_emoji.sh",
+    ".agents/hooks/clean_chars.sh",
+    ".agents/hooks/check_commit_msg.sh",
+    ".agents/hooks/install_commit_msg_hook.sh",
+    ".agents/hooks/verify_ts.sh",
+    ".agents/hooks/format_ts.sh",
+    ".claude/hooks.json",
+    ".claude/hooks/verify_ts.sh",
+    ".claude/hooks/format_ts.sh",
+    ".claude/rules/engineering.md",
+    ".claude/rules/docs.md",
+    ".codex/hooks.json",
+    ".codex/hooks/verify_ts.sh",
+    ".codex/hooks/format_ts.sh",
+    ".github/workflows/ci.yml",
+    "scripts/verify.sh",
+    "scripts/install-commit-hook.sh",
+    "README.md",
+    "CONTRIBUTING.md",
+    "docs/architecture.md",
+    "docs/adr.md",
+    "src/index.ts",
+    "src/kernel/ports.ts",
+    "src/kernel/types.ts",
+    "tests/s1/kernel-ports.test.ts",
+    "tests/s2/.gitkeep"
+  ],
+  "modified": [],
+  "skipped": [],
+  "commands": [
+    "git init",
+    "pnpm install",
+    "pnpm add -D prettier",
+    "bash scripts/verify.sh",
+    "pnpm exec prettier --write src tests"
+  ],
+  "logs": [
+    ".git/hx-init/logs/ or .agents/logs/"
+  ],
+  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule)."
+}
