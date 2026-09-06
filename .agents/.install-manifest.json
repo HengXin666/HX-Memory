@@ -52,7 +52,8 @@
     "src/generalize/cluster.ts",
     "src/generalize/service.ts",
     "tests/s1/cluster.test.ts",
-    "tests/s2/generalizer.test.ts"
+    "tests/s2/generalizer.test.ts",
+    "tests/s2/generalize-dogfood.test.ts"
   ],
   "modified": [],
   "skipped": [],
