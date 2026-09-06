@@ -39,6 +39,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - uses: pnpm/action-setup@v4
       - run: npm install -g @deepseek-ai/dsh@0.1.1-rc.2
       - name: Install hx-memory into fresh web profile
         run: |
