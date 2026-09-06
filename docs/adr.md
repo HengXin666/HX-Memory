@@ -46,3 +46,10 @@
 - **选项**: (a) 从 source 字符串解析项目; (b) MemoryEntry.project 独立字段全链路持久化。
 - **决策**: (b)。类型 → 捕获 → 存储 schema → 文件 frontmatter → 查询过滤全链路带 project; 召回按 project 隔离本地经验, 全局规则跨项目生效。
 - **后果**: 模式加一列/一字段; 换来召回隔离正确 + "跨项目规则生效"可证。
+
+## ADR-008: "何时读记忆"由声明式绑定 + 确定性注入决定, 不依赖模型自觉 (VCP 式)
+
+- **背景**: 用户指出"让模型自己判断要不要调 memory_search"是概率性行为 — 模型是概率机, 工具调用不稳定; 该搜时不搜 (幻觉自足), 不该搜时乱搜。调研 VCPToolBox (lioensky/VCPToolBox) 后确认其理念: RAGDiaryPlugin manifest "通过向量检索动态地将日记内容注入到系统提示词中", Agent/*.txt 声明记忆拓扑 ([[xx日记本::Time::Group::TagMemo]]), processMessages 代码判定占位符有无, 有绑定即每轮确定性检索注入 (无绑定走零开销快速路径)。
+- **选项**: (a) 维持旧线: guidance 指引 + memory_search 工具 (ReMe/ADK 派); (b) 纯自动每轮注入全部规则 (贵且噪声); (c) 声明式绑定 + 确定性预步注入 (VCP 派)。
+- **决策**: (c) 为主, (a) 的工具通道保留为补充 — 与 VCP Agent 同时有绑定 + 主动检索一致。落到 kernel/binder.ts: MemoryBinding (查询条件/权重/条数/信号词门控) + BindingConfig (项目级拓扑) + Binder.injectFor (代码判定注入)。
+- **后果**: 声明绑定的项目获得 100% 注入保证 (测试: 旧线 10 轮 6 轮命中 vs 新线 10/10); 未声明项目零开销。检索质量仍受关键词评分限制 (后续 VectorBackend 可插拔)。

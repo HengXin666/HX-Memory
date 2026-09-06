@@ -45,6 +45,7 @@ src/
 - **存储**: Markdown 真相 + SQLite 索引 (可重建), rule 必须有确认记录才落盘。
 - **推广**: 主题聚类 (信号词) + 可插拔 LLM Abstractor; 提议进 review 队列, 人工确认/驳回。
 - **召回**: 全局确认规则总是候选 (跨项目); 本地经验按 project 隔离按需召回。
+- **双线接入 (VCP 式对照)**: 旧线 = guidance + memory_search 工具 (模型自觉); 新线 = 项目声明绑定 (kernel/binder) + 会话确定性注入, 与模型自觉无关。双线测试见 tests/s2/dual-line.test.ts。
 - **接入**: DSH (cordis 插件: 会话开始注入规则, session/event 捕获, memory_search/save 工具, Web review 面板) 与 Codex (AGENTS.md 同步 + CLI) 共用同一内核。
 
 ## 用法 (Codex / CLI)
