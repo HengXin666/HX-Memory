@@ -1,8 +1,8 @@
 // tests/s1/kernel-rules.test.ts — S1: kernel evolution-chain + bitemporal rules.
 // No network, no harness: pure kernel logic only.
 import { describe, expect, it } from "vitest";
-import { expandEvolutionChain, sliceAt } from "../../src/kernel/evolution.js";
-import type { MemoryEntry } from "../../src/kernel/types.js";
+import { expandEvolutionChain, sliceAt } from "../../src/kernel/evolution.ts";
+import type { MemoryEntry } from "../../src/kernel/types.ts";
 
 function v1(): MemoryEntry {
   return {

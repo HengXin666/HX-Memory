@@ -13,7 +13,7 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import type { MemoryEntry, MemoryKind, MemoryStatus, MemoryScope, Query } from "../kernel/types.js";
+import type { MemoryEntry, MemoryKind, MemoryStatus, MemoryScope, Query } from "../kernel/types.ts";
 
 const DAILY_DIR = "daily";
 const DIGEST_DIR = "digest";

@@ -37,7 +37,11 @@
     "tests/s1/kernel-ports.test.ts",
     "tests/s2/.gitkeep",
     "src/storage/file-store.ts",
-    "tests/s2/file-store.test.ts"
+    "tests/s2/file-store.test.ts",
+    "src/capture/engine.ts",
+    "src/capture/pipeline.ts",
+    "tests/s1/capture-engine.test.ts",
+    "tests/s2/capture-pipeline.test.ts"
   ],
   "modified": [],
   "skipped": [],
@@ -48,6 +52,8 @@
     "bash scripts/verify.sh",
     "pnpm exec prettier --write src tests"
   ],
-  "logs": [".git/hx-init/logs/ or .agents/logs/"],
-  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试."
+  "logs": [
+    ".git/hx-init/logs/ or .agents/logs/"
+  ],
+  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试. Stage2: capture engine (turn→MemoryEntry, 规则信号 kind 推断, 内容指纹去重, 双时态) + pipeline (捕获入库 + warmUp 跨重启去重); 内部导入改 .ts 后缀 (allowImportingTsExtensions)."
 }

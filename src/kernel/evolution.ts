@@ -4,7 +4,7 @@
 // Pointer semantics (Hy-Memory-style, self-implemented):
 //   supersedes  (new → old): the node replaces this older one.  Follow to find the OLDEST.
 //   supersededBy(old → new): this node was replaced by that newer one. Follow to walk FORWARD.
-import type { MemoryEntry } from "./types.js";
+import type { MemoryEntry } from "./types.ts";
 
 function targets(e: MemoryEntry, type: string): string[] {
   return (e.relations ?? []).filter((r) => r.type === type).map((r) => r.toId);

@@ -4,8 +4,8 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileBackend } from "../../src/storage/file-store.js";
-import type { MemoryEntry } from "../../src/kernel/types.js";
+import { FileBackend } from "../../src/storage/file-store.ts";
+import type { MemoryEntry } from "../../src/kernel/types.ts";
 
 let root: string;
 let store: FileBackend;

@@ -1,6 +1,6 @@
 // kernel/ports.ts — the Port interfaces. The kernel depends only on these.
 // Implementation decisions (which harness, which storage) live in adapters/ + storage/.
-import type { GeneralizationProposal, MemoryEntry, Query } from "./types.js";
+import type { GeneralizationProposal, MemoryEntry, Query } from "./types.ts";
 
 export interface MemoryStore {
   add(entry: MemoryEntry): Promise<void>;
