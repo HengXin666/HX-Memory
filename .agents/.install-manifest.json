@@ -48,7 +48,11 @@
     "src/adapters/dsh/runtime.ts",
     "src/adapters/dsh/tools.ts",
     "src/adapters/dsh/index.ts",
-    "tests/s3/dsh-adapter.test.ts"
+    "tests/s3/dsh-adapter.test.ts",
+    "src/generalize/cluster.ts",
+    "src/generalize/service.ts",
+    "tests/s1/cluster.test.ts",
+    "tests/s2/generalizer.test.ts"
   ],
   "modified": [],
   "skipped": [],
@@ -60,5 +64,5 @@
     "pnpm exec prettier --write src tests"
   ],
   "logs": [".git/hx-init/logs/ or .agents/logs/"],
-  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试. Stage2: capture engine (turn→MemoryEntry, 规则信号 kind 推断, 内容指纹去重, 双时态) + pipeline (捕获入库 + warmUp 跨重启去重); 内部导入改 .ts 后缀 (allowImportingTsExtensions). Stage3: DSH (cordis) adapter — agent/session-start 注入指引, session/event 聚合 turn→批量捕获, memory_search/memory_save 工具, schemastery 设置面板; peer deps @deepseek-ai/{cordis,dsh-llm,dsh-tools,dsh-settings,schemastery}."
+  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试. Stage2: capture engine (turn→MemoryEntry, 规则信号 kind 推断, 内容指纹去重, 双时态) + pipeline (捕获入库 + warmUp 跨重启去重); 内部导入改 .ts 后缀 (allowImportingTsExtensions). Stage3: DSH (cordis) adapter — agent/session-start 注入指引, session/event 聚合 turn→批量捕获, memory_search/memory_save 工具, schemastery 设置面板; peer deps @deepseek-ai/{cordis,dsh-llm,dsh-tools,dsh-settings,schemastery}. Stage4: Generalizer — 主题聚类 (S1 信号词) + 推广服务 (启发式/可插拔 Abstractor, review/queue.jsonl, 人工 confirm/reject, rule 带 confirmedBy + generalizes 关联)."
 }
