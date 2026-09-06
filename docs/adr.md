@@ -32,3 +32,17 @@
 
 - **背景**: "覆盖不丢史, 并列不碎片"需要记忆对象可版本演化。
 - **决策**: 新节点 supersedes=[旧], 旧节点 superseded_by=[新] + status=SUPERSEDED, 双向指针; 命中任一节点展开整链。代码自维护, 不引入 Hy-Memory 包。
+
+## ADR-006: 前后端全 TypeScript, 前端嵌入 DSH 宿主 Web
+
+- **背景**: 需要给人工闸门一个可视化 review 界面; 需决定前端技术栈与部署形态。
+- **选项**: (a) 独立部署 Web 服务 + 后端 API; (b) 前端 React/TSX 嵌入 DSH 宿主 Web (经 dsh-client-* inject + TypertRemoteService); (c) 纯 CLI。
+- **决策**: (b)。后端 = TS 内核 + adapter + 存储 (node:sqlite); 前端 = React/TSX 打包进宿主 (dsh.client 元数据 + esbuild bundle), 无独立部署。可选 Python 只做向量检索 sidecar, 作为可插拔存储 adapter 之一。
+- **后果**: 不引入第二套部署; UI 能力受宿主 slot 约束 (settings.section); 换宿主时前端 inject 点需重接。
+
+## ADR-007: project 作为第一等公民字段 (跨项目隔离与生效的基础)
+
+- **背景**: scope:"project" 只表达"属于某个项目"却不知道"哪个项目", 导致 A 项目经验泄漏到 B 项目召回。
+- **选项**: (a) 从 source 字符串解析项目; (b) MemoryEntry.project 独立字段全链路持久化。
+- **决策**: (b)。类型 → 捕获 → 存储 schema → 文件 frontmatter → 查询过滤全链路带 project; 召回按 project 隔离本地经验, 全局规则跨项目生效。
+- **后果**: 模式加一列/一字段; 换来召回隔离正确 + "跨项目规则生效"可证。

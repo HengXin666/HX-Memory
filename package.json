@@ -41,7 +41,8 @@
     "lint": "tsc --noEmit && vitest run --passWithNoTests",
     "verify": "bash scripts/verify.sh",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md,yml,yaml}\"",
-    "build:client": "node scripts/build-client.mjs"
+    "build:client": "node scripts/build-client.mjs",
+    "cli:rules": "node dist/adapters/codex/cli.js rules"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -81,5 +82,8 @@
       ],
       "platform": "web"
     }
+  },
+  "bin": {
+    "hx-memory": "./dist/adapters/codex/cli.js"
   }
 }

@@ -12,12 +12,12 @@
 
 ## 分层
 
-| 层 | 目录 | 职责 | 依赖 |
-|----|------|------|------|
-| 内核 (Port) | `src/kernel/` | MemoryEntry/Relation 领域类型; MemoryStore/HarnessAdapter/Generalizer 接口 | 无 (零依赖) |
-| 接入层 | `src/adapters/` | 每个 harness 一个 adapter 实现 HarnessAdapter (dsh 先行, codex/cli 后续) | kernel |
-| 存储层 | `src/storage/` | FileBackend (默认: 文件真相 + 派生索引), SqliteBackend, VectorBackend(可选) | kernel |
-| 推广引擎 | `src/generalize/` | 后台聚类 → LLM 抽象 → 候选 rule 队列 → 人工闸门 → 双向链接 | kernel |
+| 层          | 目录              | 职责                                                                        | 依赖        |
+| ----------- | ----------------- | --------------------------------------------------------------------------- | ----------- |
+| 内核 (Port) | `src/kernel/`     | MemoryEntry/Relation 领域类型; MemoryStore/HarnessAdapter/Generalizer 接口  | 无 (零依赖) |
+| 接入层      | `src/adapters/`   | 每个 harness 一个 adapter 实现 HarnessAdapter (dsh 先行, codex/cli 后续)    | kernel      |
+| 存储层      | `src/storage/`    | FileBackend (默认: 文件真相 + 派生索引), SqliteBackend, VectorBackend(可选) | kernel      |
+| 推广引擎    | `src/generalize/` | 后台聚类 → LLM 抽象 → 候选 rule 队列 → 人工闸门 → 双向链接                  | kernel      |
 
 ## 不变量 (架构铁律)
 
