@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: boot-smoke-${{ github.ref }}
+  group: "boot-smoke-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DSH_HOME: ${{ runner.temp }}/dsh-home
+      DSH_HOME: "${{ runner.temp }}/dsh-home"
     steps:
       - uses: actions/download-artifact@v4
         with:
