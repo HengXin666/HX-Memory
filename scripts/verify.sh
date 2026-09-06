@@ -5,9 +5,15 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "[verify] static: tsc --noEmit"
+echo "[verify] static: tsc --noEmit (kernel)"
 if ! pnpm exec tsc --noEmit; then
-  echo "[verify] FAILED: typecheck" >&2
+  echo "[verify] FAILED: typecheck (kernel)" >&2
+  exit 1
+fi
+
+echo "[verify] static: tsc --noEmit (client)"
+if ! pnpm exec tsc -p tsconfig.client.json --noEmit; then
+  echo "[verify] FAILED: typecheck (client)" >&2
   exit 1
 fi
 

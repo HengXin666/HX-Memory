@@ -12,6 +12,8 @@ import { CapturePipeline } from "../../capture/pipeline.js";
 import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runtime.js";
 import { registerMemoryTools } from "./tools.js";
+import { GeneralizerService } from "../../generalize/service.ts";
+import { HxMemoryGateway } from "./gateway.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
 
@@ -21,14 +23,23 @@ export const inject = ["agents", "sessions", "tools"];
 export interface HxMemoryPluginOptions {
   /** 存储层: 由宿主注入 (可插拔 — 本仓库默认 FileBackend)。 */
   store: FileBackend;
+  /** Review 队列目录 (推广提议落盘处)。 */
+  reviewDir: string;
   settings?: Partial<HxMemorySettings>;
 }
 
 export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
-  const { store } = options;
+  const { store, reviewDir } = options;
   const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...options.settings });
   const pipe = new CapturePipeline(store);
   const runtime = new HxMemoryRuntime(pipe, settings);
+  const generalizer = new GeneralizerService(store, reviewDir);
+
+  // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
+  ctx.effect(() => {
+    new HxMemoryGateway(ctx, { store, generalizer });
+    return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
+  }, "hx-memory.gateway()");
 
   // 可选: 用 DSH 设置面板持久化 (若宿主提供 settings 服务)。
   // 经 @deepseek-ai/dsh-settings 的类型增强, ctx.settings 是真实服务类型。

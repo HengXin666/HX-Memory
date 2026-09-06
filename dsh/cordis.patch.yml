@@ -1,0 +1,11 @@
+- insert:
+    - id: hx-memory
+      name: "@deepseek-ai/cordis-plugin-group"
+      group: true
+      isolate:
+        hxMemory: true
+      config:
+        - id: hx-memory-runtime
+          name: "@hx/hx-memory/dsh"
+        - id: hx-memory-client
+          name: "@hx/hx-memory"

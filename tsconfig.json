@@ -15,8 +15,9 @@
     "noEmit": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist", "src/adapters/dsh/client"]
 }
