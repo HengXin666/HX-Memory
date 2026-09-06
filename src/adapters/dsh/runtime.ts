@@ -52,7 +52,7 @@ export class HxMemoryRuntime {
   }
 
   /** 消费一个 session/event。turn/end 且 reason=completed 时触发捕获。 */
-  capture(session: SessionLike, event: SessionEventLike): void {
+  async capture(session: SessionLike, event: SessionEventLike): Promise<void> {
     if (!this.settings().autoCapture) return;
     const state = this.turns.get(session.id);
     if (event.type === "turn/start") {
@@ -72,7 +72,7 @@ export class HxMemoryRuntime {
     const completed = kind === "completed" || kind === "max-tokens";
     if (completed && state.messages.length > 0) {
       const text = state.messages.join("\n");
-      this.pipe.run({ text, session: session.id });
+      await this.pipe.run({ text, session: session.id });
     }
     state.messages = [];
   }

@@ -40,6 +40,10 @@ export interface MemoryEntry {
   /** Confirmation record for kind:"rule" (human gate). Machine proposals must NOT set this. */
   confirmedBy?: string;
   confirmedAt?: string;
+  /** AI 结构化标签 (进入 SQLite tags 索引, 支持按 tag 召回)。可选: 启发式/未结构化时缺省。 */
+  tags?: string[];
+  /** AI 结构化摘要 (可选增强, 不替代原文; truth-in-files 仍以 content 为准)。 */
+  structured?: { summary: string; points: string[] };
 }
 
 export interface Query {

@@ -41,24 +41,24 @@ afterAll(() => {
 });
 
 describe("HxMemoryRuntime: session/event 捕获", () => {
-  it("completed turn with user message captures a lesson", () => {
+  it("completed turn with user message captures a lesson", async () => {
     runtime.onSessionStart(session);
-    runtime.capture(session, turnStart());
-    runtime.capture(session, userMsg("后端队列并发踩坑, 下次注意幂等"));
-    runtime.capture(session, turnEnd("completed"));
+    await runtime.capture(session, turnStart());
+    await runtime.capture(session, userMsg("后端队列并发踩坑, 下次注意幂等"));
+    await runtime.capture(session, turnEnd("completed"));
     const hits = store.query({ kind: "lesson" });
     expect(hits.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("interrupted turn (reason != completed) does NOT capture", () => {
+  it("interrupted turn (reason != completed) does NOT capture", async () => {
     const before = store.query({}).length;
-    runtime.capture(session, turnStart());
-    runtime.capture(session, userMsg("这个对话被打断了, 不该记住"));
-    runtime.capture(session, turnEnd("interrupted"));
+    await runtime.capture(session, turnStart());
+    await runtime.capture(session, userMsg("这个对话被打断了, 不该记住"));
+    await runtime.capture(session, turnEnd("interrupted"));
     expect(store.query({}).length).toBe(before);
   });
 
-  it("autoCapture=false ignores events", () => {
+  it("autoCapture=false ignores events", async () => {
     const quiet = new HxMemoryRuntime(pipe, () => ({ autoCapture: false }));
     const before = store.query({}).length;
     quiet.capture(session, turnStart());
@@ -67,13 +67,13 @@ describe("HxMemoryRuntime: session/event 捕获", () => {
     expect(store.query({}).length).toBe(before);
   });
 
-  it("session end clears per-session state", () => {
+  it("session end clears per-session state", async () => {
     runtime.onSessionStart(session);
-    runtime.capture(session, turnStart());
-    runtime.capture(session, userMsg("记住: X"));
+    await runtime.capture(session, turnStart());
+    await runtime.capture(session, userMsg("记住: X"));
     runtime.onSessionEnd(session);
     // 会话结束后 turn 事件不再有状态可聚合
-    runtime.capture(session, turnEnd("completed"));
+    await runtime.capture(session, turnEnd("completed"));
     expect(store.query({ text: "记住: X" }).length).toBe(0);
   });
 });

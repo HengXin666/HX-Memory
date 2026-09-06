@@ -23,10 +23,10 @@ beforeAll(async () => {
   recall = new RecallService((q) => store.query(q));
 
   // 项目 A: 并发事故 → lesson ×2
-  pipe.run({ text: "踩坑: 后端队列并发丢消息", session: "A1", project: "projA" });
-  pipe.run({ text: "踩坑: 网关并发竞态丢请求", session: "A2", project: "projA" });
+  await pipe.run({ text: "踩坑: 后端队列并发丢消息", session: "A1", project: "projA" });
+  await pipe.run({ text: "踩坑: 网关并发竞态丢请求", session: "A2", project: "projA" });
   // 项目 A 还有一个无关 lesson
-  pipe.run({ text: "踩坑: 部署忘了健康检查", session: "A3", project: "projA" });
+  await pipe.run({ text: "踩坑: 部署忘了健康检查", session: "A3", project: "projA" });
   // 推广 + 人工确认 → 全局规则
   const lessons = store.query({ kind: "lesson" });
   const proposals = await generalizer.runBatch("s6-1", lessons);

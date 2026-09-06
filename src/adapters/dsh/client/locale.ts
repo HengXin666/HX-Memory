@@ -36,6 +36,13 @@ export const reviewEn = {
   source: "source: {run}",
   browse: "Memory Browse",
   search: "Search memory...",
+  tabProposals: "Proposals",
+  tabRecent: "Recently captured",
+  recentEmpty: "Nothing captured yet. It fills automatically as you talk (pitfalls, decisions, preferences).",
+  recentKeep: "Keep",
+  recentDelete: "Delete",
+  deleted: "deleted",
+  recentTitle: "Recently captured (auto-sink, you keep the right to review)",
 };
 
 export const bindingZh = {
@@ -72,4 +79,11 @@ export const reviewZh = {
   source: "来源: {run}",
   browse: "记忆浏览",
   search: "搜索记忆...",
+  tabProposals: "推广提议",
+  tabRecent: "新沉淀",
+  recentEmpty: "还没有自动沉淀。正常对话 (踩坑/决策/偏好) 会自动填到这里。",
+  recentKeep: "保留",
+  recentDelete: "删除",
+  deleted: "已删除",
+  recentTitle: "新沉淀 (自动捕获, 你有权随时查看/撤回)",
 };

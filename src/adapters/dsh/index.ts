@@ -16,6 +16,8 @@ import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runt
 import { makePreStepHandler } from "./prestep.js";
 import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
+import { makeLlmAbstractor } from "./llm-abstractor.js";
+import { makeLlmStructurer } from "./llm-structurer.js";
 import { RecallService } from "../../recall/service.ts";
 import { Binder, type BindingConfig } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
@@ -43,6 +45,15 @@ export function defaultMemoryRoot(): string {
   return process.env.HX_MEMORY_ROOT ?? join(homedir(), ".dsh", "hx-memory");
 }
 
+/** 尝试构造 AI 能力; agents 服务不可用或构造失败 → undefined (调用方回退启发式)。 */
+function safeAgent<T>(fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+
 export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const opts = options;
   const root = opts.root ?? defaultMemoryRoot();
@@ -54,9 +65,12 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     (q) => store.query(q),
     () => (root ? bindingStore.list() : (opts.bindings ?? [])),
   );
-  const pipe = new CapturePipeline(store);
+  // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
+  const structurer = safeAgent(() => makeLlmStructurer(ctx));
+  const pipe = new CapturePipeline(store, { structurer: structurer ?? undefined });
   const runtime = new HxMemoryRuntime(pipe, settings);
-  const generalizer = new GeneralizerService(store, reviewDir);
+  // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用时回退启发式。
+  const generalizer = new GeneralizerService(store, reviewDir, safeAgent(() => makeLlmAbstractor(ctx)));
   const recall = new RecallService((q) => store.query(q));
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
@@ -131,7 +145,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
 
   // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
   ctx.on("session/event", (session: unknown, event: unknown) => {
-    runtime.capture(session as SessionLike, event as SessionEventLike);
+    void runtime.capture(session as SessionLike, event as SessionEventLike);
   });
 }
 

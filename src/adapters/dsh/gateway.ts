@@ -14,7 +14,7 @@ import type {
 
 /** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
 export interface HxMemoryGatewayDeps {
-  store: FileBackend;
+  store: Pick<FileBackend, "query" | "get" | "remove" | "recent">;
   generalizer: Pick<GeneralizerService, "listQueue" | "confirm" | "reject" | "runBatch">;
   /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
   bindingStore?: BindingStore;
@@ -71,6 +71,37 @@ export class HxMemoryGateway extends TypertRemoteService {
     if (!this.deps.bindingStore) return { ok: false, error: "binding store not mounted" };
     try {
       this.deps.bindingStore.saveAll(configs as BindingConfig[]);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  }
+
+  @Remote("recentCaptures")
+  recentCaptures(limit?: number): Array<{
+    id: string;
+    kind: string;
+    content: string;
+    project?: string;
+    scope: string;
+    assertedAt: string;
+    tags?: string[];
+  }> {
+    return this.deps.store.recent(limit ?? 20).map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      content: e.content,
+      project: e.project,
+      scope: e.scope,
+      assertedAt: e.ts.assertedAt,
+      tags: e.tags,
+    }));
+  }
+
+  @Remote("deleteEntry")
+  deleteEntry(id: string): { ok: boolean; error?: string } {
+    try {
+      this.deps.store.remove(id);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: String(e) };

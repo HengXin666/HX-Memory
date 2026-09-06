@@ -167,7 +167,7 @@ export class FileBackend {
         )
         .run(e.id, rel.type, rel.toId, rel.weight ?? null);
     }
-    for (const tag of extractTags(e.content)) {
+    for (const tag of e.tags?.length ? e.tags : extractTags(e.content)) {
       this.db.prepare("INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?, ?)").run(e.id, tag);
     }
   }
@@ -199,6 +199,23 @@ export class FileBackend {
     const row = this.db.prepare("SELECT * FROM memories WHERE id = ?").get(id) as
       RowLike | undefined;
     return row ? rowToEntry(row) : null;
+  }
+
+  /** 最近捕获的 N 条 (按 assertedAt 倒序), 附 tags。供知情权面板用。 */
+  recent(limit = 20): MemoryEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM memories WHERE status != 'shadow' ORDER BY asserted_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(limit) as unknown as RowLike[];
+    return rows.map((r) => {
+      const e = rowToEntry(r);
+      const tagRows = this.db
+        .prepare("SELECT tag FROM tags WHERE memory_id = ?")
+        .all(r.id) as Array<{ tag: string }>;
+      if (tagRows.length) e.tags = tagRows.map((t) => t.tag);
+      return e;
+    });
   }
 
   query(q: Query): MemoryEntry[] {
@@ -378,6 +395,7 @@ function parseSingleBlock(block: string): MemoryEntry | null {
   const cb = block.match(/^confirmed_by: (.*)$/m)?.[1];
   const ca = block.match(/^confirmed_at: (.*)$/m)?.[1];
   const project = block.match(/^project: (.*)$/m)?.[1];
+  const tagsRaw = block.match(/^tags: \[(.*)\]$/m)?.[1];
   if (!m || !kind || !source || !scope || !valid || !asserted) return null;
   const content = block.replace(/^---\n[\s\S]*?\n---\n?/, "");
   return {
@@ -390,6 +408,7 @@ function parseSingleBlock(block: string): MemoryEntry | null {
     ts: { validAt: valid!, assertedAt: asserted! },
     confirmedBy: cb,
     confirmedAt: ca,
+    tags: tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
   };
 }
 
@@ -417,6 +436,7 @@ function entryToMarkdown(e: MemoryEntry): string {
   if (e.confirmedBy) lines.push("confirmed_by: " + e.confirmedBy);
   if (e.confirmedAt) lines.push("confirmed_at: " + e.confirmedAt);
   if (e.project) lines.push("project: " + e.project);
+  if (e.tags?.length) lines.push("tags: [" + e.tags.join(", ") + "]");
   lines.push("---");
   if (e.relations?.length) {
     lines.push("");

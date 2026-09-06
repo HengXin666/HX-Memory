@@ -19,7 +19,7 @@ it("self-proof: 并发事故 → 跨项目规则 (人工闸门)", async () => {
     ["api-gateway", "网关并发写入导致竞态, 请求丢失"],
     ["batch-job", "批处理并发跑挂了, 任务重复执行"],
   ]) {
-    pipe.run({ text: "踩坑: " + text, session: "s" + proj, project: proj });
+    await pipe.run({ text: "踩坑: " + text, session: "s" + proj, project: proj });
   }
   const lessons = store.query({ kind: "lesson" });
   expect(lessons.length).toBe(3);
