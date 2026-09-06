@@ -65,6 +65,7 @@ interface RowLike {
   status: MemoryStatus;
   confirmed_by: string | null;
   confirmed_at: string | null;
+  project: string | null;
 }
 
 export class FileBackend {
@@ -100,6 +101,7 @@ export class FileBackend {
         status TEXT NOT NULL DEFAULT 'active',
         confirmed_by TEXT,
         confirmed_at TEXT,
+        project TEXT,
         file TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS relations (
@@ -141,8 +143,8 @@ export class FileBackend {
     const file = fileFor(e);
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO memories (id, kind, content, source, scope, valid_at, asserted_at, status, confirmed_by, confirmed_at, file)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO memories (id, kind, content, source, scope, valid_at, asserted_at, status, confirmed_by, confirmed_at, project, file)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         e.id,
@@ -155,6 +157,7 @@ export class FileBackend {
         e.status ?? "active",
         e.confirmedBy ?? null,
         e.confirmedAt ?? null,
+        e.project ?? null,
         file,
       );
     for (const rel of e.relations ?? []) {
@@ -221,6 +224,10 @@ export class FileBackend {
       clauses.push("valid_at <= ?");
       params.push(q.at);
     }
+    if (q.project) {
+      clauses.push("project = ?");
+      params.push(q.project);
+    }
     const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
     const limit = q.limit ?? 50;
     const rows = this.db
@@ -257,7 +264,7 @@ export class FileBackend {
     this.db.prepare("DELETE FROM tags WHERE memory_id = ?").run(id);
     this.db
       .prepare(
-        "UPDATE memories SET kind=?, content=?, source=?, scope=?, valid_at=?, asserted_at=?, status=?, confirmed_by=?, confirmed_at=? WHERE id=?",
+        "UPDATE memories SET kind=?, content=?, source=?, scope=?, valid_at=?, asserted_at=?, status=?, confirmed_by=?, confirmed_at=?, project=? WHERE id=?",
       )
       .run(
         merged.kind,
@@ -269,6 +276,7 @@ export class FileBackend {
         merged.status ?? "active",
         merged.confirmedBy ?? null,
         merged.confirmedAt ?? null,
+        merged.project ?? null,
         id,
       );
     for (const rel of merged.relations ?? []) {
@@ -318,6 +326,7 @@ function rowToEntry(row: RowLike): MemoryEntry {
     status: row.status,
     confirmedBy: row.confirmed_by ?? undefined,
     confirmedAt: row.confirmed_at ?? undefined,
+    project: row.project ?? undefined,
   };
 }
 
@@ -368,6 +377,7 @@ function parseSingleBlock(block: string): MemoryEntry | null {
   const status = block.match(/^status: (.*)$/m)?.[1] as MemoryStatus | undefined;
   const cb = block.match(/^confirmed_by: (.*)$/m)?.[1];
   const ca = block.match(/^confirmed_at: (.*)$/m)?.[1];
+  const project = block.match(/^project: (.*)$/m)?.[1];
   if (!m || !kind || !source || !scope || !valid || !asserted) return null;
   const content = block.replace(/^---\n[\s\S]*?\n---\n?/, "");
   return {
@@ -406,6 +416,7 @@ function entryToMarkdown(e: MemoryEntry): string {
   ];
   if (e.confirmedBy) lines.push("confirmed_by: " + e.confirmedBy);
   if (e.confirmedAt) lines.push("confirmed_at: " + e.confirmedAt);
+  if (e.project) lines.push("project: " + e.project);
   lines.push("---");
   if (e.relations?.length) {
     lines.push("");

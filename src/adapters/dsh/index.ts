@@ -13,6 +13,7 @@ import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runtime.js";
 import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
+import { RecallService } from "../../recall/service.ts";
 import { HxMemoryGateway } from "./gateway.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
@@ -34,6 +35,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
   const pipe = new CapturePipeline(store);
   const runtime = new HxMemoryRuntime(pipe, settings);
   const generalizer = new GeneralizerService(store, reviewDir);
+  const recall = new RecallService((q) => store.query(q));
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
   ctx.effect(() => {
@@ -60,16 +62,19 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
     return () => runtime.onSessionEnd({ id: "*" });
   }, "hx-memory.lifecycle()");
 
-  // 会话开始: 注入记忆指引 (只指引, 不注入历史)
+  // 会话开始: 注入记忆指引 + 跨项目规则召回 (只注入规则, 不注入历史)
   ctx.on("agent/session-start", (payload: unknown) => {
     const agent = (
       payload as { agent: { ctx: Context; session: SessionLike; inject: (m: unknown) => void } }
     ).agent;
     runtime.onSessionStart(agent.session);
     if (!settings().injectGuidance) return;
+    const recallOut = recall.recall({ project: agent.session.id });
+    const parts: string[] = [memoryGuidance(settings().language)];
+    if (recallOut.rules.length) parts.push(recallOut.injected);
     agent.inject(
       createUserMessage({
-        content: [{ type: "text", text: memoryGuidance(settings().language) }],
+        content: [{ type: "text", text: parts.join("\n\n") }],
         source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
       }),
     );

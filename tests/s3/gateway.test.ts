@@ -14,8 +14,12 @@ let generalizer: GeneralizerService;
 
 function mkLesson(id: string, content: string) {
   return {
-    id, kind: "lesson" as const, content, source: "s" + id,
-    scope: "project" as const, ts: { validAt: "2026-09-06T00:00:00.000Z", assertedAt: "2026-09-06T00:00:00.000Z" },
+    id,
+    kind: "lesson" as const,
+    content,
+    source: "s" + id,
+    scope: "project" as const,
+    ts: { validAt: "2026-09-06T00:00:00.000Z", assertedAt: "2026-09-06T00:00:00.000Z" },
   };
 }
 
@@ -34,7 +38,10 @@ afterAll(() => {
 
 describe("gateway 依赖端口 (review 流)", () => {
   it("runBatch 后 listQueue(proposed) 返回视图字段", async () => {
-    await generalizer.runBatch("batch-1", [mkLesson("a", "队列并发丢消息"), mkLesson("b", "网关并发竞态")]);
+    await generalizer.runBatch("batch-1", [
+      mkLesson("a", "队列并发丢消息"),
+      mkLesson("b", "网关并发竞态"),
+    ]);
     const q = generalizer.listQueue("proposed");
     expect(q.length).toBeGreaterThanOrEqual(1);
     const item = q[0]!;

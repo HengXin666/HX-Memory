@@ -114,6 +114,7 @@ export function captureTurn(
     content,
     source: "session:" + input.session,
     scope,
+    ...(input.project ? { project: input.project } : {}),
     ts: { validAt: occurredAt, assertedAt: nowIso() },
   };
   return { entries: [entry], deduped: 0, signal: kind + ":" + hash };

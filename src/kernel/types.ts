@@ -32,6 +32,8 @@ export interface MemoryEntry {
   /** Provenance: session id / file path / URL. Every entry must be auditable. */
   source: string;
   scope: MemoryScope;
+  /** Owning project name when scope:project; absent for agent/global. */
+  project?: string;
   ts: Timestamps;
   status?: MemoryStatus;
   relations?: Relation[];
@@ -47,6 +49,8 @@ export interface Query {
   tag?: string;
   /** Slice at a validity instant; answers "what was true at T". */
   at?: string;
+  /** Filter by owning project (only meaningful with scope:project). */
+  project?: string;
   limit?: number;
   minScore?: number;
 }
