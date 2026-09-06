@@ -1,6 +1,27 @@
 // src/adapters/dsh/client/locale.ts — review 面板文案。
 
 export type Locale = typeof reviewEn;
+export type BindingLocale = typeof bindingEn;
+export const bindingEn = {
+  nav: "Memory Bindings",
+  title: "Memory Bindings (VCP-style topology)",
+  desc: "Declare which memory sources each project binds. Bound sources are injected deterministically at session start — no model discretion.",
+  noProjects: "No bindings yet. Add a project to declare its memory sources.",
+  addProject: "Add project",
+  projectPh: "project name",
+  bindingId: "source id (e.g. cross-rules)",
+  kind: "kind",
+  scope: "scope",
+  projectFilter: "filter project",
+  signalWords: "signal words (comma separated, empty = always)",
+  addBinding: "Add binding",
+  save: "Save all",
+  saved: "Saved",
+  saveFailed: "Save failed",
+  remove: "remove",
+  any: "(any)",
+};
+
 export const reviewEn = {
   nav: "HX-Memory Review",
   title: "HX-Memory Review Queue",
@@ -15,6 +36,26 @@ export const reviewEn = {
   source: "source: {run}",
   browse: "Memory Browse",
   search: "Search memory...",
+};
+
+export const bindingZh = {
+  nav: "记忆绑定",
+  title: "记忆绑定 (VCP 式记忆拓扑)",
+  desc: "声明每个项目绑定哪些记忆源。绑定源在会话开始时确定性注入 — 不依赖模型自觉调工具。",
+  noProjects: "还没有绑定。添加一个项目来声明它的记忆源。",
+  addProject: "添加项目",
+  projectPh: "项目名",
+  bindingId: "绑定名 (如 cross-rules)",
+  kind: "类型",
+  scope: "范围",
+  projectFilter: "项目过滤",
+  signalWords: "信号词 (逗号分隔, 留空=总是注入)",
+  addBinding: "加绑定",
+  save: "保存全部",
+  saved: "已保存",
+  saveFailed: "保存失败",
+  remove: "移除",
+  any: "(任意)",
 };
 
 export const reviewZh = {

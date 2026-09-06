@@ -2,10 +2,12 @@
 // 挂一个 settings 区段: 推广审阅页。经 build-client.mjs 打成 DSH host 可加载的包。
 import { useState } from "react";
 import { ReviewPage, type ReviewRpc } from "./review-page.js";
-import { reviewEn, reviewZh } from "./locale.js";
+import { BindingsPage, type BindingRpc } from "./bindings-page.js";
+import { bindingEn, bindingZh, reviewEn, reviewZh } from "./locale.js";
 import { styles } from "./styles.js";
 
 const NS = "hx-memory.review";
+const BIND_NS = "hx-memory.bindings";
 const SETTINGS_NS = "hx-memory";
 
 interface ClientContext {
@@ -30,6 +32,10 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(NS, { en: reviewEn, zh: reviewZh }),
     "hxMemory.reviewLocale()",
   );
+  ctx.effect(
+    () => ctx.locale.register(BIND_NS, { en: bindingEn, zh: bindingZh }),
+    "hxMemory.bindingsLocale()",
+  );
   const t = (key: keyof Dictionary, vars?: Record<string, unknown>) => {
     const raw = ctx.locale.bind(NS)(String(key)) || key;
     if (!vars) return raw;
@@ -43,6 +49,21 @@ export function apply(ctx: ClientContext): void {
     return () => tag.remove();
   }, "hxMemory.reviewStyles()");
   const { rpc } = ctx.get("connection");
+  const tBind = (key: keyof typeof bindingEn) => ctx.locale.bind(BIND_NS)(String(key));
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "hx-memory-bindings",
+        order: 41,
+        label: () => ctx.locale.bind(BIND_NS)("nav"),
+        meta: { icon: "memory" },
+        locale: BIND_NS,
+        inject: () => ({ rpc, t: tBind }),
+      },
+      BindingsPage,
+    ),
+  );
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {

@@ -4,6 +4,8 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import type { FileBackend } from "../../storage/file-store.ts";
+import type { BindingStore } from "../../bindings/store.ts";
+import type { BindingConfig } from "../../kernel/binder.ts";
 import type {
   GeneralizerService,
   ProposalStatus,
@@ -14,6 +16,8 @@ import type {
 export interface HxMemoryGatewayDeps {
   store: FileBackend;
   generalizer: Pick<GeneralizerService, "listQueue" | "confirm" | "reject" | "runBatch">;
+  /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
+  bindingStore?: BindingStore;
 }
 
 export interface ReviewQueueView {
@@ -55,6 +59,22 @@ export class HxMemoryGateway extends TypertRemoteService {
   rejectProposal(id: string): { ok: boolean } {
     this.deps.generalizer.reject(id);
     return { ok: true };
+  }
+
+  @Remote("listBindings")
+  listBindings(): BindingConfig[] {
+    return this.deps.bindingStore?.list() ?? [];
+  }
+
+  @Remote("saveBindings")
+  saveBindings(configs: unknown): { ok: boolean; error?: string } {
+    if (!this.deps.bindingStore) return { ok: false, error: "binding store not mounted" };
+    try {
+      this.deps.bindingStore.saveAll(configs as BindingConfig[]);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
   }
 
   @Remote("memoryQuery")

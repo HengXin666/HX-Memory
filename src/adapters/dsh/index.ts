@@ -15,6 +15,7 @@ import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { RecallService } from "../../recall/service.ts";
 import { Binder, type BindingConfig } from "../../kernel/binder.ts";
+import { BindingStore } from "../../bindings/store.ts";
 import { HxMemoryGateway } from "./gateway.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
@@ -28,17 +29,21 @@ export interface HxMemoryPluginOptions {
   /** Review 队列目录 (推广提议落盘处)。 */
   reviewDir: string;
   settings?: Partial<HxMemorySettings>;
-  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。 */
+  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。
+   *  提供 root 时经 BindingStore 持久化到 root/bindings.json 且面板可编辑;
+   *  直接传 bindings 为静态配置 (无面板)。 */
   bindings?: BindingConfig[];
+  /** 记忆根目录 (绑定配置持久化于此, 与 settings.root 同源)。 */
+  root?: string;
 }
 
 export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
   const { store, reviewDir } = options;
   const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...options.settings });
-  const bindingConfigs: BindingConfig[] = options.bindings ?? [];
+  const bindingStore = new BindingStore(options.root ?? "");
   const binder = new Binder(
     (q) => store.query(q),
-    () => bindingConfigs,
+    () => (options.root ? bindingStore.list() : (options.bindings ?? [])),
   );
   const pipe = new CapturePipeline(store);
   const runtime = new HxMemoryRuntime(pipe, settings);
@@ -47,7 +52,11 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
   ctx.effect(() => {
-    new HxMemoryGateway(ctx, { store, generalizer });
+    new HxMemoryGateway(ctx, {
+      store,
+      generalizer,
+      bindingStore: options.root ? bindingStore : undefined,
+    });
     return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
   }, "hx-memory.gateway()");
 
