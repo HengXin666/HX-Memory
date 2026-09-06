@@ -14,6 +14,7 @@ import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runt
 import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { RecallService } from "../../recall/service.ts";
+import { Binder, type BindingConfig } from "../../kernel/binder.ts";
 import { HxMemoryGateway } from "./gateway.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
@@ -27,11 +28,18 @@ export interface HxMemoryPluginOptions {
   /** Review 队列目录 (推广提议落盘处)。 */
   reviewDir: string;
   settings?: Partial<HxMemorySettings>;
+  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。 */
+  bindings?: BindingConfig[];
 }
 
 export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
   const { store, reviewDir } = options;
   const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...options.settings });
+  const bindingConfigs: BindingConfig[] = options.bindings ?? [];
+  const binder = new Binder(
+    (q) => store.query(q),
+    () => bindingConfigs,
+  );
   const pipe = new CapturePipeline(store);
   const runtime = new HxMemoryRuntime(pipe, settings);
   const generalizer = new GeneralizerService(store, reviewDir);
@@ -69,9 +77,21 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
     ).agent;
     runtime.onSessionStart(agent.session);
     if (!settings().injectGuidance) return;
-    const recallOut = recall.recall({ project: agent.session.id });
-    const parts: string[] = [memoryGuidance(settings().language)];
-    if (recallOut.rules.length) parts.push(recallOut.injected);
+    const parts: string[] = [];
+    const project = agent.session.id;
+    const guidance = memoryGuidance(settings().language);
+    // 新线 (VCP 式): 项目声明绑定 → 会话开始即确定性注入绑定规则集 (不依赖模型自觉)
+    const bound = binder.injectFor(project, "");
+    if (bound) {
+      parts.push(bound);
+      parts.push(guidance); // 工具通道作为补充 (VCP Agent 同时有绑定 + 主动检索)
+    } else {
+      // 旧线: 指引 + 全局规则召回 (靠模型自觉调 memory_search)
+      parts.push(guidance);
+      const recallOut = recall.recall({ project });
+      if (recallOut.rules.length) parts.push(recallOut.injected);
+    }
+    if (!parts.length) return;
     agent.inject(
       createUserMessage({
         content: [{ type: "text", text: parts.join("\n\n") }],
