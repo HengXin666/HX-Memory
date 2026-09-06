@@ -11,6 +11,7 @@ import type { FileBackend } from "../../storage/file-store.js";
 import { CapturePipeline } from "../../capture/pipeline.js";
 import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runtime.js";
+import { makePreStepHandler } from "./prestep.js";
 import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { RecallService } from "../../recall/service.ts";
@@ -108,6 +109,17 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
       }),
     );
   });
+
+  // 逐轮确定性注入 (VCP 式): 每步用最新用户文本做绑定检索注入, 不靠模型自觉。
+  // 运行时契约已对照 dsh-agent-instructions 的权威实现验证 (waterfall: next() → 追加上下文消息)。
+  // 类型: DSH 的 ctx.on 需要 dsh-agent 的 UserMessage[]/Agent 精确类型, 这里用受控断言收敛。
+  ctx.on(
+    "agent/pre-step",
+    makePreStepHandler(binder, {
+      rootAgentsOnly: () => settings().rootAgentsOnly,
+      enabled: () => settings().injectGuidance,
+    }) as never,
+  );
 
   // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
   ctx.on("session/event", (session: unknown, event: unknown) => {

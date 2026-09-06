@@ -71,7 +71,9 @@
     "tests/s2/dual-line.test.ts",
     "src/bindings/store.ts",
     "src/adapters/dsh/client/bindings-page.tsx",
-    "tests/s2/binding-store.test.ts"
+    "tests/s2/binding-store.test.ts",
+    "src/adapters/dsh/prestep.ts",
+    "tests/s2/prestep.test.ts"
   ],
   "modified": [
     "src/adapters/dsh/index.ts",
@@ -79,7 +81,8 @@
     "src/adapters/dsh/index.ts",
     "src/adapters/dsh/client/index.tsx",
     "src/adapters/dsh/client/locale.ts",
-    "dist/dsh/client.js"
+    "dist/dsh/client.js",
+    "src/adapters/dsh/index.ts"
   ],
   "skipped": [],
   "commands": [
@@ -90,5 +93,5 @@
     "pnpm exec prettier --write src tests"
   ],
   "logs": [".git/hx-init/logs/ or .agents/logs/"],
-  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试. Stage2: capture engine (turn→MemoryEntry, 规则信号 kind 推断, 内容指纹去重, 双时态) + pipeline (捕获入库 + warmUp 跨重启去重); 内部导入改 .ts 后缀 (allowImportingTsExtensions). Stage3: DSH (cordis) adapter — agent/session-start 注入指引, session/event 聚合 turn→批量捕获, memory_search/memory_save 工具, schemastery 设置面板; peer deps @deepseek-ai/{cordis,dsh-llm,dsh-tools,dsh-settings,schemastery}. Stage4: Generalizer — 主题聚类 (S1 信号词) + 推广服务 (启发式/可插拔 Abstractor, review/queue.jsonl, 人工 confirm/reject, rule 带 confirmedBy + generalizes 关联). Stage5: DSH Web client — HxMemoryGateway (TypertRemoteService: reviewQueue/confirm/reject/memoryQuery) + React review 面板 (settings.section slot, en/zh locale) + esbuild bundle (dist/dsh/client.js) + cordis.patch.yml + tsconfig.client.json (DOM lib 分离). Stage6: RecallService — 全局确认规则总是候选 + 项目内经验按需召回 (project 字段成为第一等公民: MemoryEntry/存储/查询/捕获全链路); session-start 注入跨项目规则. Stage7: Codex adapter (AGENTS.md 同步 + CLI bin hx-memory) + ADR-006/007 + README 能力闭环 + index 公开 API. Stage7b(VCP式双线): kernel/binder 声明式绑定+确定性注入 (对照 VCP RAGDiaryPlugin 理念); dsh adapter session-start 接入绑定注入; tests/s1 binder 7测 + tests/s2 dual-line 5测 (旧线6/10 vs 新线10/10)。 BindingsPanel: 记忆绑定管理 (settings.section #2), BindingStore truth-in-files + gateway list/save RPC, adapter 实时绑定, 80 tests."
+  "notes": "Scaffold: kernel types/ports/evolution + S1 tests; hooks (strip_emoji/clean_chars/format_ts/verify_ts/check_commit_msg); commit-msg opt-in installer; CI pnpm+verify.sh; rules docs/engineering as real files in .agents/.claude/.codex. Commit-msg hook NOT installed (opt-in per house rule). Stage1: FileBackend (daily/digest/rules Markdown 真相 + node:sqlite 索引, 多 entry 文件 upsert, 索引重建, rule 确认门) + 10 S2 测试. Stage2: capture engine (turn→MemoryEntry, 规则信号 kind 推断, 内容指纹去重, 双时态) + pipeline (捕获入库 + warmUp 跨重启去重); 内部导入改 .ts 后缀 (allowImportingTsExtensions). Stage3: DSH (cordis) adapter — agent/session-start 注入指引, session/event 聚合 turn→批量捕获, memory_search/memory_save 工具, schemastery 设置面板; peer deps @deepseek-ai/{cordis,dsh-llm,dsh-tools,dsh-settings,schemastery}. Stage4: Generalizer — 主题聚类 (S1 信号词) + 推广服务 (启发式/可插拔 Abstractor, review/queue.jsonl, 人工 confirm/reject, rule 带 confirmedBy + generalizes 关联). Stage5: DSH Web client — HxMemoryGateway (TypertRemoteService: reviewQueue/confirm/reject/memoryQuery) + React review 面板 (settings.section slot, en/zh locale) + esbuild bundle (dist/dsh/client.js) + cordis.patch.yml + tsconfig.client.json (DOM lib 分离). Stage6: RecallService — 全局确认规则总是候选 + 项目内经验按需召回 (project 字段成为第一等公民: MemoryEntry/存储/查询/捕获全链路); session-start 注入跨项目规则. Stage7: Codex adapter (AGENTS.md 同步 + CLI bin hx-memory) + ADR-006/007 + README 能力闭环 + index 公开 API. Stage7b(VCP式双线): kernel/binder 声明式绑定+确定性注入 (对照 VCP RAGDiaryPlugin 理念); dsh adapter session-start 接入绑定注入; tests/s1 binder 7测 + tests/s2 dual-line 5测 (旧线6/10 vs 新线10/10)。 BindingsPanel: 记忆绑定管理 (settings.section #2), BindingStore truth-in-files + gateway list/save RPC, adapter 实时绑定, 80 tests. PreStep: agent/pre-step 确定性逐轮注入 (对照 agent-instructions waterfall), 内容去重, rootAgentsOnly, 最新用户文本绑定检索, 6 tests."
 }
