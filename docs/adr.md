@@ -53,3 +53,4 @@
 - **选项**: (a) 维持旧线: guidance 指引 + memory_search 工具 (ReMe/ADK 派); (b) 纯自动每轮注入全部规则 (贵且噪声); (c) 声明式绑定 + 确定性预步注入 (VCP 派)。
 - **决策**: (c) 为主, (a) 的工具通道保留为补充 — 与 VCP Agent 同时有绑定 + 主动检索一致。落到 kernel/binder.ts: MemoryBinding (查询条件/权重/条数/信号词门控) + BindingConfig (项目级拓扑) + Binder.injectFor (代码判定注入)。
 - **后果**: 声明绑定的项目获得 100% 注入保证 (测试: 旧线 10 轮 6 轮命中 vs 新线 10/10); 未声明项目零开销。检索质量仍受关键词评分限制 (后续 VectorBackend 可插拔)。
+- **实现注记 (2026-09)**: 注入点从 session-start 深化到 `agent/pre-step` (对照 `@deepseek-ai/dsh-agent-instructions` 的 waterfall 契约: `next()` → 在 lastClaimedIndex+1 处追加 `createUserMessage` 上下文), 每步用**最新用户文本**做绑定检索, 内容级去重防重复注入, rootAgentsOnly 过滤 subagent。绑定配置经 BindingStore 持久化到 root/bindings.json, 面板 (settings.section) 实时编辑即生效。测试: binding-store 4 + prestep 6。
