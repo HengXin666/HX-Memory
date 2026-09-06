@@ -4,10 +4,12 @@
 //   session/event        → 聚合 turn → 批量捕获入记忆
 //   ctx.tools.register   → memory_search / memory_save
 //   ctx.settings         → 可配置开关
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
-import type { FileBackend } from "../../storage/file-store.js";
+import { FileBackend } from "../../storage/file-store.js";
 import { CapturePipeline } from "../../capture/pipeline.js";
 import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runtime.js";
@@ -25,26 +27,32 @@ export const name = "hx-memory";
 export const inject = ["agents", "sessions", "tools"];
 
 export interface HxMemoryPluginOptions {
-  /** 存储层: 由宿主注入 (可插拔 — 本仓库默认 FileBackend)。 */
-  store: FileBackend;
-  /** Review 队列目录 (推广提议落盘处)。 */
-  reviewDir: string;
-  settings?: Partial<HxMemorySettings>;
-  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。
-   *  提供 root 时经 BindingStore 持久化到 root/bindings.json 且面板可编辑;
-   *  直接传 bindings 为静态配置 (无面板)。 */
-  bindings?: BindingConfig[];
-  /** 记忆根目录 (绑定配置持久化于此, 与 settings.root 同源)。 */
+  /** 记忆根目录 (默认 ~/.dsh/hx-memory 或 $HX_MEMORY_ROOT)。 */
   root?: string;
+  /** 存储层 (可选: 不传则用 root 自建默认 FileBackend)。 */
+  store?: FileBackend;
+  /** Review 队列目录 (可选: 默认 <root>/review)。 */
+  reviewDir?: string;
+  settings?: Partial<HxMemorySettings>;
+  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。 */
+  bindings?: BindingConfig[];
 }
 
-export function apply(ctx: Context, options: HxMemoryPluginOptions): void {
-  const { store, reviewDir } = options;
-  const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...options.settings });
-  const bindingStore = new BindingStore(options.root ?? "");
+/** 默认记忆根: $HX_MEMORY_ROOT → ~/.dsh/hx-memory (与 DSH 的 dsh-home 惯例一致)。 */
+export function defaultMemoryRoot(): string {
+  return process.env.HX_MEMORY_ROOT ?? join(homedir(), ".dsh", "hx-memory");
+}
+
+export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
+  const opts = options;
+  const root = opts.root ?? defaultMemoryRoot();
+  const store = opts.store ?? new FileBackend({ root });
+  const reviewDir = opts.reviewDir ?? join(root, "review");
+  const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...opts.settings });
+  const bindingStore = new BindingStore(root);
   const binder = new Binder(
     (q) => store.query(q),
-    () => (options.root ? bindingStore.list() : (options.bindings ?? [])),
+    () => (root ? bindingStore.list() : (opts.bindings ?? [])),
   );
   const pipe = new CapturePipeline(store);
   const runtime = new HxMemoryRuntime(pipe, settings);

@@ -81,6 +81,9 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
+    },
+    "bundle": {
+      "patch": "./dsh/cordis.patch.yml"
     }
   },
   "bin": {

@@ -19,3 +19,8 @@ export {
   type ProposalStatus,
   type Abstractor,
 } from "./generalize/service.ts";
+
+/** No-op cordis plugin face (对齐 ReMe): DSH 的 patch group 会在服务端加载根入口,
+ *  根入口必须是一个合法的 cordis plugin (有 apply)。真实功能在 ./dsh; 真实 Web UI 在 ./client
+ *  (由宿主按 dsh.client 元数据加载)。 */
+export function apply(): void {}
