@@ -1,5 +1,6 @@
 // src/adapters/dsh/settings.ts — HX-Memory 的设置 schema (schemastery)。
 import z from "@deepseek-ai/schemastery";
+import { DEFAULT_STRUCTURER_PROMPT, DEFAULT_ABSTRACTOR_PROMPT } from "../../prompts.ts";
 
 export const MEMORY_SETTINGS_NAMESPACE = "hx-memory";
 
@@ -9,6 +10,8 @@ export const Config = z.object({
   rootAgentsOnly: z.boolean().default(true),
   language: z.union(["zh", "en"]).default("zh"),
   injectGuidance: z.boolean().default(true),
+  structurerPrompt: z.string().default(DEFAULT_STRUCTURER_PROMPT),
+  abstractorPrompt: z.string().default(DEFAULT_ABSTRACTOR_PROMPT),
 });
 
 export type ConfigSchema = typeof Config;

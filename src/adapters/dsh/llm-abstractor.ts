@@ -4,8 +4,15 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Abstractor } from "../../generalize/service.ts";
 import { agentSummarize } from "./llm-agent.ts";
+import { DEFAULT_ABSTRACTOR_PROMPT, fillTemplate } from "../../prompts.ts";
+import type { HxMemorySettings } from "./types.js";
 
-export function makeLlmAbstractor(ctx: Context): Abstractor {
+/** 创建 AI 抽象器。prompt 缺省用 DEFAULT_ABSTRACTOR_PROMPT; 用户可在设置面板覆盖。 */
+export function makeLlmAbstractor(
+  ctx: Context,
+  settings?: () => Partial<HxMemorySettings>,
+): Abstractor {
+  const prompt = () => settings?.().abstractorPrompt?.trim() || DEFAULT_ABSTRACTOR_PROMPT;
   return {
     async abstract(cluster) {
       const input =
@@ -13,12 +20,8 @@ export function makeLlmAbstractor(ctx: Context): Abstractor {
         cluster.contents.map((c, i) => `${i + 1}. ${c}`).join("\n") +
         `\n\n来源: ${cluster.sources.join(", ")}`;
       const out = await agentSummarize(ctx, {
-        system:
-          "你是记忆系统的规则提炼器。根据给定的同类实例, 提炼一条跨项目通用规则。\n" +
-          "输出严格两行:\n" +
-          "RULE: <一条可执行的跨项目规则, 中文, 30字内>\n" +
-          "CONFIDENCE: <0-1的小数>\n" +
-          "只输出这两行, 不要解释。",
+        task: "abstractor",
+        system: fillTemplate(prompt(), { theme: cluster.theme }),
         input,
         timeoutMs: 15000,
       });

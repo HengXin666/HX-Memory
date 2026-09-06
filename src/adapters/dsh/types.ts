@@ -16,6 +16,10 @@ export interface HxMemorySettings {
   language: "zh" | "en";
   /** 会话开始注入记忆指引开关。 */
   injectGuidance: boolean;
+  /** AI 结构化提示词 (可编辑, 缺省用默认)。 */
+  structurerPrompt?: string;
+  /** AI 规则提炼提示词 (可编辑, 缺省用默认)。 */
+  abstractorPrompt?: string;
 }
 
 export const DEFAULT_SETTINGS: HxMemorySettings = {

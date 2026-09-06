@@ -7,12 +7,25 @@
 import type { Context } from "@deepseek-ai/cordis";
 
 export interface AgentCallOptions {
-  /** 任务描述 (显示用) + 约束。 */
+  /** 任务描述 (显示用)。 */
+  task: string;
+  /** 系统提示词。 */
   system: string;
   /** 用户输入。 */
   input: string;
   /** 超时毫秒。 */
   timeoutMs?: number;
+}
+
+/** 一次调用的可审计记录 (面板「调用记录」tab + host 事件)。 */
+export interface LlmInvocationRecord {
+  task: string;
+  prompt: string;
+  input: string;
+  output: string;
+  ok: boolean;
+  ms: number;
+  at: string;
 }
 
 /** 宽松的 agents 服务形态 (运行时探测, 不静态依赖 dsh-agent)。 */
@@ -25,6 +38,37 @@ export async function agentSummarize(
   ctx: Context,
   opts: AgentCallOptions,
 ): Promise<string> {
+  const started = Date.now();
+  const record: LlmInvocationRecord = {
+    task: opts.task,
+    prompt: opts.system,
+    input: opts.input,
+    output: "",
+    ok: false,
+    ms: 0,
+    at: new Date().toISOString(),
+  };
+  const finish = (out: string, ok: boolean): string => {
+    record.output = out;
+    record.ok = ok;
+    record.ms = Date.now() - started;
+    try {
+      (ctx as unknown as { emit?: (name: string, data: unknown) => void }).emit?.(
+        "hx-memory/llm-invocation",
+        record,
+      );
+      ctx.logger("hx-memory").info(
+        "[llm] %s %s (%dms) %s",
+        ok ? "ok" : "fail",
+        opts.task,
+        record.ms,
+        ok ? "" : out.slice(0, 200),
+      );
+    } catch {
+      // 事件/日志失败不阻断
+    }
+    return out;
+  };
   const agents = (ctx as unknown as { agents?: AgentsLike }).agents;
   if (!agents?.create) throw new Error("hx-memory: agents service unavailable");
   const handle = await agents.create({

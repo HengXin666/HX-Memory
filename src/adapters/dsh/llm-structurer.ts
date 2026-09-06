@@ -3,15 +3,20 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { TurnStructurer, StructuredTurn } from "../../capture/structurer.ts";
 import { agentSummarize } from "./llm-agent.ts";
+import { DEFAULT_STRUCTURER_PROMPT, fillTemplate } from "../../prompts.ts";
+import type { HxMemorySettings } from "./types.js";
 
-export function makeLlmStructurer(ctx: Context): TurnStructurer {
+/** 创建 AI 结构化器。prompt 缺省用 DEFAULT_STRUCTURER_PROMPT; 用户可在设置面板覆盖。 */
+export function makeLlmStructurer(
+  ctx: Context,
+  settings?: () => Partial<HxMemorySettings>,
+): TurnStructurer {
+  const prompt = () => settings?.().structurerPrompt?.trim() || DEFAULT_STRUCTURER_PROMPT;
   return {
     async structure(input) {
       const out = await agentSummarize(ctx, {
-        system:
-          "你是记忆系统的结构化器。把用户的一句话经验提炼为结构化记忆。\n" +
-          "输出严格 JSON (不要其他文字):\n" +
-          '{"summary":"一句话摘要","tags":["标签1","标签2"],"points":["要点1","要点2"]}',
+        task: "structurer",
+        system: fillTemplate(prompt(), {}),
         input: input.text,
         timeoutMs: 10000,
       });

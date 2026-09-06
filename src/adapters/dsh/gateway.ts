@@ -11,6 +11,8 @@ import type {
   ProposalStatus,
   QueuedProposal,
 } from "../../generalize/service.ts";
+import type { InvocationLog } from "./invocations.js";
+import type { LlmInvocationRecord } from "./llm-agent.js";
 
 /** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
 export interface HxMemoryGatewayDeps {
@@ -18,6 +20,8 @@ export interface HxMemoryGatewayDeps {
   generalizer: Pick<GeneralizerService, "listQueue" | "confirm" | "reject" | "runBatch">;
   /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
   bindingStore?: BindingStore;
+  /** AI 调用记录 (可选: 不注入则「调用记录」tab 不可用)。 */
+  invocations?: InvocationLog;
 }
 
 export interface ReviewQueueView {
@@ -75,6 +79,11 @@ export class HxMemoryGateway extends TypertRemoteService {
     } catch (e) {
       return { ok: false, error: String(e) };
     }
+  }
+
+  @Remote("listInvocations")
+  listInvocations(limit?: number): LlmInvocationRecord[] {
+    return this.deps.invocations?.recent(limit ?? 50) ?? [];
   }
 
   @Remote("recentCaptures")

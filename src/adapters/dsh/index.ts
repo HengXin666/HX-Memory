@@ -22,6 +22,8 @@ import { RecallService } from "../../recall/service.ts";
 import { Binder, type BindingConfig } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
 import { HxMemoryGateway } from "./gateway.js";
+import { InvocationLog } from "./invocations.js";
+import type { LlmInvocationRecord } from "./llm-agent.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
 
@@ -66,11 +68,20 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     () => (root ? bindingStore.list() : (opts.bindings ?? [])),
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
-  const structurer = safeAgent(() => makeLlmStructurer(ctx));
+  const structurer = safeAgent(() => makeLlmStructurer(ctx, settings));
   const pipe = new CapturePipeline(store, { structurer: structurer ?? undefined });
+
+  // AI 调用记录: 订阅宿主事件, 存环形缓冲供面板展示 (透明可审计)。
+  const invocationLog = new InvocationLog();
+  (ctx.on as (name: string, cb: (r: unknown) => void) => void)(
+    "hx-memory/llm-invocation",
+    (r: unknown) => {
+      invocationLog.push(r as LlmInvocationRecord);
+    },
+  );
   const runtime = new HxMemoryRuntime(pipe, settings);
   // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用时回退启发式。
-  const generalizer = new GeneralizerService(store, reviewDir, safeAgent(() => makeLlmAbstractor(ctx)));
+  const generalizer = new GeneralizerService(store, reviewDir, safeAgent(() => makeLlmAbstractor(ctx, settings)));
   const recall = new RecallService((q) => store.query(q));
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
@@ -79,6 +90,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       store,
       generalizer,
       bindingStore: options.root ? bindingStore : undefined,
+      invocations: invocationLog,
     });
     return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
   }, "hx-memory.gateway()");

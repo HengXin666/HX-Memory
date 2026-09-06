@@ -32,6 +32,16 @@ interface RecentView {
   tags?: string[];
 }
 
+interface InvocationView {
+  task: string;
+  prompt: string;
+  input: string;
+  output: string;
+  ok: boolean;
+  ms: number;
+  at: string;
+}
+
 const NS = "hxMemory";
 
 export function ReviewPage({ rpc, t }: Props): JSX.Element {
@@ -40,7 +50,8 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [msg, setMsg] = useState("");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<unknown[]>([]);
-  const [tab, setTab] = useState<"props" | "recent">("props");
+  const [tab, setTab] = useState<"props" | "recent" | "inv">("props");
+  const [inv, setInv] = useState<InvocationView[]>([]);
   const [recent, setRecent] = useState<RecentView[]>([]);
   const [recentMsg, setRecentMsg] = useState("");
 
@@ -83,6 +94,19 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     setHits(res);
   };
 
+  const refreshInv = useCallback(async () => {
+    try {
+      const list = (await rpc.call(NS, "listInvocations", 50)) as InvocationView[];
+      setInv(list);
+    } catch {
+      setInv([]);
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    if (tab === "inv") void refreshInv();
+  }, [tab, refreshInv]);
+
   const refreshRecent = useCallback(async () => {
     try {
       const list = (await rpc.call(NS, "recentCaptures", 30)) as RecentView[];
@@ -123,8 +147,37 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
         >
           {t("tabRecent")}
         </button>
+        <button
+          style={tab === "inv" ? { fontWeight: 700 } : {}}
+          onClick={() => setTab("inv")}
+        >
+          {t("tabInvocations")}
+        </button>
       </div>
-      {tab === "recent" ? (
+      {tab === "inv" ? (
+        <div className="hxmem-inv">
+          <h3>{t("tabInvocations")}</h3>
+          {inv.length === 0 ? (
+            <div className="empty">{t("invEmpty")}</div>
+          ) : (
+            inv.map((v, i) => (
+              <details key={i} style={{ marginBottom: 6, border: "1px solid #ccc", padding: 4 }}>
+                <summary>
+                  <span className={"badge " + (v.ok ? "confirmed" : "rejected")}>
+                    {v.ok ? t("invOk") : t("invFail")}
+                  </span>{" "}
+                  {v.task} · {v.ms}ms · {v.at.slice(0, 19)}
+                </summary>
+                <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
+                  <div><b>{t("invPrompt")}:</b> {v.prompt}</div>
+                  <div><b>{t("invInput")}:</b> {v.input}</div>
+                  <div><b>{t("invOutput")}:</b> {v.output}</div>
+                </div>
+              </details>
+            ))
+          )}
+        </div>
+      ) : tab === "recent" ? (
         <div className="hxmem-recent">
           <h3>{t("recentTitle")}</h3>
           {recentMsg ? <div className="meta">{recentMsg}</div> : null}
