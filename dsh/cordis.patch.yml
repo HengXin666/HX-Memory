@@ -6,6 +6,6 @@
         hxMemory: true
       config:
         - id: hx-memory-runtime
-          name: "@hx/hx-memory/dsh"
+          name: "@hengxin666/hx-memory/dsh"
         - id: hx-memory-client
-          name: "@hx/hx-memory"
+          name: "@hengxin666/hx-memory"

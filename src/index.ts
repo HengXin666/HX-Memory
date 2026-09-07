@@ -1,5 +1,5 @@
 // HX-Memory public entry. Kernel + 纯服务 (capture/recall/generalize) 无 harness 依赖可直达。
-// adapters (dsh/codex) 与 storage 具体实现可插拔, 经子路径导入: @hx/hx-memory/dsh, ./storage/file-store.ts
+// adapters (dsh/codex) 与 storage 具体实现可插拔, 经子路径导入: @hengxin666/hx-memory/dsh, ./storage/file-store.ts
 export type * from "./kernel/types.ts";
 export type * from "./kernel/ports.ts";
 export { expandEvolutionChain, sliceAt } from "./kernel/evolution.ts";

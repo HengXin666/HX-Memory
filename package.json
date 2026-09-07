@@ -1,5 +1,5 @@
 {
-  "name": "@hx/hx-memory",
+  "name": "@hengxin666/hx-memory",
   "version": "0.1.0",
   "description": "HX-Memory: self-maintained pluggable agent memory layer (Port-Adapter kernel: DSH/Codex adapters + pluggable storage + generalization engine)",
   "private": false,

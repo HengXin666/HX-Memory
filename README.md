@@ -35,7 +35,7 @@ HX-Memory 补上缺的那一环 —— **跨项目推广**:
 
 ```bash
 npm i -g @deepseek-ai/dsh
-dsh plugin add @hx/hx-memory   # 发布后; 本地开发: dsh plugin add file:<本仓库路径>
+dsh plugin add @hengxin666/hx-memory   # 发布后; 本地开发: dsh plugin add file:<本仓库路径>
 ```
 
 ### 第二步: 找一个入口
