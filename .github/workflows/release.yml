@@ -1,0 +1,84 @@
+# release - 发行 HX-Memory 的可安装版本 (npm pack tarball -> GitHub Release)
+# 用法: Actions -> release -> Run workflow (手动), 或打 vX.Y.Z tag 触发
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "version bump: patch/minor/major"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  verify:
+    name: Verify + build + pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/verify.sh
+      - run: pnpm run build
+      - run: pnpm run build:client
+      - name: Compute version
+        id: ver
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) VER=${GITHUB_REF#refs/tags/v} ;;
+            *) BUMP=${bump}
+               VER=$(node -e "const p=require('./package.json');const[a,b,c]=p.version.split('.').map(Number);const k=process.env.BUMP;console.log(k==='major'?`${a+1}.0.0`:k==='minor'?`${a}.${b+1}.0`:`${a}.${b}.${c+1}`)") ;;
+          esac
+          echo "version=$VER"
+          echo "version=$VER" >> $GITHUB_OUTPUT
+      - name: Write version into package.json
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${VER}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+      - name: Pack
+        run: |
+          mkdir -p dist-artifact
+          npm pack --pack-destination ./dist-artifact
+          ls -la dist-artifact/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hx-memory-tarball
+          path: "dist-artifact/*.tgz"
+  release:
+    name: Publish GitHub Release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hx-memory-tarball
+          path: artifact
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la artifact/
+          TGZ=$(ls artifact/*.tgz | head -1)
+          VERSION=$(basename "$TGZ" | sed -E "s/.*-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$/\1/")
+          echo "releasing v$VERSION"
+          cat > /tmp/notes.md <<EOF
+          ## HX-Memory 可安装包
+          
+          **安装**:
+          1. 下载本 Release 的 .tgz 文件
+          2. dsh plugin --profile <profile> add file:<下载的 .tgz>
+          3. 重启 DSH, 设置区出现 记忆审阅 / 记忆绑定 / 调用记录 面板
+          
+          由 release 流水线构建+验证后打包, 不推 npm registry。
+          EOF
+          gh release create "v$VERSION" "$TGZ" --title "HX-Memory v$VERSION" --notes-file /tmp/notes.md
