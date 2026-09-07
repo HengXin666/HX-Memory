@@ -37,74 +37,36 @@ jobs:
       - name: Compute version
         id: ver
         run: |
-          cat > /tmp/calc-version.cjs <<'NODEEOF'
-          const fs = require('fs');
-          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const [a, b, c] = p.version.split('.').map(Number);
-          const k = (process.env.BUMP || 'patch').toLowerCase();
-          const ref = process.env.GITHUB_REF || '';
-          let v;
-          if (ref.indexOf('refs/tags/v') === 0) v = ref.slice(11);
-          else if (k === 'major') v = (a + 1) + '.0.0';
-          else if (k === 'minor') v = a + '.' + (b + 1) + '.0';
-          else v = a + '.' + b + '.' + (c + 1);
-          process.stdout.write(v);
-          NODEEOF
-          BUMP=${{ inputs.bump }}
-          VER=$(node /tmp/calc-version.cjs)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER=${GITHUB_REF#refs/tags/v}
+          else
+            BUMP=${{ inputs.bump }}
+            cat > /tmp/calc-version.cjs <<'NODEEOF'
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            let base = null;
+            try {
+              const out = execSync('npm view @hengxin666/hx-memory versions --json 2>/dev/null || echo "[]"').toString();
+              const versions = JSON.parse(out);
+              const arr = Array.isArray(versions) ? versions : [];
+              const nums = arr.filter(function(x){ return /^\d+\.\d+\.\d+$/.test(x); })
+                .map(function(x){ return x.split('.').map(Number); });
+              nums.sort(function(x,y){ return x[0]-y[0] || x[1]-y[1] || x[2]-y[2]; });
+              if (nums.length) base = nums[nums.length-1];
+            } catch (e) { base = null; }
+            if (!base) {
+              const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              base = p.version.split('.').map(Number);
+            }
+            const a = base[0], b = base[1], c = base[2];
+            const k = (process.env.BUMP || 'patch').toLowerCase();
+            let v;
+            if (k === 'major') v = (a + 1) + '.0.0';
+            else if (k === 'minor') v = a + '.' + (b + 1) + '.0';
+            else v = a + '.' + b + '.' + (c + 1);
+            process.stdout.write(v);
+            NODEEOF
+            VER=$(node /tmp/calc-version.cjs)
+          fi
           echo "version=$VER"
           echo "version=$VER" >> $GITHUB_OUTPUT
-      - name: Write version into package.json
-        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${{ steps.ver.outputs.version }}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
-      - name: Pack tarball
-        run: |
-          mkdir -p dist-artifact
-          npm pack --pack-destination ./dist-artifact
-          ls -la dist-artifact/
-      - name: Configure npm auth for GitHub Packages
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://npm.pkg.github.com/"
-      - name: Publish to GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish
-      - name: Make package public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh api --method PATCH "user/packages/npm/@hengxin666%2Fhx-memory" -f visibility=public || echo "(visibility handled or needs manual check)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hx-memory-tarball
-          path: "dist-artifact/*.tgz"
-  release:
-    name: Publish GitHub Release
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: hx-memory-tarball
-          path: artifact
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ls -la artifact/
-          TGZ=$(ls artifact/*.tgz | head -1)
-          VERSION=$(basename "$TGZ" | sed -E "s/.*-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$/\1/")
-          echo "releasing v$VERSION"
-          cat > /tmp/notes.md <<'EOF'
-          ## HX-Memory 可安装包
-          
-          **安装**:
-          1. 下载本 Release 的 .tgz 文件
-          2. dsh plugin --profile <profile> add file:<下载的 .tgz>
-          3. 或 (已发布到 GitHub Packages): dsh plugin --profile <profile> add @hengxin666/hx-memory
-          4. 重启 DSH, 设置区出现 记忆审阅 / 记忆绑定 / 调用记录 面板
-          
-          由 release 流水线构建+验证后打包并发布到 GitHub Packages (public)。
-          EOF
-          gh release create "v$VERSION" "$TGZ" --title "HX-Memory v$VERSION" --notes-file /tmp/notes.md
