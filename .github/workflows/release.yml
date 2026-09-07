@@ -50,6 +50,10 @@ jobs:
           mkdir -p dist-artifact
           npm pack --pack-destination ./dist-artifact
           ls -la dist-artifact/
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish --registry https://npm.pkg.github.com/
       - uses: actions/upload-artifact@v4
         with:
           name: hx-memory-tarball

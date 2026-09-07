@@ -88,5 +88,8 @@
   },
   "bin": {
     "hx-memory": "./dist/adapters/codex/cli.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
   }
 }
