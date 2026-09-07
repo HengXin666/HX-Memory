@@ -54,6 +54,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm publish --registry https://npm.pkg.github.com/
+      - name: Make package public (GitHub Packages visibility)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 幂等: 每次发布后确保包可见性为 public (无需认证即可安装)
+          gh api --method PATCH "user/packages/npm/@hx%2fhx-memory" -f visibility=public 2>/dev/null || echo "(可见性已是 public 或需在后台确认)"
       - uses: actions/upload-artifact@v4
         with:
           name: hx-memory-tarball
