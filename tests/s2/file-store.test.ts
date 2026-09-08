@@ -91,10 +91,9 @@ describe("FileBackend: relations + traverse", () => {
     store.add(
       entry({ id: "r2", content: "v2 rule", relations: [{ type: "supersedes", toId: "r1" }] }),
     );
-    const forward = store.traverse("r1", "supersededBy");
-    // r1 has no supersededBy pointer; traverse follows to_id matches — r2.supersedes r1 means
-    // r1's supersededBy is implicit. The store stores relations as declared; test declared rel.
-    expect(store.traverse("r2", "supersedes").map((e) => e.id)).toContain("r1");
+    // traverse 只沿"声明的"关系走: r2.supersedes → r1 命中; r1 没有 supersededBy 指针 → 空。
+    expect(store.traverse("r2", "supersedes").map((e) => e.id)).toEqual(["r1"]);
+    expect(store.traverse("r1", "supersededBy")).toEqual([]);
   });
 });
 
@@ -125,7 +124,8 @@ describe("FileBackend: rule confirmation gate", () => {
 describe("FileBackend: index rebuild (truth → index)", () => {
   it("rebuildFromFiles restores entries after index loss", () => {
     const n = store.rebuildFromFiles();
-    expect(n).toBeGreaterThanOrEqual(8);
+    // 精确计数: 宽松的 >= 会让"伪造块/幽灵条目"也通过。
+    expect(n).toBe(store.all().length);
     expect(store.get("e1")?.content).toContain("queue");
     expect(store.get("rule2")?.confirmedBy).toBe("user:hengxin");
   });
