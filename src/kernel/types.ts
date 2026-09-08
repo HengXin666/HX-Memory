@@ -46,6 +46,12 @@ export interface MemoryEntry {
   structured?: { summary: string; points: string[] };
 }
 
+/** Store 写入入参: id/ts 可缺省 (由存储层补齐)。 */
+export type MemoryEntryInput = Omit<MemoryEntry, "id" | "ts"> & {
+  id?: string;
+  ts?: Partial<Timestamps>;
+};
+
 export interface Query {
   text?: string;
   kind?: MemoryKind;
@@ -56,7 +62,8 @@ export interface Query {
   /** Filter by owning project (only meaningful with scope:project). */
   project?: string;
   limit?: number;
-  minScore?: number;
+  /** 默认 false: shadow (已撤回) 条目不参与检索。 */
+  includeShadow?: boolean;
 }
 
 export interface GeneralizationProposal {
@@ -67,4 +74,14 @@ export interface GeneralizationProposal {
   confidence: number;
   suggestedAction: "confirm" | "rewrite" | "reject";
   generatedAt: string;
+}
+
+export type ProposalStatus = "proposed" | "confirmed" | "rejected";
+
+/** One review-queue item: a machine/user proposal awaiting the human gate. */
+export interface QueuedProposal {
+  id: string;
+  status: ProposalStatus;
+  proposal: GeneralizationProposal;
+  sourceRun: string;
 }
