@@ -54,3 +54,43 @@
 - **决策**: (c) 为主, (a) 的工具通道保留为补充 — 与 VCP Agent 同时有绑定 + 主动检索一致。落到 kernel/binder.ts: MemoryBinding (查询条件/权重/条数/信号词门控) + BindingConfig (项目级拓扑) + Binder.injectFor (代码判定注入)。
 - **后果**: 声明绑定的项目获得 100% 注入保证 (测试: 旧线 10 轮 6 轮命中 vs 新线 10/10); 未声明项目零开销。检索质量仍受关键词评分限制 (后续 VectorBackend 可插拔)。
 - **实现注记 (2026-09)**: 注入点从 session-start 深化到 `agent/pre-step` (对照 `@deepseek-ai/dsh-agent-instructions` 的 waterfall 契约: `next()` → 在 lastClaimedIndex+1 处追加 `createUserMessage` 上下文), 每步用**最新用户文本**做绑定检索, 内容级去重防重复注入, rootAgentsOnly 过滤 subagent。绑定配置经 BindingStore 持久化到 root/bindings.json, 面板 (settings.section) 实时编辑即生效。测试: binding-store 4 + prestep 6。
+
+## ADR-009: 宿主契约必须真机验证 (行为门禁, 不是"能启动")
+
+- **背景**: 插件在真机上"装得上、进程不崩、fiber active", 但两个 Web 面板整块不可用 —— 三个原因都不在业务逻辑里: patch 的 `isolate` 让服务在 root ctx 不可见 (宿主 Typert gateway 的 SRC 扫描拿不到 → `/api/hxMemory/*` 全 404); client bundle 硬编码了错误的模块 id (宿主 loader 要求注册 id == boot graph 行 id == 包名); 客户端把 RPC 写成了 `call("hxMemory", "reviewQueue", "proposed")` (真实约定是 `call("/api", "hxMemory/reviewQueue", { args })` + 解包 `{ok,value}`)。
+- **选项**: (a) 只保留"启动不崩"冒烟; (b) 用 mock 宿主测 RPC; (c) 真机装插件 + 起 web host + 逐条断言。
+- **决策**: (c)。`scripts/smoke-dsh.sh` 在隔离 `DSH_HOME` 里跑: 组合 profile → 启 host → 断言两个 fiber active → 断言 6 个 RPC 端点返回 `ok:true` → 断言 bundle 模块 id 与 boot manifest 行 id 一致。CI 的 `boot-smoke.yml` 只跑这个脚本。
+- **后果**: CI 需要网络与 DSH 安装 (慢几十秒); 换来"面板真的能用"这件事有自动化证据。
+
+## ADR-010: `project` 键 = 会话工作目录名 (不是 session id)
+
+- **背景**: 早期实现用 `agent.session.id` (UUID) 当项目键, 于是自动捕获永远 `scope:"agent"`、绑定面板让用户填的项目名无从填写、项目内召回永远为空 —— "项目隔离"只存在于类型里。
+- **选项**: (a) 继续用 session id; (b) 用 cwd 的目录名; (c) 用 git 仓库根。
+- **决策**: (b)。`projectOfSession()` 取 `session.header.cwd` 的目录名, 捕获 (scope/project) → 绑定 (BindingConfig.project) → 召回 (Query.project) 全链路一致。
+- **后果**: 同一目录名在不同路径下会合并 (可接受); 换仓库根方案需解析 `.git`, 留给后续。
+
+## ADR-011: 真相 → 索引必须无损往返
+
+- **背景**: 索引曾被当作"可重建的派生物", 但 `rebuildFromFiles()` 丢 relations (演化链/推广关联消失), 同一 id 二次写入只替换 frontmatter 而把旧正文留在文件里 (真相文件被写坏), `remove()` 只改索引导致重建后撤回的记忆复活。
+- **选项**: (a) 索引里存全部语义, 重建只做尽力而为; (b) 文件里存全部语义, 重建必须无损。
+- **决策**: (b)。`entryToMarkdown` 写 relations/tags/structured, `parseSingleBlock` 全部读回; upsert 用"下一个块首或文件末尾"精确切片 (不能依赖带 `/m` 的 `$`); `remove()` 在文件里写 `status: shadow`。`tests/s2/file-store-integrity.test.ts` 钉住这四条。
+- **后果**: 真相文件稍长; 换来"删库不丢真相"这句话是真的。
+
+## ADR-012: AI 增强用 `ctx.llm.stream`, 不用 `ctx.agents.create`
+
+- **背景**: 记忆结构化/规则提炼只需要"一次文本进、一次文本出"。最初用 `agents.create` 造最小 agent, 但 agent 拥有工具面、会产生自己的会话事件; 本插件在根级监听 `session/event`, 于是子会话的 user/message 被再次捕获 → 递归调用 + 会话文件污染。复核还发现 0.1.2-rc.1 上 `Session.events` 已被移除, 该路径会静默退化成启发式。
+- **选项**: (a) 继续用 agents + `origin:"subagent"` + 工具限制; (b) 改用第一方一次性调用 `ctx.llm.stream({provider, model, messages, system, maxTokens, signal})` (dsh-session-title-llm 的做法)。
+- **决策**: (b)。无 agent、无工具、无会话事件; provider/model 从 `agentDefaultModel` 取, 取不到就回退启发式。
+- **后果**: AI 增强不再是"另一个会话"; 超时由本地 deadline 强制拒绝 (不依赖流实现配合 abort)。代价是拿不到 agent 的工具能力 —— 而这本来也不需要。
+
+## ADR-013: 会话事件读取必须跨 DSH 版本 + 按 surface 过滤
+
+- **背景**: 0.1.1-rc.2 的 `Session.events` 在 0.1.2-rc.1 被移除 (改为 `eventAt/snapshotEvents/ownEvents`)。直接读 `events` 会在目标版本上静默拿到 undefined: 跨 step 去重失效 (每步重复注入), AI 读不到输出。另一方面, compaction 会遮蔽 (shadow) 被替换的事件 —— 它们仍在日志里但已不在模型可见的 surface 上, 按日志判断"注入过"会让模型看不见记忆却永远不再注入。
+- **决策**: 新增 `src/adapters/dsh/session-events.ts`: 优先 `eventAt(surface.nodes)`, 退到 `snapshotEvents()` → `events` → `ownEvents()`, 并统一按 `surface.nodes` 过滤可见性。`tests/s2/session-events.test.ts` 覆盖四种形状。
+- **后果**: 版本差异集中在一处; 测试用"只带 snapshotEvents 的 fake"防止再次假通过。
+
+## ADR-014: 宿主设置的双路径接入 (installSection / register)
+
+- **背景**: 设置命名空间只有注册了才会出现在 `settings.describe` 里。0.1.2-rc.1 的入口是 `installSection(owner, ns, schema, entry, hooks)` (hooks 交出权威配置 thunk); 0.1.1-rc.2 没有这个方法, 只有 `register(ns, schema, { base })` 返回 `scope.get()`。此前只实现前者, 导致 0.1.1 上设置命名空间根本不出现 (真机门禁发现)。
+- **决策**: 能力探测: 有 `installSection` 用 `installSection` 并 `adopt(() => current())`; 否则用 `register` 并 `adopt(() => scope.get())`; 两者都没有才退回组合配置并告警。`scripts/smoke-dsh.sh` 断言 `settings.describe` 一定包含 `hx-memory`。
+- **后果**: 两个宿主版本上设置都真的生效; 代价是适配层多一个分支 (由 smoke + settings-adoption 测试覆盖)。
