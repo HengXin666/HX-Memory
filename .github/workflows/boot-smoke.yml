@@ -1,4 +1,6 @@
-# boot-smoke - verify HX-Memory install does not break DSH boot (runs fully in CI).
+# boot-smoke - 真机 DSH 行为门禁: 装进隔离 DSH_HOME, 启动 web host, 断言面板/RPC/注入链路。
+# 只断言"进程没崩"是不够的: 插件组可以加载成功而面板 404、fiber 可以是 active 而服务不可见。
+# 因此这里跑 scripts/smoke-dsh.sh, 逐条断言 profile 组合、fiber 状态、RPC 200、bundle 模块 id。
 name: boot-smoke
 on: [push, pull_request]
 jobs:
@@ -24,14 +26,14 @@ jobs:
             dist/
             dsh/
             README.md
-  boot:
-    name: DSH boot smoke
+            docs/
+  smoke:
+    name: DSH behavior smoke
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DSH_HOME: dsh-home
+    timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: hx-memory-pkg
@@ -39,26 +41,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # dsh plugin 是 pnpm 转发器 (spawnSync("pnpm")) —— runner 镜像不预装 pnpm。
       - uses: pnpm/action-setup@v4
         with:
           version: "10.10.0"
-      - run: npm install -g @deepseek-ai/dsh@0.1.1-rc.2
-      - name: Install hx-memory into fresh web profile
-        run: |
-          dsh plugin --profile web add "file:$(pwd)/pkg" 2>&1 | tail -5
-      - name: Assert plugin group composes
-        run: |
-          dsh --profile web --dump-config > tree.txt 2>&1 || true
-          grep -q "hx-memory" tree.txt && echo "OK group present" || (echo "FAIL group missing"; cat tree.txt; exit 1)
-      - name: Boot web host, assert no plugin crash
-        run: |
-          set +e
-          timeout 60 dsh web > web-boot.log 2>&1 &
-          BOOT_PID=$!
-          sleep 25
-          if kill -0 $BOOT_PID 2>/dev/null; then echo "OK alive"; ALIVE=1; else echo "exited"; ALIVE=0; fi
-          FAIL_MARKERS="plugin tree failed to load|failed to apply loader entry|invalid plugin|Cannot destructure"
-          if grep -qE "$FAIL_MARKERS" web-boot.log; then echo "FAIL crash markers:"; grep -E "$FAIL_MARKERS" web-boot.log | head; kill $BOOT_PID 2>/dev/null; exit 1; fi
-          if grep -q "MISSING_CREDENTIAL" web-boot.log; then echo "note: reached credential stage (boot OK)"; fi
-          if [ "$ALIVE" = "1" ]; then kill $BOOT_PID 2>/dev/null; wait $BOOT_PID 2>/dev/null; fi
-          echo "=== boot log ==="; head -15 web-boot.log; echo "=== PASS ==="
+      # 版本必须与 package.json 的 peerDependencies 一致, 否则测的是一个不受支持的组合。
+      - run: npm install -g @deepseek-ai/dsh@0.1.2-rc.1
+      - name: Run behavior smoke
+        run: bash scripts/smoke-dsh.sh "$PWD/pkg"
