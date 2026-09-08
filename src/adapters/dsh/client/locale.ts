@@ -1,11 +1,13 @@
-// src/adapters/dsh/client/locale.ts — review 面板文案。
+// src/adapters/dsh/client/locale.ts — review / bindings 面板文案。
 
 export type Locale = typeof reviewEn;
 export type BindingLocale = typeof bindingEn;
 export const bindingEn = {
   nav: "Memory Bindings",
   title: "Memory Bindings (VCP-style topology)",
-  desc: "Declare which memory sources each project binds. Bound sources are injected deterministically at session start — no model discretion.",
+  desc: "Declare which memory sources each project binds. Bound sources are injected deterministically at each pre-step — no model discretion.",
+  projectHint:
+    "Project key = the session working directory's folder name (e.g. /code/api → api). Bindings without signal words inject on every step; with signal words they inject only when the latest user text matches.",
   noProjects: "No bindings yet. Add a project to declare its memory sources.",
   addProject: "Add project",
   projectPh: "project name",
@@ -14,6 +16,8 @@ export const bindingEn = {
   scope: "scope",
   projectFilter: "filter project",
   signalWords: "signal words (comma separated, empty = always)",
+  weight: "weight",
+  max: "max",
   addBinding: "Add binding",
   save: "Save all",
   saved: "Saved",
@@ -28,6 +32,9 @@ export const reviewEn = {
   desc: "Confirm or reject generalization proposals. Confirmed proposals become cross-project rules.",
   queue: "Proposals",
   empty: "No pending proposals. Run a generalization batch to surface lessons here.",
+  runBatch: "Run generalization batch",
+  running: "Running…",
+  batchDone: "batch done: {n} proposal(s)",
   covers: "covers {n} instance(s)",
   confirm: "Confirm as rule",
   reject: "Reject",
@@ -39,7 +46,8 @@ export const reviewEn = {
   tabProposals: "Proposals",
   tabRecent: "Recently captured",
   tabInvocations: "AI invocations",
-  recentEmpty: "Nothing captured yet. It fills automatically as you talk (pitfalls, decisions, preferences).",
+  recentEmpty:
+    "Nothing captured yet. It fills automatically as you talk (pitfalls, decisions, preferences).",
   recentKeep: "Keep",
   recentDelete: "Delete",
   deleted: "deleted",
@@ -56,7 +64,9 @@ export const reviewEn = {
 export const bindingZh = {
   nav: "记忆绑定",
   title: "记忆绑定 (VCP 式记忆拓扑)",
-  desc: "声明每个项目绑定哪些记忆源。绑定源在会话开始时确定性注入 — 不依赖模型自觉调工具。",
+  desc: "声明每个项目绑定哪些记忆源。绑定源在每个 pre-step 确定性注入 — 不依赖模型自觉调工具。",
+  projectHint:
+    "项目键 = 会话工作目录的目录名 (如 /code/api → api)。无信号词的绑定每步都注入; 有信号词的绑定只在最新用户文本命中时注入。",
   noProjects: "还没有绑定。添加一个项目来声明它的记忆源。",
   addProject: "添加项目",
   projectPh: "项目名",
@@ -65,6 +75,8 @@ export const bindingZh = {
   scope: "范围",
   projectFilter: "项目过滤",
   signalWords: "信号词 (逗号分隔, 留空=总是注入)",
+  weight: "权重",
+  max: "上限",
   addBinding: "加绑定",
   save: "保存全部",
   saved: "已保存",
@@ -78,7 +90,10 @@ export const reviewZh = {
   title: "HX-Memory 推广审阅队列",
   desc: "确认或驳回推广提议。确认后提议成为跨项目规则。",
   queue: "待审提议",
-  empty: "暂无待审提议。运行一次推广批次后, 经验教训会出现在这里。",
+  empty: "暂无待审提议。点上面的按钮跑一次推广批次, 经验教训会出现在这里。",
+  runBatch: "运行推广批次",
+  running: "运行中…",
+  batchDone: "批次完成: {n} 条提议",
   covers: "覆盖 {n} 条实例",
   confirm: "确认为规则",
   reject: "驳回",

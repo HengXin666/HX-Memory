@@ -1,14 +1,10 @@
-// src/adapters/dsh/types.ts — DSH adapter 配置与设置命名空间。
-// 设置项经 DSH 的 ctx.settings 持久化 (类似 ReMe 的 reme.settings)。
-
-export const MEMORY_SETTINGS_NAMESPACE = "hx-memory.settings";
+// src/adapters/dsh/types.ts — DSH adapter 的运行时设置形状。
+// 命名空间常量在 settings.ts (单一来源), 这里只放类型与默认值。
 
 export interface HxMemorySettings {
-  /** 记忆根目录 (默认为 DSH home 下 hx-memory/)。 */
-  root?: string;
   /** 自动捕获开关。 */
   autoCapture: boolean;
-  /** 每 N 轮完成对话批量入记忆 (0 = 每轮)。 */
+  /** 每 N 轮完成对话批量入记忆 (1 = 每轮, 0 视为每轮)。 */
   autoMemoryInterval: number;
   /** 只捕获根 agent (忽略 subagent)。 */
   rootAgentsOnly: boolean;
@@ -16,6 +12,8 @@ export interface HxMemorySettings {
   language: "zh" | "en";
   /** 会话开始注入记忆指引开关。 */
   injectGuidance: boolean;
+  /** pre-step 确定性绑定注入开关 (与指引分开, 关掉指引不影响绑定注入)。 */
+  injectBindings: boolean;
   /** AI 结构化提示词 (可编辑, 缺省用默认)。 */
   structurerPrompt?: string;
   /** AI 规则提炼提示词 (可编辑, 缺省用默认)。 */
@@ -24,8 +22,9 @@ export interface HxMemorySettings {
 
 export const DEFAULT_SETTINGS: HxMemorySettings = {
   autoCapture: true,
-  autoMemoryInterval: 5,
+  autoMemoryInterval: 1,
   rootAgentsOnly: true,
   language: "zh",
   injectGuidance: true,
+  injectBindings: true,
 };

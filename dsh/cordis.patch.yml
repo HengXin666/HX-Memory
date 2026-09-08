@@ -2,8 +2,6 @@
     - id: hx-memory
       name: "@deepseek-ai/cordis-plugin-group"
       group: true
-      isolate:
-        hxMemory: true
       config:
         - id: hx-memory-runtime
           name: "@hengxin666/hx-memory/dsh"

@@ -1,18 +1,24 @@
 // src/adapters/dsh/index.ts — HX-Memory 的 DSH (cordis) 插件入口。
-// 接线 (ReMe 验证过的模式):
+// 接线:
 //   agent/session-start → 注入记忆指引 (只指引不注入历史)
-//   session/event        → 聚合 turn → 批量捕获入记忆
-//   ctx.tools.register   → memory_search / memory_save
-//   ctx.settings         → 可配置开关
+//   agent/pre-step      → 声明式绑定确定性注入 (见 prestep.ts)
+//   session/event       → 聚合 turn → 批量捕获入记忆 (见 runtime.ts)
+//   ctx.tools.register  → memory_search / memory_save / memory_rule_propose
+//   ctx.settings        → 可配置开关 (经 installSection 接住宿主权威配置源)
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
 import { FileBackend } from "../../storage/file-store.js";
 import { CapturePipeline } from "../../capture/pipeline.js";
 import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
-import { HxMemoryRuntime, type SessionEventLike, type SessionLike } from "./runtime.js";
+import {
+  HxMemoryRuntime,
+  projectOfSession,
+  type SessionEventLike,
+  type SessionLike,
+} from "./runtime.js";
 import { makePreStepHandler } from "./prestep.js";
 import { registerMemoryTools } from "./tools.js";
 import { GeneralizerService } from "../../generalize/service.ts";
@@ -26,12 +32,15 @@ import { InvocationLog } from "./invocations.js";
 import type { LlmInvocationRecord } from "./llm-agent.js";
 import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
 import { Config, MEMORY_SETTINGS_NAMESPACE } from "./settings.js";
+import { createSettingsSource } from "./settings-source.js";
 
 export const name = "hx-memory";
-export const inject = ["agents", "sessions", "tools"];
+// 只硬依赖工具注册表: 事件监听不需要服务, 设置经 ctx.inject 可选接入,
+// llm/agentDefaultModel 用 ctx.get 探测 (缺失时 AI 增强自动回退启发式, 插件照常工作)。
+export const inject = ["tools"];
 
 export interface HxMemoryPluginOptions {
-  /** 记忆根目录 (默认 ~/.dsh/hx-memory 或 $HX_MEMORY_ROOT)。 */
+  /** 记忆根目录 (默认 $DSH_HOME/hx-memory, 再退回 ~/.dsh/hx-memory)。 */
   root?: string;
   /** 存储层 (可选: 不传则用 root 自建默认 FileBackend)。 */
   store?: FileBackend;
@@ -42,9 +51,15 @@ export interface HxMemoryPluginOptions {
   bindings?: BindingConfig[];
 }
 
-/** 默认记忆根: $HX_MEMORY_ROOT → ~/.dsh/hx-memory (与 DSH 的 dsh-home 惯例一致)。 */
-export function defaultMemoryRoot(): string {
-  return process.env.HX_MEMORY_ROOT ?? join(homedir(), ".dsh", "hx-memory");
+/**
+ * 默认记忆根: $HX_MEMORY_ROOT → $DSH_HOME/hx-memory → ~/.dsh/hx-memory。
+ * 跟随 DSH_HOME 很重要: 多实例/CI 用 DSH_HOME 隔离状态, 记忆根不能落在共享的 ~/.dsh。
+ */
+export function defaultMemoryRoot(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.HX_MEMORY_ROOT?.trim()) return env.HX_MEMORY_ROOT.trim();
+  const dshHome = env.DSH_HOME?.trim();
+  if (dshHome) return resolve(dshHome, "hx-memory");
+  return join(homedir(), ".dsh", "hx-memory");
 }
 
 /** 尝试构造 AI 能力; agents 服务不可用或构造失败 → undefined (调用方回退启发式)。 */
@@ -61,11 +76,18 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const root = opts.root ?? defaultMemoryRoot();
   const store = opts.store ?? new FileBackend({ root });
   const reviewDir = opts.reviewDir ?? join(root, "review");
-  const settings: () => HxMemorySettings = () => ({ ...DEFAULT_SETTINGS, ...opts.settings });
+  // 组合配置 (插件 entry) 是 base; 宿主 settings 服务可用时以它的权威值覆盖。
+  const compositionSettings: HxMemorySettings = { ...DEFAULT_SETTINGS, ...opts.settings };
+  const settingsSource = createSettingsSource<HxMemorySettings>(compositionSettings);
+  const settings = (): HxMemorySettings => ({ ...DEFAULT_SETTINGS, ...settingsSource.read() });
+
   const bindingStore = new BindingStore(root);
   const binder = new Binder(
     (q) => store.query(q),
-    () => (root ? bindingStore.list() : (opts.bindings ?? [])),
+    () => {
+      const saved = bindingStore.list();
+      return saved.length ? saved : (opts.bindings ?? []);
+    },
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
   const structurer = safeAgent(() => makeLlmStructurer(ctx, settings));
@@ -79,39 +101,117 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       invocationLog.push(r as LlmInvocationRecord);
     },
   );
-  const runtime = new HxMemoryRuntime(pipe, settings);
-  // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用时回退启发式。
-  const generalizer = new GeneralizerService(store, reviewDir, safeAgent(() => makeLlmAbstractor(ctx, settings)));
+  // 记忆写入失败只记日志: DSH 把未处理的 rejection 当致命错误, 记忆层不能拖垮宿主。
+  const logWarn = (message: string, error: unknown): void => {
+    try {
+      ctx.logger("hx-memory").warn(message, String(error));
+    } catch {
+      // 日志失败不影响宿主
+    }
+  };
+  const runtime = new HxMemoryRuntime(pipe, settings, {
+    onError: (error) => logWarn("capture failed: %s", error),
+  });
+  // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用/失败时回退启发式。
+  const generalizer = new GeneralizerService(
+    store,
+    reviewDir,
+    safeAgent(() => makeLlmAbstractor(ctx, settings)),
+    {
+      onAbstractError: (error, cluster) => {
+        try {
+          ctx
+            .logger("hx-memory")
+            .warn(
+              "abstractor failed for theme %s, fell back to heuristic: %s",
+              cluster.theme,
+              String(error),
+            );
+        } catch {
+          // 日志失败不影响回退
+        }
+      },
+    },
+  );
   const recall = new RecallService((q) => store.query(q));
 
-  // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载
+  // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载。
+  // bindingStore 必须无条件注入 —— 否则面板 saveBindings 永远返回 "binding store not mounted"。
   ctx.effect(() => {
     new HxMemoryGateway(ctx, {
       store,
       generalizer,
-      bindingStore: options.root ? bindingStore : undefined,
+      bindingStore,
       invocations: invocationLog,
     });
     return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
   }, "hx-memory.gateway()");
 
-  // 可选: 用 DSH 设置面板持久化 (若宿主提供 settings 服务)。
-  // 经 @deepseek-ai/dsh-settings 的类型增强, ctx.settings 是真实服务类型。
+  // 设置: 宿主提供 installSection 时把用户层接进来 (必须接住 setSource 的 thunk,
+  // 否则用户改的设置永远不会被读到); 旧宿主没有这个方法就退回组合配置。
   ctx.inject(["settings"], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, MEMORY_SETTINGS_NAMESPACE, Config, settings(), {
-      setSource: () => void 0,
-      onChange: () => void 0,
-      validate: () => void 0,
-    });
+    const service = settingsCtx.settings as unknown as {
+      installSection?: (
+        owner: Context,
+        ns: string,
+        schema: unknown,
+        entry: unknown,
+        hooks: {
+          setSource: (current: () => unknown) => void;
+          onChange: () => void;
+          validate?: (value: unknown) => void;
+        },
+      ) => void;
+      /** 0.1.1 的注册入口 (返回带 get() 的 owner scope)。 */
+      register?: (
+        ns: string,
+        schema: unknown,
+        options?: { base?: Partial<HxMemorySettings> },
+      ) => { get: () => unknown };
+    };
+    if (typeof service.installSection === "function") {
+      // 0.1.2+: installSection 把"权威配置 thunk"交给消费方 (必须接住)。
+      service.installSection(ctx, MEMORY_SETTINGS_NAMESPACE, Config, compositionSettings, {
+        setSource: (current) => {
+          settingsSource.adopt(() => current() as HxMemorySettings);
+        },
+        onChange: () => {
+          // 每次读取都走 settingsSource.read(), 无需缓存失效
+        },
+        validate: () => {
+          // schema 已经校验过取值范围; 这里没有额外约束
+        },
+      });
+      return;
+    }
+    if (typeof service.register === "function") {
+      // 0.1.1: 只有 register(ns, schema, { base }) → 用组合配置做 base, 每次读取走 scope.get()。
+      const scope = service.register(MEMORY_SETTINGS_NAMESPACE, Config, {
+        base: compositionSettings,
+      });
+      settingsSource.adopt(() => scope.get() as HxMemorySettings);
+      return;
+    }
+    try {
+      ctx
+        .logger("hx-memory")
+        .warn(
+          "host settings service exposes neither installSection nor register; using composition settings only",
+        );
+    } catch {
+      // 日志失败不影响功能
+    }
   });
 
   // 工具注册
-  ctx.effect(() => registerMemoryTools(ctx, { store }), "hx-memory.tools()");
+  ctx.effect(() => registerMemoryTools(ctx, { store, generalizer }), "hx-memory.tools()");
 
   // 生命周期
   ctx.effect(() => {
     void pipe.warmUp();
-    return () => runtime.onSessionEnd({ id: "*" });
+    // 卸载时冲刷缓冲: cordis 会 await 返回 promise 的 disposer, 所以这里必须把 promise 返回
+    // 而不是 void 掉 (flushAll 里可能包含一次最长 15s 的 LLM 调用)。
+    return () => runtime.flushAll();
   }, "hx-memory.lifecycle()");
 
   // 会话开始: 注入记忆指引 + 跨项目规则召回 (只注入规则, 不注入历史)
@@ -120,9 +220,14 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       payload as { agent: { ctx: Context; session: SessionLike; inject: (m: unknown) => void } }
     ).agent;
     runtime.onSessionStart(agent.session);
+    // subagent 不注入指引/绑定: 它拿到的任务提示词由父 agent 组织, 塞记忆反而污染委派语义。
+    // 与 runtime.capture 同口径: undefined 视为"过滤 subagent"。
+    if (settings().rootAgentsOnly !== false && agent.session.header?.origin === "subagent") {
+      return;
+    }
     if (!settings().injectGuidance) return;
     const parts: string[] = [];
-    const project = agent.session.id;
+    const project = projectOfSession(agent.session) ?? agent.session.id;
     const guidance = memoryGuidance(settings().language);
     // 新线 (VCP 式): 项目声明绑定 → 会话开始即确定性注入绑定规则集 (不依赖模型自觉)
     const bound = binder.injectFor(project, "");
@@ -151,13 +256,22 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     "agent/pre-step",
     makePreStepHandler(binder, {
       rootAgentsOnly: () => settings().rootAgentsOnly,
-      enabled: () => settings().injectGuidance,
+      enabled: () => settings().injectBindings,
+      projectOf: (payload) => projectOfSession(payload.agent.session) ?? payload.agent.session.id,
     }) as never,
   );
 
   // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
   ctx.on("session/event", (session: unknown, event: unknown) => {
-    void runtime.capture(session as SessionLike, event as SessionEventLike);
+    void runtime
+      .capture(session as SessionLike, event as SessionEventLike)
+      .catch((error: unknown) => logWarn("capture failed: %s", error));
+  });
+
+  // 会话离开 store: 立即冲刷未落盘的 turn 并回收状态 (否则 autoMemoryInterval>1 时,
+  // 已结束会话的缓冲会一直留到插件卸载)。
+  ctx.on("session/disposed", (session: unknown) => {
+    runtime.onSessionEnd(session as SessionLike);
   });
 }
 

@@ -1,13 +1,15 @@
-// src/adapters/dsh/llm-agent.ts — 经 DSH agents 服务调一个最小 agent 做总结/结构化。
-// 形态: ctx.agents 是 DSH 官方 agent 生命周期服务 (dsh-agent); 我们只做"一次最小对话":
-//   - 用独立 session (不污染用户会话);
-//   - 单轮 prompt, 要求纯文本输出;
-//   - 超时/失败 → 抛错, 由调用方 (structurer/abstractor) 回退启发式。
-// 不直接 import dsh-agent (非声明依赖): 用宽松结构类型, 运行时若 agents 不可用则立即回退。
+// src/adapters/dsh/llm-agent.ts — 一次性文本调用 (结构化/提炼用的"最小 LLM 调用")。
+//
+// 为什么不用 ctx.agents.create(): 那会造一个**完整 agent** —— 它拥有工具面、产生自己的
+// 会话事件, 而本插件在根级监听 session/event, 于是子会话的 user/message 会被再次捕获 →
+// 递归调用 + 会话文件污染 (第一方做法见 dsh-session-title-llm: 用 ctx.llm.stream 直接发一次
+// 请求, 无 agent、无工具、无会话事件)。这里采用同一形态。
 import type { Context } from "@deepseek-ai/cordis";
+import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 
 export interface AgentCallOptions {
-  /** 任务描述 (显示用)。 */
+  /** 任务描述 (显示/审计用)。 */
   task: string;
   /** 系统提示词。 */
   system: string;
@@ -15,6 +17,8 @@ export interface AgentCallOptions {
   input: string;
   /** 超时毫秒。 */
   timeoutMs?: number;
+  /** 最大输出 token。 */
+  maxTokens?: number;
 }
 
 /** 一次调用的可审计记录 (面板「调用记录」tab + host 事件)。 */
@@ -28,16 +32,48 @@ export interface LlmInvocationRecord {
   at: string;
 }
 
-/** 宽松的 agents 服务形态 (运行时探测, 不静态依赖 dsh-agent)。 */
-interface AgentsLike {
-  create?(options: unknown): Promise<unknown>;
+interface StreamOptionsLike {
+  provider: string;
+  model: string;
+  messages: unknown[];
+  system?: string;
+  maxTokens?: number;
+  signal?: AbortSignal;
 }
 
-/** 宽松的 agent handle: 只取最终文本。 */
-export async function agentSummarize(
-  ctx: Context,
-  opts: AgentCallOptions,
-): Promise<string> {
+interface LlmServiceLike {
+  stream(options: StreamOptionsLike): AsyncIterable<unknown>;
+}
+
+interface DefaultModelLike {
+  currentSelection?: () => { provider?: string; model?: string } | undefined;
+}
+
+/** 从宿主默认模型服务解析 provider/model; 取不到就抛错 (调用方回退启发式)。 */
+export function resolveRoute(ctx: Context): { provider: string; model: string } {
+  const service = (ctx as unknown as { get?: (name: string) => unknown }).get?.(
+    "agentDefaultModel",
+  ) as DefaultModelLike | undefined;
+  const selection = service?.currentSelection?.();
+  if (!selection?.provider || !selection.model) {
+    throw new Error("hx-memory: no default model selected (agentDefaultModel)");
+  }
+  return { provider: selection.provider, model: selection.model };
+}
+
+/** 取模型输出的纯文本 (忽略 tool-call 块)。 */
+function textOfChunks(assembler: BlockAssembler): string {
+  return assembler
+    .blocks()
+    .map((block) => (block.type === "text" ? String((block as { text?: unknown }).text ?? "") : ""))
+    .join("");
+}
+
+/**
+ * 调一次模型并返回文本。失败 (无 llm 服务 / 无默认模型 / 超时 / 空输出) 抛错,
+ * 由调用方回退启发式 —— 记忆捕获不能因为一次 AI 故障而失败。
+ */
+export async function agentSummarize(ctx: Context, opts: AgentCallOptions): Promise<string> {
   const started = Date.now();
   const record: LlmInvocationRecord = {
     task: opts.task,
@@ -57,48 +93,81 @@ export async function agentSummarize(
         "hx-memory/llm-invocation",
         record,
       );
-      ctx.logger("hx-memory").info(
-        "[llm] %s %s (%dms) %s",
-        ok ? "ok" : "fail",
-        opts.task,
-        record.ms,
-        ok ? "" : out.slice(0, 200),
-      );
+      ctx
+        .logger("hx-memory")
+        .info(
+          "[llm] %s %s (%dms) %s",
+          ok ? "ok" : "fail",
+          opts.task,
+          record.ms,
+          ok ? "" : out.slice(0, 200),
+        );
     } catch {
       // 事件/日志失败不阻断
     }
     return out;
   };
-  const agents = (ctx as unknown as { agents?: AgentsLike }).agents;
-  if (!agents?.create) throw new Error("hx-memory: agents service unavailable");
-  const handle = await agents.create({
-    // 最小 agent: 单轮纯文本响应, 不进入用户会话
-    session: {
-      seed: [{ role: "system", content: opts.system }, { role: "user", content: opts.input }],
-    },
-    options: {
-      maxTurns: 1,
-      maxSteps: 2,
-      model: undefined, // 用宿主默认
-    },
-  });
-  const h = handle as unknown as {
-    session?: { messages?: Array<{ role: string; content?: unknown }> };
-    text?(): Promise<string>;
-  };
-  // 优先取 session 里最后一条 assistant 文本
-  const msgs = h.session?.messages ?? [];
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i];
-    if (m?.role === "assistant") {
-      const c = m.content;
-      if (typeof c === "string") return c;
-      if (Array.isArray(c)) {
-        const t = c.map((x) => (typeof x === "string" ? x : (x as { text?: string })?.text ?? "")).join("");
-        if (t) return t;
-      }
-    }
+
+  const llm = (ctx as unknown as { get?: (name: string) => unknown }).get?.("llm") as
+    LlmServiceLike | undefined;
+  if (typeof llm?.stream !== "function") {
+    throw new Error("hx-memory: llm service unavailable");
   }
-  if (h.text) return await h.text();
-  throw new Error("hx-memory: agent returned no text");
+
+  const timeoutMs = opts.timeoutMs ?? 15000;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  // 超时自己拒绝, 不依赖流实现配合 abort: 否则一个不响应 signal 的适配器会让捕获永久挂住。
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      const error = new Error("hx-memory: llm call timed out after " + timeoutMs + "ms");
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    const route = resolveRoute(ctx);
+    const assembler = new BlockAssembler();
+    const stream = llm.stream({
+      provider: route.provider,
+      model: route.model,
+      system: opts.system.trim() || undefined,
+      maxTokens: opts.maxTokens ?? 512,
+      signal: controller.signal,
+      messages: [
+        createUserMessage({
+          content: [{ type: "text", text: opts.input }],
+          source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
+        }),
+      ],
+    });
+    const consume = (async () => {
+      for await (const chunk of stream) assembler.push(chunk as never);
+    })();
+    consume.catch(() => {
+      // 超时后流仍可能拒绝: 这里挂一个 handler, 避免 unhandled rejection
+    });
+    await Promise.race([consume, deadline]);
+    if (timedOut) throw new Error("hx-memory: llm call timed out after " + timeoutMs + "ms");
+    // 失败不是异常而是终止块: dsh-llm 把 adapter/dispatch 故障归一化成 finish{kind:'error'|'aborted'},
+    // 此时已流出的文本是**不完整**的, 必须丢弃 (否则半截 "RULE: ..." 会被当成成功提议)。
+    const reason = (assembler.finish as { kind?: string } | undefined)?.kind;
+    if (reason === "error" || reason === "aborted") {
+      throw new Error("hx-memory: llm stream finished with " + reason);
+    }
+    if (reason === "max-tokens") {
+      throw new Error("hx-memory: llm output truncated (max-tokens)");
+    }
+    const text = textOfChunks(assembler).trim();
+    if (!text) throw new Error("hx-memory: llm returned no text");
+    return finish(text, true);
+  } catch (error) {
+    finish(String(error), false);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }

@@ -51,9 +51,9 @@ describe("gateway 依赖端口 (review 流)", () => {
     expect(typeof item.proposal.confidence).toBe("number");
   });
 
-  it("confirm 后 listQueue 状态变 confirmed, rule 落库带确认", () => {
+  it("confirm 后 listQueue 状态变 confirmed, rule 落库带确认", async () => {
     const item = generalizer.listQueue("proposed")[0]!;
-    const res = generalizer.confirm(item.id, "user:dsh-web");
+    const res = await generalizer.confirm(item.id, "user:dsh-web");
     expect(res.ok).toBe(true);
     expect(res.ruleId).toBeTruthy();
     const rules = store.query({ kind: "rule" });

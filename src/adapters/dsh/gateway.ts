@@ -4,6 +4,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import type { FileBackend } from "../../storage/file-store.ts";
+import type { MemoryStore } from "../../kernel/ports.ts";
 import type { BindingStore } from "../../bindings/store.ts";
 import type { BindingConfig } from "../../kernel/binder.ts";
 import type {
@@ -16,8 +17,12 @@ import type { LlmInvocationRecord } from "./llm-agent.js";
 
 /** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
 export interface HxMemoryGatewayDeps {
-  store: Pick<FileBackend, "query" | "get" | "remove" | "recent">;
-  generalizer: Pick<GeneralizerService, "listQueue" | "confirm" | "reject" | "runBatch">;
+  /** 面板只需要端口能力 + recent (面板专属的"最近沉淀"视图)。 */
+  store: Pick<MemoryStore, "query" | "get" | "remove"> & Pick<FileBackend, "recent">;
+  generalizer: Pick<
+    GeneralizerService,
+    "listQueue" | "confirm" | "reject" | "runBatch" | "runRecent" | "enqueueProposal"
+  >;
   /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
   bindingStore?: BindingStore;
   /** AI 调用记录 (可选: 不注入则「调用记录」tab 不可用)。 */
@@ -50,12 +55,35 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   @Remote("reviewQueue")
-  reviewQueue(status?: ProposalStatus): ReviewQueueView[] {
+  reviewQueue(status: ProposalStatus): ReviewQueueView[] {
     return this.deps.generalizer.listQueue(status).map(toView);
   }
 
+  /**
+   * 跑一次推广批次 (从最近的 lesson/pattern/decision 聚类 → 提议进人工队列)。
+   * 这是推广闭环的触发点之一 (另一个是 memory_rule_propose 工具);
+   * 没有触发点时 review 队列永远是空的。
+   */
+  @Remote("runGeneralization")
+  async runGeneralization(
+    limit: number,
+  ): Promise<{ ok: boolean; proposed: number; error?: string }> {
+    try {
+      const created = await this.deps.generalizer.runRecent(
+        "panel:" + new Date().toISOString(),
+        limit,
+      );
+      return { ok: true, proposed: created.length };
+    } catch (e) {
+      return { ok: false, proposed: 0, error: String(e) };
+    }
+  }
+
   @Remote("confirmProposal")
-  confirmProposal(id: string, by: string): { ok: boolean; ruleId?: string; error?: string } {
+  confirmProposal(
+    id: string,
+    by: string,
+  ): Promise<{ ok: boolean; ruleId?: string; error?: string }> {
     return this.deps.generalizer.confirm(id, by);
   }
 
@@ -118,8 +146,8 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   @Remote("memoryQuery")
-  memoryQuery(q: { text?: string; kind?: string; limit?: number }): unknown[] {
-    const hits = this.deps.store.query({
+  async memoryQuery(q: { text?: string; kind?: string; limit?: number }): Promise<unknown[]> {
+    const hits = await this.deps.store.query({
       text: q.text,
       kind: q.kind as never,
       limit: q.limit,

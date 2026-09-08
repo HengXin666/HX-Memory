@@ -1,30 +1,42 @@
 // src/adapters/dsh/client/bindings-page.tsx — 记忆绑定管理页 (VCP 式拓扑)。
 // 列出 项目 → 绑定源, 支持增删改, 保存经 gateway RPC (listBindings/saveBindings)。
+// 字段保真: 面板只编辑 id/kind/scope/project/weight/max/signalWords, 其余字段原样透传,
+// 避免"面板保存一次就抹掉手工写的配置"。
 import { useCallback, useEffect, useState } from "react";
 import type { BindingLocale } from "./locale.js";
+import { callHxMemory, type HxMemoryRpcCaller } from "./rpc.js";
 
-export interface BindingRpc {
-  call(namespace: string, method: string, ...args: unknown[]): Promise<unknown>;
-}
+/** 面板对外暴露的 RPC 面 (供 index.tsx 类型收敛)。 */
+export type BindingRpc = HxMemoryRpcCaller;
 
 interface BindingRow {
   id: string;
-  query: { kind?: string; scope?: string; project?: string };
+  query: { kind?: string; scope?: string; project?: string; [k: string]: unknown };
+  weight?: number;
+  max?: number;
   signalWords?: string[];
+  [k: string]: unknown;
 }
 interface ProjectBindings {
   project: string;
   bindings: BindingRow[];
+  [k: string]: unknown;
 }
 
 interface Props {
-  rpc: BindingRpc;
+  rpc: HxMemoryRpcCaller;
   t: (key: keyof BindingLocale, vars?: Record<string, unknown>) => string;
 }
 
-const NS = "hxMemory";
 const KIND_OPTIONS = ["", "fact", "preference", "decision", "lesson", "rule", "pattern"];
 const SCOPE_OPTIONS = ["", "project", "global", "agent"];
+
+/** 去掉 undefined 字段 (宿主只接受 JSON, undefined 会在序列化时消失但显式清理更稳)。 */
+function compact<T extends Record<string, unknown>>(obj: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v;
+  return out as T;
+}
 
 export function BindingsPage({ rpc, t }: Props): JSX.Element {
   const [configs, setConfigs] = useState<ProjectBindings[]>([]);
@@ -32,8 +44,13 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const list = (await rpc.call(NS, "listBindings")) as ProjectBindings[];
-    setConfigs(list ?? []);
+    try {
+      const list = await callHxMemory<ProjectBindings[]>(rpc, "listBindings");
+      setConfigs(list ?? []);
+    } catch (e) {
+      setMsg(String(e));
+      setConfigs([]);
+    }
   }, [rpc]);
 
   useEffect(() => {
@@ -68,25 +85,34 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
     setSaving(true);
     setMsg("");
     try {
-      // 过滤掉空项目/空绑定名; 空 project 不接受
+      // 过滤掉空项目/空绑定名; 其余字段 (含未知字段) 原样保留。
       const clean = configs
         .filter((x) => x.project.trim())
         .map((x) => ({
+          ...compact(x),
           project: x.project.trim(),
           bindings: x.bindings
             .filter((b) => b.id.trim())
-            .map((b) => ({
-              id: b.id.trim(),
-              query: {
-                ...(b.query.kind ? { kind: b.query.kind } : {}),
-                ...(b.query.scope ? { scope: b.query.scope } : {}),
-                ...(b.query.project ? { project: b.query.project } : {}),
-              },
-              ...(b.signalWords?.length ? { signalWords: b.signalWords } : {}),
-            })),
+            .map((b) =>
+              compact({
+                ...b,
+                id: b.id.trim(),
+                query: compact({
+                  ...b.query,
+                  kind: b.query.kind || undefined,
+                  scope: b.query.scope || undefined,
+                  project: b.query.project || undefined,
+                }),
+                weight: b.weight,
+                max: b.max,
+                signalWords: b.signalWords?.length ? b.signalWords : undefined,
+              }),
+            ),
         }))
         .filter((x) => x.bindings.length);
-      const res = (await rpc.call(NS, "saveBindings", clean)) as { ok?: boolean; error?: string };
+      const res = await callHxMemory<{ ok?: boolean; error?: string }>(rpc, "saveBindings", {
+        configs: clean,
+      });
       setMsg(res.ok === false ? t("saveFailed") + (res.error ?? "") : t("saved"));
       await load();
     } catch (e) {
@@ -100,6 +126,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
     <div className="hxmem-bindings">
       <h3>{t("title")}</h3>
       <p className="meta">{t("desc")}</p>
+      <p className="meta">{t("projectHint")}</p>
       {msg ? <div className="meta">{msg}</div> : null}
       {configs.length === 0 ? (
         <div className="empty">{t("noProjects")}</div>
@@ -163,6 +190,30 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
                       </option>
                     ))}
                   </select>
+                  <input
+                    value={b.weight === undefined ? "" : String(b.weight)}
+                    placeholder={t("weight")}
+                    style={{ width: 60 }}
+                    onChange={(e) => {
+                      const raw = (e.target as HTMLInputElement).value.trim();
+                      const n = raw === "" ? undefined : Number(raw);
+                      setBinding(i, bi, {
+                        weight: n !== undefined && Number.isFinite(n) ? n : undefined,
+                      });
+                    }}
+                  />
+                  <input
+                    value={b.max === undefined ? "" : String(b.max)}
+                    placeholder={t("max")}
+                    style={{ width: 60 }}
+                    onChange={(e) => {
+                      const raw = (e.target as HTMLInputElement).value.trim();
+                      const n = raw === "" ? undefined : Number(raw);
+                      setBinding(i, bi, {
+                        max: n !== undefined && Number.isFinite(n) ? n : undefined,
+                      });
+                    }}
+                  />
                   <input
                     value={(b.signalWords ?? []).join(",")}
                     placeholder={t("signalWords")}

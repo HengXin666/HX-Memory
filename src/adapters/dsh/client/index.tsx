@@ -1,17 +1,17 @@
 // src/adapters/dsh/client/index.tsx — HX-Memory 的 DSH Web client 插件入口。
-// 挂一个 settings 区段: 推广审阅页。经 build-client.mjs 打成 DSH host 可加载的包。
-import { useState } from "react";
-import { ReviewPage, type ReviewRpc } from "./review-page.js";
+// 挂两个 settings 区段: 记忆绑定 (hx-memory-bindings) 与 推广审阅 (hx-memory-review)。
+// 经 build-client.mjs 打成宿主可加载的包 (模块 id = 包名, 见 scripts/lib/wrap-client-bundle.mjs)。
 import { BindingsPage, type BindingRpc } from "./bindings-page.js";
+import { ReviewPage, type ReviewRpc } from "./review-page.js";
 import { bindingEn, bindingZh, reviewEn, reviewZh } from "./locale.js";
 import { styles } from "./styles.js";
+import type { HxMemoryRpcCaller } from "./rpc.js";
 
 const NS = "hx-memory.review";
 const BIND_NS = "hx-memory.bindings";
-const SETTINGS_NS = "hx-memory";
 
 interface ClientContext {
-  get(name: string): { rpc: ReviewRpc };
+  get(name: string): { rpc: HxMemoryRpcCaller };
   effect(factory: () => (() => void) | void, label: string): void;
   locale: {
     bind(namespace: string): (key: string) => string;
@@ -39,7 +39,7 @@ export function apply(ctx: ClientContext): void {
   const t = (key: keyof Dictionary, vars?: Record<string, unknown>) => {
     const raw = ctx.locale.bind(NS)(String(key)) || key;
     if (!vars) return raw;
-    return raw.replace(/\{(w+)\}/g, (_m, name: string) => String(vars[name] ?? ""));
+    return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(vars[name] ?? ""));
   };
   ctx.effect(() => {
     const tag = document.createElement("style");
@@ -57,8 +57,6 @@ export function apply(ctx: ClientContext): void {
         id: "hx-memory-bindings",
         order: 41,
         label: () => ctx.locale.bind(BIND_NS)("nav"),
-        meta: { icon: "memory" },
-        locale: BIND_NS,
         inject: () => ({ rpc, t: tBind }),
       },
       BindingsPage,
@@ -71,11 +69,11 @@ export function apply(ctx: ClientContext): void {
         id: "hx-memory-review",
         order: 40,
         label: () => ctx.locale.bind(NS)("nav"),
-        meta: { icon: "memory" },
-        locale: NS,
         inject: () => ({ rpc, t }),
       },
       ReviewPage,
     ),
   );
 }
+
+export type { ReviewRpc, BindingRpc };

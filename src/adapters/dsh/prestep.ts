@@ -3,19 +3,28 @@
 // 契约 (对齐 @deepseek-ai/dsh-agent-instructions 的权威写法):
 //   ctx.on("agent/pre-step", async ({agent,messages,step,signal}, next) => {
 //     const decision = await next();
-//     ... 把要注入的上下文消息追加到 decision.messages (lastClaimedIndex+1) ...
+//     ... 把要注入的上下文消息追加到 decision.messages ...
 //     return { kind: "enter", messages: ... };
 //   });
 // 关键差异: 注入与否由 Binder 代码判定 (声明绑定 + 信号词), 与模型是否调工具无关。
+//
+// 去重 (2026-09 修正): 注入出去的消息会进入会话日志, 不会出现在下一个 step 的 claimed
+// batch 里 —— 只看 decision.messages 会每步重复注入。因此必须扫**模型可见的**历史事件
+// (session-events.ts: 版本无关 + 按 surface 过滤) 里本插件 source 的注入。
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Binder } from "../../kernel/binder.ts";
 import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
+import { sessionEvents } from "./session-events.js";
 
-/** 从会话消息里提取最新一条用户文本 (content 可为 string 或 parts 数组)。 */
+/** 从会话消息里提取最新一条**直接用户**文本 (content 可为 string 或 parts 数组)。 */
 export function latestUserText(messages: unknown[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i] as { role?: string; content?: unknown } | undefined;
+    const m = messages[i] as
+      { role?: string; source?: { kind?: string }; content?: unknown } | undefined;
     if (!m || m.role !== "user") continue;
+    // 只认直接用户输入: plugin 注入的上下文 (AGENTS.md baseline/time-context/skill 目录)
+    // 也是 role:user, 拿它当检索 query 会引入噪声。
+    if (m.source?.kind !== undefined && m.source.kind !== "user") continue;
     const c = m.content;
     if (typeof c === "string") return c;
     if (Array.isArray(c)) {
@@ -43,14 +52,39 @@ function messageTextOf(m: unknown): string {
   return "";
 }
 
+/**
+ * 本插件在本次会话里已经注入过的文本 (跨 step/跨轮去重)。
+ * 读的是 surface 可见事件 (sessionEvents), 因此 compaction 遮蔽后不会再误判"已注入"。
+ */
+export function priorInjections(agent: unknown): Set<string> {
+  const out = new Set<string>();
+  const session = (agent as { session?: unknown } | undefined)?.session;
+  for (const ev of sessionEvents(session)) {
+    const e = ev as {
+      type?: string;
+      data?: { source?: { kind?: string; plugin?: string }; content?: unknown };
+    };
+    if (e?.type !== "user/message") continue;
+    if (e.data?.source?.kind !== "plugin" || e.data.source.plugin !== MEMORY_PLUGIN_SOURCE) {
+      continue;
+    }
+    const text = messageTextOf({ content: e.data.content });
+    if (text) out.add(text);
+  }
+  return out;
+}
+
 export interface PreStepEnterDecision {
   kind: "enter";
   messages: unknown[];
 }
 export type PreStepDecision = { kind: "reject" } | PreStepEnterDecision;
 
-interface PreStepPayload {
-  agent: { session: { id: string; header?: { origin?: string } } };
+export interface PreStepPayload {
+  agent: {
+    /** 真实 Session: 事件入口因版本而异, 统一走 session-events.ts 读取。 */
+    session: { id: string; header?: { origin?: string; cwd?: string }; [key: string]: unknown };
+  };
   messages: unknown[];
   step: number;
   signal?: { aborted: boolean };
@@ -59,8 +93,14 @@ interface PreStepPayload {
 /** 逐轮确定性注入处理器。返回 DSH waterfall 的 handler。 */
 export function makePreStepHandler(
   binder: Binder,
-  options: { rootAgentsOnly: () => boolean; enabled: () => boolean },
+  options: {
+    rootAgentsOnly: () => boolean;
+    enabled: () => boolean;
+    /** 项目键派生 (默认取 session.id, 测试与 DSH adapter 可覆盖)。 */
+    projectOf?: (payload: PreStepPayload) => string;
+  },
 ) {
+  const projectOf = options.projectOf ?? ((p: PreStepPayload) => p.agent.session.id);
   return async (
     payload: PreStepPayload,
     next: () => Promise<PreStepDecision>,
@@ -68,23 +108,28 @@ export function makePreStepHandler(
     const decision = await next();
     if (decision.kind !== "enter") return decision;
     const agent = payload.agent;
-    if (options.rootAgentsOnly() && agent.session.header?.origin === "subagent") return decision;
+    // 与 runtime/index 同口径: undefined 视为"过滤 subagent"。
+    if (options.rootAgentsOnly() !== false && agent.session.header?.origin === "subagent") {
+      return decision;
+    }
     if (!options.enabled()) return decision;
-    const project = agent.session.id;
+    if (payload.signal?.aborted) return decision;
+    const project = projectOf(payload);
     const text = latestUserText(payload.messages);
     if (!text) return decision;
     const bound = binder.injectFor(project, text);
     if (!bound) return decision;
-    // 内容去重: 若同一条注入块已在本 context 中, 跳过 (天然跨轮/跨步正确)
+    const injectedText = "【HX-Memory 绑定注入】\n" + bound;
+    // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
+    const msgs = decision.messages as unknown[];
+    if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;
+    if (priorInjections(agent).has(injectedText)) return decision;
     const injected = createUserMessage({
-      content: [{ type: "text", text: "【HX-Memory 绑定注入】\n" + bound }],
+      content: [{ type: "text", text: injectedText }],
       source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
     });
-    const msgs = decision.messages as unknown[];
-    const claimed = payload.messages as unknown[];
-    const injectedText = "【HX-Memory 绑定注入】\n" + bound;
-    if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;
     // 插到最后一条 claimed 消息之后 (对齐 agent-instructions)
+    const claimed = payload.messages as unknown[];
     let idx = msgs.length - 1;
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (claimed.includes(msgs[i])) {
@@ -95,9 +140,4 @@ export function makePreStepHandler(
     const nextMsgs = [...msgs.slice(0, idx + 1), injected, ...msgs.slice(idx + 1)];
     return { kind: "enter", messages: nextMsgs };
   };
-}
-
-/** 每次 turn/start 清空注入去重 (新轮允许重新注入)。 */
-export function resetPrestepState(): void {
-  // 由 runtime 在 turn/start 调用: 无外部状态时是 no-op (状态在 handler 闭包里)。
 }

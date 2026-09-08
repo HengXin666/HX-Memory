@@ -1,8 +1,9 @@
 // src/adapters/dsh/tools.ts — 向 DSH 注册记忆工具。
 // 只读工具 memory_search; 主动工具 memory_save / memory_rule_propose。
-// 工具注册经 ctx.tools.register (ReMe 验证模式)。
+// 工具注册经 ctx.tools.register (defineTool 的 parameters/output/presentCall 契约)。
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import type { FileBackend } from "../../storage/file-store.js";
+import type { FileBackend } from "../../storage/file-store.ts";
+import type { GeneralizerService } from "../../generalize/service.ts";
 
 export interface ToolRegistryContext {
   tools: { register(tool: ReturnType<typeof defineTool>): () => void };
@@ -10,6 +11,8 @@ export interface ToolRegistryContext {
 
 export interface MemoryToolDeps {
   store: FileBackend;
+  /** 规则提议工具需要推广服务 (提议只进人工队列, 永不自动落 rule)。 */
+  generalizer: GeneralizerService;
 }
 
 export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDeps): () => void {
@@ -61,7 +64,11 @@ export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDe
         parameters: {
           content: { type: "string", required: true, description: "What to remember." },
           kind: { type: "string", description: "fact | preference | decision | lesson | pattern" },
-          project: { type: "string", description: "Project scope; omit for agent scope." },
+          project: {
+            type: "string",
+            description:
+              "Project key (usually the working directory's folder name); omit for agent scope.",
+          },
         },
         async execute(args) {
           const content = String(args.content || "").trim();
@@ -69,20 +76,71 @@ export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDe
           const kind = String(args.kind || "fact").trim();
           const allowed = ["fact", "preference", "decision", "lesson", "pattern"];
           if (!allowed.includes(kind)) return "Error: kind must be one of " + allowed.join(", ");
+          const project = String(args.project || "").trim();
           const entry = deps.store.add({
             kind: kind as never,
             content,
             source: "session:tool",
-            scope: args.project ? "project" : "agent",
+            scope: project ? "project" : "agent",
+            ...(project ? { project } : {}),
             ts: { validAt: new Date().toISOString(), assertedAt: new Date().toISOString() },
           });
-          return "Saved " + kind + " memory " + entry.id;
+          return (
+            "Saved " + kind + " memory " + entry.id + (project ? " (project: " + project + ")" : "")
+          );
         },
         output: { schema: { type: "string" }, render: (_a, v) => [{ type: "text", text: v }] },
         presentCall: (args) => ({
           card: "generic",
           kind: "other",
           title: "memory_save",
+          rawInput: args,
+        }),
+      }),
+    ),
+  );
+
+  disposers.push(
+    ctx.tools.register(
+      defineTool({
+        name: "memory_rule_propose",
+        description: [
+          "Propose a candidate cross-project rule abstracted from concrete experiences.",
+          "The proposal only enters the human review queue; it NEVER becomes a rule by itself.",
+        ].join(" "),
+        parameters: {
+          rule: {
+            type: "string",
+            required: true,
+            description: "One actionable cross-project rule.",
+          },
+          covers: {
+            type: "string",
+            description: "Comma-separated memory ids this rule was abstracted from (optional).",
+          },
+          confidence: { type: "number", description: "0-1 self-reported confidence (optional)." },
+        },
+        async execute(args) {
+          const rule = String(args.rule || "").trim();
+          if (!rule) return "Error: rule cannot be empty.";
+          const covers = String(args.covers || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const raw = Number(args.confidence);
+          const proposal = deps.generalizer.enqueueProposal({
+            rule,
+            covers,
+            ...(Number.isFinite(raw) ? { confidence: raw } : {}),
+            sourceRun: "tool:memory_rule_propose",
+          });
+          return "Queued proposal " + proposal.id + " for human review (not a rule yet).";
+        },
+        output: { schema: { type: "string" }, render: (_a, v) => [{ type: "text", text: v }] },
+        presentCall: (args) => ({
+          card: "generic",
+          kind: "other",
+          title: "memory_rule_propose: " + args.rule,
           rawInput: args,
         }),
       }),

@@ -1,6 +1,6 @@
 // src/adapters/dsh/llm-abstractor.ts — Abstractor 的真实 AI 实现 (VCP 式推广的 AI 参与)。
-// 把聚类 (theme + 实例) 交给最小 agent 提炼成跨项目规则提议, 仍过人工闸门。
-// 失败/超时/无 agents 服务 → 抛错, 由 GeneralizerService 回退启发式。
+// 把聚类 (theme + 实例) 交给一次性模型调用提炼成跨项目规则提议, 仍过人工闸门。
+// 失败/超时/无 llm 服务 → 抛错, 由 GeneralizerService 回退启发式。
 import type { Context } from "@deepseek-ai/cordis";
 import type { Abstractor } from "../../generalize/service.ts";
 import { agentSummarize } from "./llm-agent.ts";
@@ -24,6 +24,7 @@ export function makeLlmAbstractor(
         system: fillTemplate(prompt(), { theme: cluster.theme }),
         input,
         timeoutMs: 15000,
+        maxTokens: 1024,
       });
       const rule = /RULE:\s*(.+)/i.exec(out)?.[1]?.trim();
       const conf = /CONFIDENCE:\s*(\d+(?:\.\d+)?)/i.exec(out)?.[1];

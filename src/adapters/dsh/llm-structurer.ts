@@ -1,5 +1,5 @@
 // src/adapters/dsh/llm-structurer.ts — TurnStructurer 的真实 AI 实现。
-// 把 turn 交给最小 agent 结构化 (摘要/标签/要点), 失败回退启发式 (由 pipeline 兜底)。
+// 把 turn 交给一次性模型调用结构化 (摘要/标签/要点), 失败回退启发式 (由 pipeline 兜底)。
 import type { Context } from "@deepseek-ai/cordis";
 import type { TurnStructurer, StructuredTurn } from "../../capture/structurer.ts";
 import { agentSummarize } from "./llm-agent.ts";
@@ -19,6 +19,7 @@ export function makeLlmStructurer(
         system: fillTemplate(prompt(), {}),
         input: input.text,
         timeoutMs: 10000,
+        maxTokens: 1024,
       });
       const json = /\{[\s\S]*\}/.exec(out)?.[0];
       if (!json) throw new Error("structurer: no JSON in agent output");

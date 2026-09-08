@@ -12,7 +12,7 @@ const rule: MemoryEntry = {
   content: "所有容器都要显式设计并发上限",
   source: "t",
   scope: "global",
-  ts: { validAt: "t", assertedAt: "t" },
+  ts: { validAt: "2026-01-01T00:00:00.000Z", assertedAt: "2026-01-01T00:00:00.000Z" },
   confirmedBy: "u",
   confirmedAt: "t",
 };

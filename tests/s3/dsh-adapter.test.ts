@@ -22,7 +22,10 @@ function turnStart(): SessionEventLike {
   return { type: "turn/start", data: { turn: 1 } };
 }
 function userMsg(text: string): SessionEventLike {
-  return { type: "user/message", data: { content: [{ type: "text", text }] } };
+  return {
+    type: "user/message",
+    data: { source: { kind: "user" }, content: [{ type: "text", text }] },
+  };
 }
 function turnEnd(reason: string): SessionEventLike {
   return { type: "turn/end", data: { reason: { kind: reason } } };
