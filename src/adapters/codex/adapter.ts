@@ -10,7 +10,7 @@ import type { HarnessAdapter, TurnData, Recall, SessionContext } from "../../ker
 import type { MemoryEntry, GeneralizationProposal } from "../../kernel/types.ts";
 import type { FileBackend } from "../../storage/file-store.ts";
 import { RecallService } from "../../recall/service.ts";
-import { updateAgentsMd } from "./agents-md.ts";
+import { EMPTY_MARKER, START, updateAgentsMd } from "./agents-md.ts";
 
 export interface CodexAdapterOptions {
   store: FileBackend;
@@ -36,10 +36,17 @@ export class CodexAdapter implements HarnessAdapter {
     return this.opts.store.query({ kind: "rule", scope: "global" });
   }
 
-  /** 会话开始: 把规则同步进 AGENTS.md。返回是否更新。 */
+  /**
+   * 会话开始: 把规则同步进 AGENTS.md。返回是否更新。
+   * 保守策略: 索引里查不到规则时**不要**把已有规则段清空 —— 空结果更可能是索引丢失
+   * (虽然 FileBackend 现在会自动重建), 而误清会把已同步的规则抹掉。
+   */
   async onSessionStart(_ctx: SessionContext): Promise<unknown> {
     const existing = existsSync(this.agentsPath) ? readFileSync(this.agentsPath, "utf8") : "";
     const rules = this.confirmedRules();
+    if (rules.length === 0 && existing.includes(START) && !existing.includes(EMPTY_MARKER)) {
+      return { updated: false, rules: 0, skipped: "existing rules section kept (index empty)" };
+    }
     const updated = updateAgentsMd({ existing, rules, language: this.opts.language });
     if (updated !== existing) writeFileSync(this.agentsPath, updated, "utf8");
     return { updated: updated !== existing, rules: rules.length };

@@ -45,4 +45,7 @@ export function updateAgentsMd(opts: AgentsMdOptions): string {
   return existing.slice(0, startIdx) + section + existing.slice(endIdx + END.length);
 }
 
+/** 空规则占位符 (用于区分"本来就没规则"与"索引查不到规则")。 */
+export const EMPTY_MARKER = "_暂无已确认规则。_";
+
 export { START, END };
