@@ -6,6 +6,7 @@
 //   3. 项目内 lesson/pattern 按需召回。
 // 诚实边界: 无语义向量, 用关键词命中评分; 后续可换 VectorBackend (可插拔存储)。
 import type { MemoryEntry, Query } from "../kernel/types.ts";
+import type { SyncMemoryStore } from "../kernel/ports.ts";
 
 export interface RecallInput {
   /** 当前任务文本 (如用户问题/会话首条)。 */
@@ -39,34 +40,43 @@ function topWords(text: string): string[] {
 }
 
 export class RecallService {
-  constructor(private readonly queryFn: (q: Query) => MemoryEntry[]) {}
+  /** 依赖同步查询面 (会话开始/预步是同步判定点)。 */
+  constructor(private readonly queryFn: SyncMemoryStore["query"]) {}
 
   /** 召回: 全局规则 + 项目内经验。纯逻辑, 无副作用。 */
   recall(input: RecallInput): RecallOutput {
     const limit = input.limit ?? 6;
     const words = topWords(input.text ?? "");
 
-    // 1) 全局确认规则 — 跨项目不变量, 始终候选
-    const allRules = this.queryFn({ kind: "rule", scope: "global" });
+    // 1) 全局确认规则 — 跨项目不变量, 始终候选。
+    //    必须自己再校验一次确认记录: 存储闸门挡的是写入, 这里挡的是"任何来源的 rule 条目"。
+    const allRules = this.queryFn({ kind: "rule", scope: "global" }).filter((r) =>
+      Boolean(r.confirmedBy && r.confirmedAt),
+    );
     const rules = allRules
       .map((r) => ({ r, s: words.length ? score(r.content, words) : 1 }))
       .sort((a, b) => b.s - a.s)
       .slice(0, limit)
       .map((x) => x.r);
 
-    // 2) 项目内经验 — 仅在有查询文本时召回 (本地经验是"按需"而非"总是")
+    // 2) 项目内经验 — 仅在有查询文本时召回 (本地经验是"按需"而非"总是")。
+    //    按词 OR 打分而不是把整串丢给 LIKE: 后者只有"整串连续出现"才命中, 多词查询恒为空。
     const local: MemoryEntry[] = [];
     if (words.length) {
-      const localQuery: Query = { text: words.join(" ") };
+      const localQuery: Query = {};
       if (input.project) {
         localQuery.scope = "project";
         localQuery.project = input.project;
       }
-      localQuery.limit = limit;
+      localQuery.limit = Math.max(limit * 8, 50);
       local.push(
         ...this.queryFn(localQuery)
           .filter((e) => e.kind === "lesson" || e.kind === "pattern" || e.kind === "decision")
-          .slice(0, limit),
+          .map((e) => ({ e, s: score(e.content, words) }))
+          .filter((x) => x.s > 0)
+          .sort((a, b) => b.s - a.s)
+          .slice(0, limit)
+          .map((x) => x.e),
       );
     }
 

@@ -7,6 +7,7 @@
 //   manifest: "通过向量检索动态地将日记内容注入到系统提示词中"。
 // 这里落到声明式、类型化、可测试形态: MemoryBinding + 确定性判定。
 import type { MemoryEntry, Query } from "./types.ts";
+import type { SyncMemoryStore } from "./ports.ts";
 
 /** 每个绑定: 查询条件 + 权重 + 条数预算 + 可选信号词门控。 */
 export interface MemoryBinding {
@@ -84,8 +85,9 @@ export function formatBoundEntries(heading: string, entries: MemoryEntry[]): str
  *  新线: 项目声明的 bindings 先于模型思考被解析, 命中即注入, 与模型自觉无关。
  */
 export class Binder {
+  /** 依赖同步查询面 (pre-step 是同步判定点); 异步后端需要自带缓存层。 */
   constructor(
-    private readonly queryFn: (q: Query) => MemoryEntry[],
+    private readonly queryFn: SyncMemoryStore["query"],
     private readonly configs: () => BindingConfig[],
   ) {}
 

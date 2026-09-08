@@ -2,7 +2,7 @@
 // No network, no harness: pure kernel logic only.
 import { describe, expect, it } from "vitest";
 import { expandEvolutionChain, sliceAt } from "../../src/kernel/evolution.ts";
-import type { MemoryEntry } from "../../src/kernel/types.ts";
+import type { GeneralizationProposal, MemoryEntry } from "../../src/kernel/types.ts";
 
 function v1(): MemoryEntry {
   return {
@@ -74,15 +74,25 @@ describe("kernel: supersedes evolution chain", () => {
     expect(current?.id).toBe("b");
   });
 
-  it("generalization proposal is a proposal: never auto-confirmed", () => {
-    const prop = {
+  it("proposal 的 suggestedAction 只是建议, 不是确认记录", () => {
+    // 真正的不变量在存储层: 没有 confirmedBy/confirmedAt 的 rule 写不进去 (见
+    // tests/s2/file-store.test.ts 的 rule confirmation gate)。这里只锁住类型语义。
+    const prop: GeneralizationProposal = {
       rule: "all containers need concurrency policy",
       covers: ["e1", "e2"],
       confidence: 0.8,
-      suggestedAction: "confirm" as const,
+      suggestedAction: "confirm",
       generatedAt: "2026-09-06",
     };
-    expect(prop.suggestedAction).toBe("confirm");
-    expect(prop.covers.length).toBeGreaterThanOrEqual(1);
+    const asEntry: MemoryEntry = {
+      id: "x",
+      kind: "rule",
+      content: prop.rule,
+      source: "generalizer:test",
+      scope: "global",
+      ts: { validAt: prop.generatedAt, assertedAt: prop.generatedAt },
+    };
+    expect(asEntry.confirmedBy).toBeUndefined();
+    expect(asEntry.confirmedAt).toBeUndefined();
   });
 });

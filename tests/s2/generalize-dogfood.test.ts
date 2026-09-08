@@ -31,7 +31,7 @@ it("self-proof: 并发事故 → 跨项目规则 (人工闸门)", async () => {
 
   // 3) 人工确认 → 成为全局规则, 带确认记录 + generalizes 关联回实例
   const pid = proposals.find((p) => p.proposal.covers.length >= 3)!.id;
-  const res = g.confirm(pid, "user:hengxin");
+  const res = await g.confirm(pid, "user:hengxin");
   expect(res.ok).toBe(true);
   const rules = store.query({ kind: "rule" });
   expect(rules.length).toBe(1);

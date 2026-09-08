@@ -52,12 +52,12 @@ describe("GeneralizerService: 推广 + 人工闸门", () => {
   });
 
   it("confirm() gates: rejected/nonexistent id returns error", async () => {
-    const bad = service.confirm("p-does-not-exist", "user:hengxin");
+    const bad = await service.confirm("p-does-not-exist", "user:hengxin");
     expect(bad.ok).toBe(false);
     const item = service.listQueue("proposed")[0]!;
-    const dup = service.confirm(item.id, "user:hengxin");
+    const dup = await service.confirm(item.id, "user:hengxin");
     expect(dup.ok).toBe(true); // 首次确认成功
-    const again = service.confirm(item.id, "user:hengxin");
+    const again = await service.confirm(item.id, "user:hengxin");
     expect(again.ok).toBe(false); // 幂等: 已确认不能再确认
   });
 

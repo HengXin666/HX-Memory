@@ -10,7 +10,7 @@ const DB: MemoryEntry[] = [
     content: "所有容器都要显式设计并发上限",
     source: "g",
     scope: "global",
-    ts: { validAt: "t", assertedAt: "t" },
+    ts: { validAt: "2026-01-01T00:00:00.000Z", assertedAt: "2026-01-01T00:00:00.000Z" },
     confirmedBy: "u",
     confirmedAt: "t",
   },
@@ -20,7 +20,7 @@ const DB: MemoryEntry[] = [
     content: "生产库禁止直连",
     source: "g",
     scope: "global",
-    ts: { validAt: "t", assertedAt: "t" },
+    ts: { validAt: "2026-01-01T00:00:00.000Z", assertedAt: "2026-01-01T00:00:00.000Z" },
     confirmedBy: "u",
     confirmedAt: "t",
   },
@@ -30,7 +30,7 @@ const DB: MemoryEntry[] = [
     content: "后端队列并发丢消息",
     source: "s",
     scope: "project",
-    ts: { validAt: "t", assertedAt: "t" },
+    ts: { validAt: "2026-01-01T00:00:00.000Z", assertedAt: "2026-01-01T00:00:00.000Z" },
   },
   {
     id: "l2",
@@ -38,7 +38,7 @@ const DB: MemoryEntry[] = [
     content: "部署忘记健康检查",
     source: "s",
     scope: "project",
-    ts: { validAt: "t", assertedAt: "t" },
+    ts: { validAt: "2026-01-01T00:00:00.000Z", assertedAt: "2026-01-01T00:00:00.000Z" },
   },
 ];
 

@@ -31,7 +31,7 @@ beforeAll(async () => {
   const lessons = store.query({ kind: "lesson" });
   const proposals = await generalizer.runBatch("s6-1", lessons);
   const concurrency = proposals.find((p) => p.proposal.covers.length >= 2)!;
-  generalizer.confirm(concurrency.id, "user:hengxin");
+  await generalizer.confirm(concurrency.id, "user:hengxin");
 });
 
 afterAll(() => {
