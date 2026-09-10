@@ -88,17 +88,7 @@ export class RecallService {
       );
     }
 
-    // 3) 组装注入文本
-    const lines: string[] = [];
-    if (rules.length) {
-      lines.push("【跨项目规则 (已确认)】");
-      for (const r of rules) lines.push("- [" + r.id + "] " + r.content);
-    }
-    if (local.length) {
-      lines.push("【本项目相关经验】");
-      for (const e of local) lines.push("- [" + e.kind + "] " + e.content);
-    }
-    return { rules, local, injected: lines.join("\n") };
+    return { rules, local, injected: formatSections(rules, local) };
   }
 
   /**
@@ -126,15 +116,24 @@ export class RecallService {
       }
       if (local.length < limit) local.push(hit.entry);
     }
-    const lines: string[] = [];
-    if (rules.length) {
-      lines.push("【跨项目规则 (已确认)】");
-      for (const r of rules) lines.push("- [" + r.id + "] " + r.content);
-    }
-    if (local.length) {
-      lines.push("【本项目相关经验】");
-      for (const e of local) lines.push("- [" + e.kind + "] " + e.content);
-    }
-    return { rules, local, injected: lines.join("\n") };
+    return { rules, local, injected: formatSections(rules, local) };
   }
+}
+
+/**
+ * 注入文本的组装 (v1 与 v2 两条召回路径共用)。
+ * 此前这段在两条路径里各写了一遍 —— 任一处改了措辞, 另一个入口的注入就会不一致,
+ * 而这种"两个入口格式不同"的问题不会有任何测试报错 (jscpd 把这类重复标了出来)。
+ */
+function formatSections(rules: readonly MemoryEntry[], local: readonly MemoryEntry[]): string {
+  const lines: string[] = [];
+  if (rules.length) {
+    lines.push("【跨项目规则 (已确认)】");
+    for (const r of rules) lines.push("- [" + r.id + "] " + r.content);
+  }
+  if (local.length) {
+    lines.push("【本项目相关经验】");
+    for (const e of local) lines.push("- [" + e.kind + "] " + e.content);
+  }
+  return lines.join("\n");
 }

@@ -10,8 +10,9 @@
 //
 // 诚实边界: 这仍然是**词汇/字面**方法 (词典驱动的语义), 覆盖不到词典外的同义表达。
 // 真语义请配置远端嵌入器 (embedding-http.ts) —— 两者共用同一个 Embedder 端口, 可随时切换。
-import type { Embedder, SyncEmbedder } from "../kernel/ports.ts";
+import type { SyncEmbedder } from "../kernel/ports.ts";
 import { termStreams } from "../kernel/cjk.ts";
+import { fnv1a32, l2Normalize } from "../kernel/hashing.ts";
 
 /** 同义词表: 每组内的词互相等价, 统一折叠到组内第一个 (规范形式)。 */
 const SYNONYM_GROUPS: readonly (readonly string[])[] = [
@@ -55,15 +56,6 @@ for (const group of SYNONYM_GROUPS) {
   const canonical = group[0] ?? "";
   if (!canonical) continue;
   for (const word of group) CANONICAL.set(word.toLowerCase(), canonical);
-}
-
-function hash32(token: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < token.length; i++) {
-    h ^= token.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h >>> 0;
 }
 
 /** 轻量词形归一: 英文去复数/ing/ed 后缀 (retries→retry, released→releas)。 */
@@ -111,7 +103,7 @@ export class LexicalEmbedder implements SyncEmbedder {
   private embedOne(text: string): number[] {
     const vector = new Array<number>(this.dim).fill(0);
     const add = (token: string, weight: number): void => {
-      const index = hash32(token) % this.dim;
+      const index = fnv1a32(token) % this.dim;
       vector[index] = (vector[index] ?? 0) + weight;
     };
 
@@ -146,11 +138,6 @@ export class LexicalEmbedder implements SyncEmbedder {
       }
     }
 
-    let norm = 0;
-    for (const value of vector) norm += value * value;
-    norm = Math.sqrt(norm);
-    if (norm === 0) return vector;
-    for (let i = 0; i < vector.length; i++) vector[i] = (vector[i] ?? 0) / norm;
-    return vector;
+    return l2Normalize(vector);
   }
 }

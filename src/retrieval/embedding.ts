@@ -8,18 +8,11 @@
 // 诚实边界: 哈希袋向量抓的是**词汇重合**, 不是真正的语义 (同义改写仍可能漏)。
 // 因此它只用于"近似重复的兜底"与"相关度排序的补充信号", 冲突裁决仍然靠显式规则 + 人工闸门。
 import type { Embedder, SyncEmbedder } from "../kernel/ports.ts";
+import { fnv1a32, l2Normalize } from "../kernel/hashing.ts";
 import type { MemoryEntry } from "../kernel/types.ts";
 import { termStreams } from "../kernel/cjk.ts";
 
-/** 稳定哈希 (FNV-1a 32bit): 同一段文本在任何进程/版本上落到同一维度。 */
-function hash32(token: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < token.length; i++) {
-    h ^= token.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h >>> 0;
-}
+
 
 export interface HashingEmbedderOptions {
   /** 维度 (越大冲突越少; 256 对本项目的记忆量级足够)。 */
@@ -53,18 +46,13 @@ export class HashingEmbedder implements SyncEmbedder {
     const streams = termStreams(text);
     // 词流权重高于 bigram 流: 真正的词更能代表语义, bigram 只做召回兜底。
     const add = (token: string, weight: number): void => {
-      const index = hash32(token) % this.dim;
+      const index = fnv1a32(token) % this.dim;
       vector[index] = (vector[index] ?? 0) + weight;
     };
     for (const word of streams.words) add(word, 1);
     for (const bigram of streams.bigrams) add(bigram, 0.5);
-    // L2 归一化: 之后点积即余弦, 长短文本可比。
-    let norm = 0;
-    for (const value of vector) norm += value * value;
-    norm = Math.sqrt(norm);
-    if (norm === 0) return vector;
-    for (let i = 0; i < vector.length; i++) vector[i] = (vector[i] ?? 0) / norm;
-    return vector;
+    // L2 归一化: 之后点积即余弦, 长短文本可比 (零向量原样返回, 不产生 NaN)。
+    return l2Normalize(vector);
   }
 }
 

@@ -125,6 +125,22 @@ export function indexText(text: string): string {
   return (c.words + " " + c.bigrams).trim();
 }
 
+/**
+ * 文本 → 词集 (词流 + bigram 流, 去重)。
+ *
+ * **这是全仓库唯一的"文本 → 词集"实现**。此前 `kernel/ranking.ts`、`trigger/policy.ts`、
+ * `evolution/associate.ts` 各写了一份, 而它们分别服务于"去冗余 / 话题漂移 / 去重裁决" ——
+ * 口径一旦分叉, 同一对文本在不同环节会得出互相矛盾的相似度, 而这类不一致**不会报错**。
+ * 因此统一到本函数: 分词口径只有一处, 改它也只有一个地方要改 (索引侧仍走 termStreams 的分列版本)。
+ */
+export function tokenSet(text: string): Set<string> {
+  const streams = termStreams(text);
+  const set = new Set<string>();
+  for (const t of streams.words) set.add(t);
+  for (const t of streams.bigrams) set.add(t);
+  return set;
+}
+
 /** 一条记忆的可检索文本: 正文 + 摘要 + 要点 + 标签 (标签权重靠后, 由列权体现)。 */
 export function searchableText(entry: MemoryEntry): string {
   const parts = [entry.content];

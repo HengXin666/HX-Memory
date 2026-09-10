@@ -17,7 +17,6 @@ import type {
   MemoryEntryInput,
   MemoryKind,
   MemoryScope,
-  MemoryStatus,
   Query,
   Relation,
   RelationType,

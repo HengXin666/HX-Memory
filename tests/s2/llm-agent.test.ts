@@ -132,7 +132,9 @@ describe("agentSummarize", () => {
     const rejected = expect(pending).rejects.toThrow(/timed out after 10ms/);
     await rejected;
     expect((call.signal as AbortSignal).aborted).toBe(true);
-    expect((emitted[0]?.data as { ok: boolean }).ok).toBe(false);
+    const firstEmit = emitted[0];
+    expect(firstEmit).toBeDefined();
+    expect(((firstEmit as { data: { ok: boolean } }).data as { ok: boolean }).ok).toBe(false);
   });
 
   it("流以 error/aborted/max-tokens 结束时必须失败 (半截输出不能当成功)", async () => {

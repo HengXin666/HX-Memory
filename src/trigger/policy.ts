@@ -16,6 +16,9 @@
 //
 // 纯函数 + 可注入时钟, 无 IO (S1 可测)。
 import type { MemoryEntry } from "../kernel/types.ts";
+// 词集统一走 kernel/cjk 的权威实现: 此前这里另写了一份"只取 bigram"的版本,
+// 与检索/去重的口径不一致 —— 同一对文本会在"话题漂移"与"去重裁决"里得出不同相似度。
+import { tokenSet } from "../kernel/cjk.ts";
 
 /** 一种"回忆意图": 命中任意模式即认为本轮需要历史。 */
 export interface TriggerIntent {
@@ -114,7 +117,7 @@ export interface TriggerPolicyOptions {
   /** 意图命中低于该置信度且无 always-on 内容时不注入 (默认 0.34, 即至少命中 1/3 的模式)。 */
   minConfidence?: number;
   /**
-   * 话题漂移阈值 (默认 0.8, 由实测标定: 同话题含改述 ≤0.73, 换话题 =1.0),
+   * 话题漂移阈值 (默认 0.9, 由实测标定: 同话题含改述与长句追问 ≤0.8, 换话题 =1.0),
    * **一条线决定两件事**:
    *   drift >= 阈值 → 话题已切换, 强制重查;
    *   drift <  阈值 → 同一话题的连续追问, 若上一轮刚注入过则跳过。
@@ -126,20 +129,6 @@ export interface TriggerPolicyOptions {
   alwaysOnBudget?: number;
   /** 意图通道的 token 预算 (默认 300)。 */
   intentBudget?: number;
-}
-
-/** 词集 (词 + 字符 bigram): 用于话题漂移/相似度, 与检索分词同源口径。 */
-function tokenSet(text: string): Set<string> {
-  const set = new Set<string>();
-  const normalized = text.toLowerCase().normalize("NFKC");
-  for (const chunk of normalized.match(/[^\s]+/g) ?? []) {
-    if (/[\u3400-\u9fff]/.test(chunk)) {
-      for (let i = 0; i + 1 < chunk.length; i++) set.add(chunk.slice(i, i + 2));
-    } else if (chunk.length >= 2) {
-      set.add(chunk);
-    }
-  }
-  return set;
 }
 
 /**
@@ -203,7 +192,7 @@ export class TriggerPolicy {
   constructor(opts: TriggerPolicyOptions = {}) {
     this.intents = opts.intents ?? DEFAULT_INTENTS;
     this.minConfidence = opts.minConfidence ?? 0.34;
-    this.driftThreshold = opts.driftThreshold ?? 0.8;
+    this.driftThreshold = opts.driftThreshold ?? 0.9;
     this.alwaysOnBudget = opts.alwaysOnBudget ?? 400;
     this.intentBudget = opts.intentBudget ?? 300;
   }

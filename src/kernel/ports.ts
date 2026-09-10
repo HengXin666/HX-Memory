@@ -40,6 +40,29 @@ export interface SyncMemoryStore {
   query(q: Query): MemoryEntry[];
 }
 
+/**
+ * 适配层需要的**最小存储面**: 比 MemoryStore 多三项"运维/展示"能力, 但依然只依赖端口。
+ *
+ * 为什么需要它: 适配层 (面板网关、工具、Codex CLI) 此前直接 import `FileBackend` 这个**具体类**,
+ * 只为了用 recent / ftsStatus / close —— 这是"端口有缺口"导致的耦合, 会让换存储引擎必须改适配层。
+ * 把这三项提成端口上的可选能力后, 适配层只依赖端口 (由 verify-structure 的端口纯度检查强制)。
+ * 三项全部可选: 不具备的引擎不必假装支持, 降级由调用方判断 —— 不谎报能力是既有原则。
+ */
+export interface MemoryOperations extends SyncMemoryStore {
+  /** 按 id 取一条 (缺失返回 null)。 */
+  get(id: string): MemoryEntry | null;
+  /** 写入一条 (端口要求同步: 适配层与预步路径都在同步上下文里)。 */
+  add(entry: MemoryEntryInput): MemoryEntry;
+  /** 撤回 (默认写 shadow, 永不物理删除)。 */
+  remove(id: string): void;
+  /** 派生索引状态 (面板展示"是否降级为 LIKE"); 无派生索引的引擎可不实现。 */
+  ftsStatus?(): { available: boolean; degraded: string | null; indexed: number; expected: number };
+  /** "最近沉淀"视图 (按写入时间倒序); 不实现时调用方可退回 query。 */
+  recent?(limit?: number): MemoryEntry[];
+  /** 释放资源 (文件/连接句柄)。 */
+  close?(): void;
+}
+
 export interface Capture {
   raw: string;
   at: string;

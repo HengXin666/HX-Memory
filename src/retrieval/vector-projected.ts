@@ -10,15 +10,7 @@
 // 投影过期/未就绪时, 检索结果里会出现 degraded 说明 (不静默)。
 import type { Embedder, IndexDoc, VectorIndex } from "../kernel/ports.ts";
 import { cosine } from "./embedding.ts";
-
-function quickHash(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(36) + ":" + text.length;
-}
+import { contentFingerprint } from "../kernel/hashing.ts";
 
 export interface ProjectedVectorIndexOptions {
   embedder: Embedder;
@@ -76,7 +68,7 @@ export class ProjectedVectorIndex implements VectorIndex {
     const alive = new Set<string>();
     for (const entry of entries) {
       alive.add(entry.id);
-      const hash = quickHash(entry.content);
+      const hash = contentFingerprint(entry.content);
       const previous = this.docs.get(entry.id);
       if (previous && previous.hash === hash) continue;
       this.docs.set(entry.id, { text: entry.content, hash });
@@ -165,7 +157,7 @@ export class ProjectedVectorIndex implements VectorIndex {
   search(query: string, limit: number): Array<{ id: string; score: number }> {
     const trimmed = query.trim();
     if (!trimmed) return [];
-    let queryVector = this.queryCache.get(trimmed);
+    const queryVector = this.queryCache.get(trimmed);
     if (!queryVector) {
       // 先登记查询向量再判空: 否则"索引还空"时第一次检索会直接返回,
       // 查询永远不会进队列 → 投影永远暖不起来 (真实踩过)。

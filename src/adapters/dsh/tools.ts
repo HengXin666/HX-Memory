@@ -2,7 +2,7 @@
 // 只读工具 memory_search; 主动工具 memory_save / memory_rule_propose。
 // 工具注册经 ctx.tools.register (defineTool 的 parameters/output/presentCall 契约)。
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import type { FileBackend } from "../../storage/file-store.ts";
+import type { MemoryOperations } from "../../kernel/ports.ts";
 import type { GeneralizerService } from "../../generalize/service.ts";
 import type { SyncRetriever } from "../../kernel/ports.ts";
 import type { MemoryFacade } from "../../app/facade.ts";
@@ -12,7 +12,7 @@ export interface ToolRegistryContext {
 }
 
 export interface MemoryToolDeps {
-  store: FileBackend;
+  store: MemoryOperations;
   /** 规则提议工具需要推广服务 (提议只进人工队列, 永不自动落 rule)。 */
   generalizer: GeneralizerService;
   /** v2 检索器: 有则 memory_search 走混合检索 (BM25 + 图 + 覆盖率 + 治理闸门)。 */

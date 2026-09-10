@@ -131,7 +131,8 @@ describe("MCP 协议语义 (进程内)", () => {
       method: "tools/call",
       params: { name: "memory_search", arguments: { query: "  " } },
     });
-    expect((bad?.result as { isError?: boolean }).isError).toBe(true);
+    expect(bad).toBeDefined();
+    expect((bad?.result as { isError?: boolean } | undefined)?.isError).toBe(true);
     stack.close();
   });
 
@@ -183,7 +184,7 @@ const child = spawn(process.execPath, ["--no-warnings", "--experimental-strip-ty
 const errors = [];
 child.stderr.on("data", (c) => {
   for (const line of String(c).split("\\n")) {
-    if (/(?:^|\s)(?:Error|TypeError|ReferenceError|UnhandledPromiseRejection)\b|throw new/.test(line)) {
+    if (/(?:^|\\s)(?:Error|TypeError|ReferenceError|UnhandledPromiseRejection)\\b|throw new/.test(line)) {
       errors.push(line);
     }
   }

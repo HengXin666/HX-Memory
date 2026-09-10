@@ -175,7 +175,7 @@ describe("格式 gate (verify-agent-note-format)", () => {
   it("围栏代码块里的示例标题不算结构 (否则无法写格式文档)", () => {
     const content = implementedNote().replace(
       "## Decision",
-      "## Decision\n\n\`\`\`markdown\n## Proposal\n\`\`\`",
+      "## Decision\n\n" + "\u0060".repeat(3) + "markdown\n## Proposal\n" + "\u0060".repeat(3),
     );
     expect(validateAgentNote(note("implemented"), content)).toEqual([]);
   });

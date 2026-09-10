@@ -46,6 +46,20 @@ if ! pnpm run verify-agent-note-format; then
   exit 1
 fi
 
+# 代码质量: lint (未用变量/浮空 promise 类) 与结构 (文件规模/重复率/端口纯度/单一事实源)。
+# 这两道是"防止架构慢慢长歪"的机械约束 —— 它们不会让功能测试变红, 但能拦住持续劣化。
+echo "[verify] lint: oxlint"
+if ! pnpm run lint; then
+  echo "[verify] FAILED: lint" >&2
+  exit 1
+fi
+
+echo "[verify] structure: file size / duplication / port purity / single source"
+if ! pnpm run verify-structure; then
+  echo "[verify] FAILED: verify-structure" >&2
+  exit 1
+fi
+
 # 文档同步: 引用可达 + 结构合规 (学习 DSH 的 doc-sync, 轻量版)。
 echo "[verify] docs: refs + structure"
 if ! pnpm run verify-docs; then

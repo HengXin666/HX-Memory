@@ -8,12 +8,13 @@
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import type { HarnessAdapter, TurnData, Recall, SessionContext } from "../../kernel/ports.ts";
 import type { MemoryEntry, GeneralizationProposal } from "../../kernel/types.ts";
-import type { FileBackend } from "../../storage/file-store.ts";
+// 只依赖端口: 适配层不该知道存储是文件还是别的实现 (由 verify-structure 强制)。
+import type { MemoryOperations } from "../../kernel/ports.ts";
 import { RecallService } from "../../recall/service.ts";
 import { EMPTY_MARKER, START, updateAgentsMd } from "./agents-md.ts";
 
 export interface CodexAdapterOptions {
-  store: FileBackend;
+  store: MemoryOperations;
   /** 仓库根 (AGENTS.md 所在)。 */
   repoRoot: string;
   /** AGENTS.md 相对/绝对路径, 默认 repoRoot/AGENTS.md。 */
@@ -73,7 +74,7 @@ export class CodexAdapter implements HarnessAdapter {
       const out = this.recall.recall({ text: q, limit: 8 });
       return out.injected || "无相关记忆。";
     });
-    registry.define("memory_rule_propose", async (proposal: GeneralizationProposal) => {
+    registry.define("memory_rule_propose", async (_proposal: GeneralizationProposal) => {
       // Codex 场景: 提议直接落 review 队列由人确认 (简化: 返回提示)
       return "推广提议由 HX-Memory review 队列处理, 请用 DSH Web 面板或 CLI 确认。";
     });

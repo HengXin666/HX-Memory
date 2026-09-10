@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": { "correctness": "off" },
+  "env": { "builtin": true },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "src/adapters/dsh/client/**"
+  ],
+  "overrides": [
+    {
+      "files": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+      "rules": {
+        "no-unused-vars": [
+          "error",
+          { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+        ],
+        "no-undef": "off",
+        "no-empty": "error",
+        "no-constant-condition": "error",
+        "no-dupe-keys": "error",
+        "no-unreachable": "error",
+        "no-unused-expressions": "error",
+        "no-var": "error",
+        "prefer-const": "error",
+        "no-useless-escape": "error",
+        "no-unsafe-optional-chaining": "error",
+        "no-fallthrough": "error",
+        "no-self-assign": "error",
+        "no-self-compare": "error",
+        "valid-typeof": "error",
+        "no-unsafe-negation": "error",
+        "no-cond-assign": "error",
+        "no-duplicate-case": "error",
+        "no-sparse-arrays": "error",
+        "use-isnan": "error"
+      }
+    },
+    {
+      "files": ["tests/**/*.ts"],
+      "rules": { "no-unused-vars": "off" }
+    }
+  ]
+}

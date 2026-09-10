@@ -8,8 +8,7 @@
 //   - 规则 (已确认跨项目规则) 走独立通道 + 保底配额: 它们不允许被其它通道挤掉 (v1 是"全量候选", 那样会淹没注入预算);
 //   - 命中 superseded/merged 版本时, 自动沿演化链上溯到最新 active 版本 (注入最新, 历史可查);
 //   - 全部为纯逻辑 + 窄端口, S1 可用假 source 测。
-import type { Query, MemoryEntry, RelationType } from "../kernel/types.ts";
-import { expandEvolutionChain } from "../kernel/evolution.ts";
+import type { MemoryEntry, RelationType } from "../kernel/types.ts";
 import { searchableText, termStreams } from "../kernel/cjk.ts";
 import {
   applyTokenBudget,

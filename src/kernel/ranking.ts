@@ -7,6 +7,7 @@
 //   2. 时间衰减 + 强化 (Ebbinghaus 式: 命中即延长半衰期);
 //   3. 预算裁剪 (token 预算 > 条数上限, 因为"注入多少字"才是真实约束)。
 import type { MemoryEntry, MemoryKind } from "./types.ts";
+import { tokenSet } from "./cjk.ts";
 
 /** 一路召回结果 (已按该通道自己的分数降序)。 */
 export interface RankedList {
@@ -166,27 +167,7 @@ export function jaccardSimilarity(a: string, b: string): number {
   return inter / (setA.size + setB.size - inter);
 }
 
-function tokenSet(text: string): Set<string> {
-  const set = new Set<string>();
-  for (const chunk of text
-    .toLowerCase()
-    .normalize("NFKC")
-    .match(/[^\s]+/g) ?? []) {
-    let run = "";
-    const flush = () => {
-      if (run.length === 1) set.add(run);
-      else for (let i = 0; i + 1 < run.length; i++) set.add(run.slice(i, i + 2));
-      run = "";
-    };
-    for (const ch of chunk) {
-      if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(ch)) run += ch;
-      else flush();
-    }
-    flush();
-    if (!/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(chunk)) set.add(chunk);
-  }
-  return set;
-}
+
 
 /**
  * token 估算: 中文 1 字 ≈ 1 token, 拉丁 ≈ 4 字符 1 token。

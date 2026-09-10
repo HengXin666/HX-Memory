@@ -154,9 +154,11 @@ export function decideEvolution(
     }
   }
 
+  // 冲突/取代判定的覆盖率门槛: 取代用 supersedeFloor, 冲突用 conflictFloor (两者可分别配)。
+  const decisiveFloor = Math.min(supersedeFloor, conflictFloor);
   if (
     best &&
-    best.coverage >= supersedeFloor &&
+    best.coverage >= decisiveFloor &&
     candidateTokens.size >= (opts.minEvidenceTokens ?? 5)
   ) {
     const target = best.entry;
@@ -164,7 +166,8 @@ export function decideEvolution(
     const timeOk = candidate.ts === undefined || candidate.ts.validAt >= target.ts.validAt;
     const kindOk = target.kind === candidate.kind;
     // 目标不是 rule (规则只能由人改), 且四条同时成立才自动取代。
-    if (signal && timeOk && kindOk && target.kind !== "rule") {
+    // 取代要求达到 supersedeFloor (比冲突判定更严) —— 门槛不同是刻意的: 标记冲突比推翻结论安全。
+    if (signal && timeOk && kindOk && target.kind !== "rule" && best.coverage >= supersedeFloor) {
       return {
         action: "supersede",
         targetId: target.id,

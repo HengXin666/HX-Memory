@@ -102,7 +102,7 @@ export function validateAgentNote(
   }
   if (!h2s.includes("## Alternatives considered")) {
     fail(
-      "缺少 \`## Alternatives considered\` (必须记录被否掉的方案与原因, 否则决策会被反复重新争论)",
+      "缺少 ## Alternatives considered (必须记录被否掉的方案与原因, 否则决策会被反复重新争论)",
     );
   }
   return errors;

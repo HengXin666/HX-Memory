@@ -31,7 +31,7 @@ describe("verify-docs", () => {
         "> 边界 (不写什么): 探针。",
         "> 与代码的关系: 探针。",
         "",
-        "引用一个不存在的文件: \`src/definitely-not-here-xyz.ts\`",
+        "引用一个不存在的文件: " + "\u0060" + "src/definitely-not-here-xyz.ts" + "\u0060" + "",
         "",
       ].join("\n"),
       "utf8",

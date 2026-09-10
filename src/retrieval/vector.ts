@@ -10,16 +10,7 @@
 // 它随时可以从真相重建 (派生数据), 这正是它可以被替换的前提。
 import type { IndexDoc, SyncEmbedder, VectorIndex } from "../kernel/ports.ts";
 import { cosine } from "./embedding.ts";
-
-/** 内容指纹 (FNV-1a): 只用来判断"内容变了没有", 不参与检索。 */
-function contentHash(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(36) + ":" + text.length;
-}
+import { contentFingerprint } from "../kernel/hashing.ts";
 
 interface VectorRecord {
   hash: string;
@@ -63,7 +54,7 @@ export class LinearVectorIndex implements VectorIndex {
     // 新旧哈希对账: changed 里只留真正需要重嵌的 id。
     const changed = new Set<string>();
     for (const doc of docs) {
-      const hash = contentHash(doc.content);
+      const hash = contentFingerprint(doc.content);
       const existing = this.records.get(doc.id);
       if (existing && existing.hash === hash) continue;
       pending.push({ id: doc.id, hash, text: doc.content });

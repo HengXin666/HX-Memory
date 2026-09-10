@@ -3,7 +3,7 @@
 //   - TurnStructurer 是端口: DSH adapter 注入真实 agent 实现 (llm-abstractor 里的 agentSummarize);
 //   - 默认 heuristicStructurer 兜底 (离线/失败/测试环境: 纯规则, 确定可测);
 //   - 结构化是"增强"不是"门槛": 失败时原样落盘, 捕获永不因 AI 故障而丢。
-import type { MemoryKind } from "../kernel/types.ts";
+
 
 export interface StructuredTurn {
   /** 提炼后的摘要 (比原文更可检索、可审计)。 */

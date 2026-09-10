@@ -27,7 +27,8 @@ const entry = (over: Partial<MemoryEntry> & { id: string; content: string }): Me
 
 describe("话题漂移 (阈值由实测标定, 断言性质而非魔数)", () => {
   const policy = new TriggerPolicy();
-  const threshold = 0.8;
+  // 阈值与 policy 的默认值保持一致 (实现改了默认值, 测试必须跟着变 —— 不要在这里另抄一份)。
+  const threshold = 0.9;
 
   it("同话题 (含改述与短追问) 落在阈值内, 换话题落在阈值外", () => {
     const sameTopic = [

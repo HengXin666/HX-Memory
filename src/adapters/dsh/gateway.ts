@@ -3,8 +3,8 @@
 // 保持薄: 所有逻辑在 GeneralizerService / FileBackend, 这里只做 RPC 投影。
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
-import type { FileBackend } from "../../storage/file-store.ts";
-import type { MemoryStore } from "../../kernel/ports.ts";
+// 端口缺口已补 (MemoryOperations.recent): 不再需要 Pick<FileBackend> 这种"借具体类要能力"的写法。
+import type { MemoryOperations } from "../../kernel/ports.ts";
 import type { MemoryFacade } from "../../app/facade.ts";
 import type { BindingStore } from "../../bindings/store.ts";
 import type { BindingConfig } from "../../kernel/binder.ts";
@@ -18,8 +18,8 @@ import type { LlmInvocationRecord } from "./llm-agent.js";
 
 /** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
 export interface HxMemoryGatewayDeps {
-  /** 面板只需要端口能力 + recent (面板专属的"最近沉淀"视图)。 */
-  store: Pick<MemoryStore, "query" | "get" | "remove"> & Pick<FileBackend, "recent">;
+  /** 面板只需要端口能力 (含可选的 recent; 未实现时退回 query)。 */
+  store: Pick<MemoryOperations, "query" | "get" | "remove" | "recent">;
   generalizer: Pick<
     GeneralizerService,
     "listQueue" | "confirm" | "reject" | "runBatch" | "runRecent" | "enqueueProposal"
@@ -132,9 +132,14 @@ export class HxMemoryGateway extends TypertRemoteService {
       tags?: string[];
     }>
   > {
+    // recent 在端口上是**可选**的 (不是所有引擎都有"按写入时间倒序"的概念):
+    // 没有就退回 query 并按 assertedAt 自行排序 —— 不假设实现具备该能力。
     const entries = this.deps.facade
       ? await this.deps.facade.recent(limit ?? 20)
-      : this.deps.store.recent(limit ?? 20);
+      : (this.deps.store.recent?.(limit ?? 20) ??
+        [...this.deps.store.query({ limit: limit ?? 20 })].sort((a, b) =>
+          a.ts.assertedAt < b.ts.assertedAt ? 1 : a.ts.assertedAt > b.ts.assertedAt ? -1 : 0,
+        ));
     return entries.map((e) => ({
       id: e.id,
       kind: e.kind,
