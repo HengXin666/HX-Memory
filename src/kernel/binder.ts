@@ -114,6 +114,13 @@ export interface TriggerSource {
   /** 当前时间 (ISO)。 */
   now(): string;
   /**
+   * 可选: 注入成功后回报被注入的条目 id (用于"命中即强化")。
+   * 为什么需要它: 模型主动调 memory_search 那条路会强化, 而**每轮都在跑的确定性注入**此前不强化 ——
+   * 结果是主力通道注入的记忆永远不强化、照常衰减, 与"用进废退"的设计正好相反 (实测确认)。
+   * 实现方应做节流 (Facade.reinforce 自带 60s 合并窗口), 且失败要静默 (不能拖垮注入)。
+   */
+  onInjected?(ids: readonly string[]): void;
+  /**
    * 可选: 异步把 always-on 集合准备好 (存储查询是异步的, 而预步判定是同步的)。
    * prestep 会在注入前先 `binder.warm()` —— 这是"第一轮就有 always-on 保底"的关键,
    * 否则首轮会因为没有缓存而完全无记忆 (而那正是最需要保底的时刻)。
@@ -200,7 +207,13 @@ export class Binder {
       const block = formatBoundEntries(b.id, entries);
       if (block) blocks.push(block);
     }
-    if (blocks.length) return blocks.join("\n");
+    if (blocks.length) {
+      // 声明式绑定注入同样要算"被用到" (否则配了绑定的项目反而永不强化)。
+      const ids = new Set<string>();
+      for (const b of bindings) for (const e of this.resolve(b, text)) ids.add(e.id);
+      if (ids.size) this.triggerSource?.onInjected?.([...ids]);
+      return blocks.join("\n");
+    }
     // 通用通道 (无绑定时的兜底): 由触发策略决定是否注入, 逻辑见 trigger/policy.ts。
     return this.injectWithTrigger(text);
   }
@@ -224,6 +237,8 @@ export class Binder {
     const entries = this.triggerSource.recallFor(text, decision);
     if (!entries.length) return "";
     this.lastInjectedAt = this.triggerSource.now();
+    // 命中即强化: 确定性注入是"每轮都在跑"的主通道, 它注入过的记忆必须也算被用到。
+    this.triggerSource.onInjected?.(entries.map((e) => e.id));
     return formatBoundEntries("相关记忆 (" + decision.mode + ")", entries);
   }
 

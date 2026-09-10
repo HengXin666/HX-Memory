@@ -174,6 +174,11 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       recallFor: (text, decision) => recallForTrigger(text, decision),
       now: () => new Date().toISOString(),
       warm: () => refreshAlwaysOn(),
+      // 命中即强化: 确定性注入是每轮都在跑的主通道, 注入过的记忆必须算"被用到"。
+      // Facade.reinforce 自带 60s 合并窗口 (同窗口内重复命中只写一次), 失败静默 (不拖垮注入)。
+      onInjected: (ids) => {
+        if (ids.length) void facade.reinforce(ids).catch(() => undefined);
+      },
     },
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
@@ -324,6 +329,17 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   // 生命周期
   ctx.effect(() => {
     void pipe.warmUp();
+    // 向量索引预热: 首次检索若要现建索引会多花约 160ms (10k 条实测)。
+    // 放在**启动后台**而不是组装期同步执行 —— 插件是长期驻留的, 启动时补一次就没有首次查询毛刺;
+    // 但绝不能在 apply() 里同步做 (那会把成本转嫁成插件加载变慢, 对一次性 CLI 尤其亏)。
+    // 失败静默: 检索时会自行同步, 行为不变 (只是慢一次)。
+    setTimeout(() => {
+      try {
+        retriever.warmSync();
+      } catch {
+        // 预热失败不影响可用性
+      }
+    }, 0);
     // 卸载时冲刷缓冲: cordis 会 await 返回 promise 的 disposer, 所以这里必须把 promise 返回
     // 而不是 void 掉 (flushAll 里可能包含一次最长 15s 的 LLM 调用)。
     return () => runtime.flushAll();

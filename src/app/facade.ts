@@ -23,7 +23,14 @@ import type { Awaitable, RetrievalHit, RetrievalRequest, SyncRetriever } from ".
 import { expandEvolutionChain } from "../kernel/evolution.ts";
 import { normalizeFingerprint } from "../evolution/associate.ts";
 import { decideEvolution } from "../evolution/evolve.ts";
+import {
+  heuristicAdjudicator,
+  type Adjudication,
+  type Adjudicator,
+} from "../evolution/adjudicator.ts";
+import { heuristicDigestBuilder, type Digest, type DigestBuilder } from "./digest.ts";
 import { planStructuralLinks } from "../evolution/link.ts";
+import { hardConflict } from "../evolution/evolve.ts";
 import { semanticScores } from "../retrieval/embedding.ts";
 import { selectAlwaysOn } from "../trigger/policy.ts";
 import { estimateTokens } from "../kernel/ranking.ts";
@@ -42,6 +49,26 @@ export interface FacadeStore {
   searchText(text: string, limit?: number): MemoryEntry[];
   /** 可选: "最近沉淀"视图 (面板用); 缺省时 Facade 用 all() 自行排序。 */
   recent?(limit?: number): Awaitable<MemoryEntry[]>;
+  /**
+   * 可选: always-on 选择所需的廉价投影 (单条 SQL, 不 hydrate)。
+   * 有它时 alwaysOn() 走快路径 —— 这条路径在预步每轮都跑, 用 all() 会白付 hydrate 成本。
+   */
+  entrySummaries?(): Awaitable<
+    Array<
+      Pick<
+        MemoryEntry,
+        | "id"
+        | "kind"
+        | "content"
+        | "scope"
+        | "project"
+        | "importance"
+        | "status"
+        | "confirmedBy"
+        | "confirmedAt"
+      >
+    >
+  >;
 }
 
 export interface RememberInput {
@@ -117,6 +144,14 @@ export interface FacadeOptions {
   autoEvolve?: boolean | (() => boolean);
   /** 单次写入最多建几条结构关联边 (默认 3; 0 = 关闭)。 */
   maxStructuralLinks?: number;
+  /**
+   * 冲突裁决器 (可选): 对"数字/极性矛盾但没有显式更新信号"的邻居做裁决。
+   * 默认用确定性启发式 (heuristicAdjudicator); 宿主有模型时可换成 LLM 实现。
+   * 语义: supersede → 取代; duplicate → 强化; keep-both → 两条并存 + contradicts 边。
+   */
+  adjudicator?: Adjudicator;
+  /** 摘要构建器 (可选): 默认确定性启发式; 宿主有模型时可换成 LLM 润色版。 */
+  digestBuilder?: DigestBuilder;
 }
 
 /**
@@ -133,6 +168,8 @@ export class MemoryFacade {
   /** 实时求值: 面板里改 autoEvolve 必须当轮生效, 不能等到重启。 */
   private readonly autoEvolve: () => boolean;
   private readonly maxStructuralLinks: number;
+  private readonly adjudicator: Adjudicator;
+  private readonly digestBuilder: DigestBuilder;
 
   constructor(deps: { store: FacadeStore; retriever: SyncRetriever }, opts: FacadeOptions = {}) {
     this.store = deps.store;
@@ -146,6 +183,9 @@ export class MemoryFacade {
     this.autoEvolve =
       typeof autoEvolveOpt === "function" ? autoEvolveOpt : () => autoEvolveOpt !== false;
     this.maxStructuralLinks = opts.maxStructuralLinks ?? 3;
+    // 默认确定性启发式: 说不清就 keep-both (交给人), 不引入不可预测性。
+    this.adjudicator = opts.adjudicator ?? heuristicAdjudicator();
+    this.digestBuilder = opts.digestBuilder ?? heuristicDigestBuilder();
   }
 
   /**
@@ -178,7 +218,13 @@ export class MemoryFacade {
     const neighbors = await this.neighborsFor(draft);
     // 可选语义兜底: 一次批量嵌入 (候选 + 邻居) → 余弦表。没有 Embedder 时完全不产生开销。
     const semantic = this.embedder ? await semanticScores(this.embedder, draft, neighbors) : null;
+    // 冲突裁决是异步的 (LLM 实现要调模型), 而 decideEvolution 是纯同步逻辑。
+    // 因此在这里**预计算**: 只对"同类且硬冲突"的邻居跑裁决 (其余邻居不需要裁决)。
+    const adjudications = await this.adjudicateNeighbors(draft, neighbors);
     const decision = decideEvolution(draft, neighbors, {
+      ...(adjudications.size
+        ? { adjudication: (targetId: string) => adjudications.get(targetId) }
+        : {}),
       ...(semantic ? { semanticSimilarity: (id: string) => semantic.get(id) } : {}),
       ...(this.embedder ? { semanticDuplicateFloor: this.semanticDuplicateFloor } : {}),
       // 关闭自动演化: 把阈值抬到不可能达到的高度 —— 只保留字面去重与建边, 不取代不标记不语义合并。
@@ -297,8 +343,12 @@ export class MemoryFacade {
    * 这是触发层的**保底通道**: 与任何意图判定无关, 因此"模型完全没意识到要查"时也有记忆可用。
    */
   async alwaysOn(opts: { project?: string; budgetTokens?: number } = {}): Promise<MemoryEntry[]> {
-    const all = await this.store.all();
-    return selectAlwaysOn(all, {
+    // 优先用廉价投影 (单条 SQL, 不 hydrate 关系/标签)。10k 条实测: 6ms vs 137ms。
+    // 投影只含选择所需字段 (id/kind/content/scope/project/importance/status), 对 selectAlwaysOn 足够。
+    const candidates = this.store.entrySummaries
+      ? await this.store.entrySummaries()
+      : await this.store.all();
+    return selectAlwaysOn(candidates as MemoryEntry[], {
       ...(opts.project ? { project: opts.project } : {}),
       budgetTokens: opts.budgetTokens ?? 400,
       estimate: estimateTokens,
@@ -333,6 +383,21 @@ export class MemoryFacade {
         a.ts.assertedAt < b.ts.assertedAt ? 1 : a.ts.assertedAt > b.ts.assertedAt ? -1 : 0,
       )
       .slice(0, limit);
+  }
+
+  /**
+   * 生成一份"现在大概知道什么"的摘要 (Panel/CLI/注入都能用)。
+   * 默认走确定性启发式 (只吃 active, 按 出现次数×importance 排序); 宿主有模型时可换 DigestBuilder 实现。
+   * 摘要**不落盘** —— 它是派生视图, 每次按当前库现算, 避免"摘要陈旧"这一类失效。
+   */
+  async digest(opts: { project?: string } = {}): Promise<Digest> {
+    const entries = this.store.entrySummaries
+      ? ((await this.store.entrySummaries()) as MemoryEntry[])
+      : await this.store.all();
+    return this.digestBuilder.build({
+      entries,
+      ...(opts.project ? { project: opts.project } : {}),
+    });
   }
 
   /** 演化链全历史 (最旧 → 最新), 用于"这条记忆怎么变成现在这样的"。 */
@@ -434,6 +499,50 @@ export class MemoryFacade {
       rules,
       ...(this.indexStatus ? { index: this.indexStatus() } : {}),
     };
+  }
+
+  /**
+   * 内部: 对候选与近邻做冲突预裁决 (只处理"同 kind 且硬冲突"的那些)。
+   * 为什么只挑硬冲突: 裁决器是为"矛盾但没有显式更新信号"准备的; 其余情形由
+   * duplicate/link/supersede 的既有规则直接决定, 多跑一次裁决纯属浪费 (还可能引入噪声)。
+   * 失败时静默返回空表 —— 裁决是增强, 不该让一次写入失败。
+   */
+  private async adjudicateNeighbors(
+    candidate: MemoryEntry,
+    neighbors: readonly MemoryEntry[],
+  ): Promise<Map<string, Adjudication>> {
+    const out = new Map<string, Adjudication>();
+    if (!this.autoEvolve()) return out;
+    for (const target of neighbors) {
+      if ((target.status ?? "active") !== "active") continue;
+      if (target.kind !== candidate.kind) continue;
+      if (!hardConflict(candidate.content, target.content)) continue;
+      try {
+        out.set(
+          target.id,
+          await this.adjudicator.adjudicate({
+            candidate: {
+              kind: candidate.kind,
+              content: candidate.content,
+              ...(candidate.importance === undefined ? {} : { importance: candidate.importance }),
+              ...(candidate.confidence === undefined ? {} : { confidence: candidate.confidence }),
+              ts: candidate.ts,
+            },
+            target: {
+              id: target.id,
+              kind: target.kind,
+              content: target.content,
+              ...(target.importance === undefined ? {} : { importance: target.importance }),
+              ...(target.confidence === undefined ? {} : { confidence: target.confidence }),
+              ts: target.ts,
+            },
+          }),
+        );
+      } catch {
+        // 裁决失败 → 该邻居不预裁决, decideEvolution 会退回"标记冲突" (安全默认)。
+      }
+    }
+    return out;
   }
 
   /**

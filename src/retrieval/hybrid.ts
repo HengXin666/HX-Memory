@@ -169,6 +169,15 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     });
   }
 
+  /**
+   * 同步预热 (仅对同步嵌入器有效): 把向量投影现在就算好, 让**首次查询**就是热的。
+   * 10k 条实测: 首次查询要现建索引约 160ms, 之后再查 12ms —— 启动时补一次就没有这个毛刺。
+   * 异步嵌入器 (ProjectedVectorIndex) 没有同步补齐的语义, 这里直接跳过 (由 warm() 负责)。
+   */
+  warmSync(): void {
+    this.syncVectorIndex();
+  }
+
   ready(): boolean {
     return this.vectorIndex?.ready !== false;
   }
@@ -487,12 +496,4 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     if (status === "shadow" || status === "expired") return null;
     return current;
   }
-}
-
-/** 便捷: 从条目集合里取出"最新 active 版本"(面板/history 用)。 */
-export function currentVersions(entries: readonly MemoryEntry[]): MemoryEntry[] {
-  return entries
-    .map((e) => expandEvolutionChain(entries, e.id))
-    .map((chain) => chain.filter((e) => (e.status ?? "active") === "active").at(-1))
-    .filter((e): e is MemoryEntry => Boolean(e));
 }

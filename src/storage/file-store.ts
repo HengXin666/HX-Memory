@@ -430,6 +430,50 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   }
 
   /**
+   * 选择型候选的**廉价投影** (单条 SQL, 不 hydrate): 供 always-on 选择用。
+   *
+   * 为什么不能让调用方用 all(): all() 会为每条记忆做 relations + tags 两次子查询并构造完整对象。
+   * 实测 10k 条: all() = 137ms, 单条 SQL 投影 = 6ms (22 倍)。而 always-on 走**预步路径**, 每轮都要跑,
+   * 用 all() 做筛选等于每轮白付一次 hydrate 成本。
+   */
+  entrySummaries(): Array<
+    Pick<
+      MemoryEntry,
+      | "id"
+      | "kind"
+      | "content"
+      | "scope"
+      | "project"
+      | "importance"
+      | "status"
+      | "confirmedBy"
+      | "confirmedAt"
+    >
+  > {
+    // 必须带上 confirmed_by/confirmed_at: always-on 的治理闸门要求"已确认的规则才注入",
+    // 缺了这两列会让所有规则被静默过滤掉 (写这个投影时真实踩过 —— 测试立刻抓到)。
+    return this.db
+      .prepare(
+        `SELECT id, kind, content, scope, project, importance, status, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt
+         FROM memories WHERE status = 'active'`,
+      )
+      .all() as unknown as Array<
+      Pick<
+        MemoryEntry,
+        | "id"
+        | "kind"
+        | "content"
+        | "scope"
+        | "project"
+        | "importance"
+        | "status"
+        | "confirmedBy"
+        | "confirmedAt"
+      >
+    >;
+  }
+
+  /**
    * 廉价全量投影 (单条 SQL, 不 hydrate): 供向量索引/FTS 同步。
    * 之前按查询扫 500 条候选的写法在万级下会**静默漏索引** (实测 10000 条只索引到 519 条)。
    */
@@ -440,9 +484,28 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return rows;
   }
 
-  /** 写版本号: 任何索引写入 (add/update/remove/rebuild) 都会 +1, 用于"变了才同步"。 */
+  /**
+   * 写版本号: 任何索引写入 (add/update/remove/rebuild) 都会 +1, 用于"变了才同步"。
+   *
+   * **跨进程**: 别的进程 (CLI / 另一个 host 实例) 写入时本进程的 writeRevision 不会动,
+   * 于是内存派生索引 (向量) 会长期陈旧 —— 实测: 外部写入的条目 BM25 查得到、向量通道查不到。
+   * `PRAGMA data_version` 会在**其它连接提交后**变化 (本连接自己的提交不变), 正好用来识别外部写入。
+   * 两者合成一个复合版本号, 保证"任何来源的变更都能触发重新同步"。
+   */
   revision(): number {
-    return this.writeRevision;
+    return this.writeRevision * 1_000_000 + this.externalRevision();
+  }
+
+  /** 其它连接提交后的版本 (node:sqlite 的 PRAGMA data_version); 查询失败时退回 0 (不影响正确性)。 */
+  private externalRevision(): number {
+    try {
+      const row = this.db.prepare("PRAGMA data_version").get() as
+        { data_version?: number } | undefined;
+      const value = row?.data_version;
+      return typeof value === "number" && Number.isFinite(value) ? value : 0;
+    } catch {
+      return 0;
+    }
   }
 
   /** 检索能力自述 (降级必须可观测: 面板/日志/测试都能看到"现在是 LIKE 而不是 FTS")。 */
