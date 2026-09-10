@@ -36,10 +36,14 @@ jobs:
       - run: pnpm run build:client
       - name: Compute version
         id: ver
+        # 必须用 env: 传 BUMP, 不能在 run 里把 "BUMP=minor" 单独写一行 ——
+        # 那只是 shell 变量, 不会 export 给子进程; calc-version.cjs 读不到就静默回退成 patch。
+        # **真实踩过**: 选了 minor 却发布了 v0.1.3 (见 Agent Note)。
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
-          BUMP=${{ inputs.bump }}
           VER=$(node .github/scripts/calc-version.cjs)
-          echo "version=$VER"
+          echo "bump=${BUMP:-patch} version=$VER"
           echo "version=$VER" >> $GITHUB_OUTPUT
       - name: Write version into package.json
         run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${{ steps.ver.outputs.version }}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
