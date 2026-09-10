@@ -25,7 +25,21 @@
 //   5. 撤回 (remove) 在真相文件里写 status: shadow —— 只改索引的话, 重建会让它复活。
 //   6. 并发打开同一个 index.sqlite 不能直接炸: 打开后立刻设 busy_timeout。
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  readSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import type {
@@ -38,7 +52,16 @@ import type {
   Relation,
   RelationType,
 } from "../kernel/types.ts";
-import type { MemoryStore } from "../kernel/ports.ts";
+import type {
+  IndexableSource,
+  IndexDoc,
+  MemoryStore,
+  Rebuildable,
+  RetrievalCapabilities,
+  VerifyReport,
+} from "../kernel/ports.ts";
+import { searchableText } from "../kernel/cjk.ts";
+import { FtsIndex } from "./fts-index.ts";
 
 const DAILY_DIR = "daily";
 const DIGEST_DIR = "digest";
@@ -59,7 +82,7 @@ const KINDS: readonly MemoryKind[] = [
   "context",
 ];
 const SCOPES: readonly MemoryScope[] = ["project", "agent", "global"];
-const STATUSES: readonly MemoryStatus[] = ["active", "superseded", "shadow"];
+const STATUSES: readonly MemoryStatus[] = ["active", "superseded", "merged", "expired", "shadow"];
 const RELATION_TYPES: readonly RelationType[] = [
   "relates",
   "supersedes",
@@ -67,6 +90,12 @@ const RELATION_TYPES: readonly RelationType[] = [
   "generalizes",
   "appliesTo",
   "source",
+  // v2 关联性 (LinkService/EvolutionService 写入; 值域与运行时校验同一份真相)
+  "mentions",
+  "contradicts",
+  "sameAs",
+  "instanceOf",
+  "derivedFrom",
 ];
 
 function nowIso(): string {
@@ -97,6 +126,44 @@ function singleLine(value: string): string {
 
 function isIso(value: string): boolean {
   return ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+/** 可选数值字段: 非有限值 fail-closed 抛错, 越界收敛到值域 (v2 字段共用)。 */
+function numberField(value: unknown, name: string, min: number, max: number): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) throw new Error("invalid " + name + ": " + JSON.stringify(value));
+  return Math.min(max, Math.max(min, n));
+}
+
+/** 字符串数组字段: 单行化 + 去重, 顺序即语义顺序。 */
+function stringList(value: readonly string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const out: string[] = [];
+  for (const v of value) {
+    const s = singleLine(String(v));
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.length ? out : undefined;
+}
+
+/** 索引列里的 JSON 字符串数组 → string[] (坏值丢弃: 索引是派生物, 真相文件里仍在)。 */
+function jsonStrings(raw: string | null | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      const out = parsed.map((v) => String(v)).filter(Boolean);
+      return out.length ? out : undefined;
+    }
+  } catch {
+    // 索引损坏不该影响读取其它字段
+  }
+  return undefined;
+}
+
+function finiteOrUndefined(raw: number | null | undefined): number | undefined {
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
 }
 
 /** Relative file path for an entry inside its kind dir (id/日期都做字符集校验, 防路径穿越)。 */
@@ -143,6 +210,30 @@ function normalizeEntry(input: MemoryEntryInput & { id: string }): MemoryEntry {
   if (input.confirmedAt !== undefined) entry.confirmedAt = singleLine(input.confirmedAt);
   if (input.tags?.length) entry.tags = input.tags.map((t) => singleLine(String(t))).filter(Boolean);
   if (input.structured) entry.structured = input.structured;
+
+  // ---- v2 字段: 归一化口径与索引/真相文件完全一致 (否则重建后数据会"变") ----
+  const entities = stringList(input.entities);
+  if (entities) entry.entities = entities;
+  const importance = numberField(input.importance, "importance", 1, 10);
+  if (importance !== undefined) entry.importance = importance;
+  const confidence = numberField(input.confidence, "confidence", 0, 1);
+  if (confidence !== undefined) entry.confidence = confidence;
+  const reinforcement = numberField(input.reinforcement, "reinforcement", 0, 1_000_000);
+  if (reinforcement !== undefined) entry.reinforcement = Math.floor(reinforcement);
+  if (input.lastHitAt !== undefined) {
+    if (!isIso(input.lastHitAt))
+      throw new Error("invalid lastHitAt: " + JSON.stringify(input.lastHitAt));
+    entry.lastHitAt = input.lastHitAt;
+  }
+  if (input.expiresAt !== undefined) {
+    if (!isIso(input.expiresAt))
+      throw new Error("invalid expiresAt: " + JSON.stringify(input.expiresAt));
+    entry.expiresAt = input.expiresAt;
+  }
+  const derivedFrom = stringList(input.derivedFrom);
+  if (derivedFrom) entry.derivedFrom = derivedFrom;
+  const mergedFrom = stringList(input.mergedFrom);
+  if (mergedFrom) entry.mergedFrom = mergedFrom;
   if (input.relations?.length) {
     // fail-closed: 非法关系不能静默丢弃 (否则索引与真相都少一条链, 且无人知道)。
     entry.relations = input.relations.map((r) => {
@@ -179,15 +270,32 @@ interface RowLike {
   confirmed_at: string | null;
   project: string | null;
   structured: string | null;
+  // v2 字段 (老库经迁移补齐; 全部可空, 缺省 = v1 行为)
+  entities: string | null;
+  importance: number | null;
+  confidence: number | null;
+  reinforcement: number | null;
+  last_hit_at: string | null;
+  expires_at: string | null;
+  derived_from: string | null;
+  merged_from: string | null;
   file: string;
 }
 
-export class FileBackend implements MemoryStore {
+export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   private readonly root: string;
   private readonly db: DatabaseSync;
+  private readonly fts: FtsIndex;
   private readonly allowTruthDelete: boolean;
   /** 重建/解析过程中被跳过的条目 (fail-closed 的证据, 供测试与诊断读取)。 */
   private readonly skipped: string[] = [];
+  /** 写版本号 (索引同步用; 稳态查询不触发重新扫描)。 */
+  private writeRevision = 0;
+  /**
+   * 本进程内已经"由自己规范化写过"的真相文件。
+   * 只有这些文件才允许走 O(1) 追加快路径 —— 外部手写文件里有前言, 必须先经通用路径归一化。
+   */
+  private readonly touchedFiles = new Set<string>();
 
   constructor(config: FileBackendConfig) {
     this.root = config.root;
@@ -203,10 +311,148 @@ export class FileBackend implements MemoryStore {
     this.db = new DatabaseSync(join(this.root, INDEX_NAME));
     // 多进程 (web host + CLI / 两个 dsh 实例) 共享同一份索引时必须等待而不是直接失败。
     this.db.exec("PRAGMA busy_timeout = 5000");
+    // WAL + synchronous=NORMAL: 批量写入从"每条一次 fsync"降到"每次提交一次"。
+    // 权衡: 进程崩溃不丢已提交事务; 仅操作系统级崩溃可能丢最后一笔 (这正是 NORMAL 的定义)。
+    // 本地记忆场景下这个取舍是划算的 —— 真相文件仍在, 索引可重建。
+    try {
+      this.db.exec("PRAGMA journal_mode = WAL");
+      this.db.exec("PRAGMA synchronous = NORMAL");
+    } catch {
+      // 某些文件系统不支持 WAL (如部分网络盘): 退回默认模式, 不影响正确性。
+    }
     this.initSchema();
+    // 全文索引对象必须在 rebuildFromFiles() 之前建好 (重建路径会经 indexEntry 写索引)。
+    this.fts = new FtsIndex(this.db);
     // 索引丢了但真相还在 → 自动重建, 否则记忆会"静默消失"。
     const rows = this.db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number };
     if (rows.n === 0 && this.hasTruthFiles()) this.rebuildFromFiles();
+
+    // 全文索引: 建表 + 分词版本校验 + 缺失回填。
+    // 版本不一致时 ensure() 会清表并返回 true —— 混用两种分词的索引 = 静默召回失真。
+    const needsRebuild = this.fts.ensure(rows.n);
+    if (this.fts.available && (needsRebuild || this.fts.count() !== this.countMemories())) {
+      this.repopulateFts();
+    }
+  }
+
+  /** memories 表行数 (含 shadow/merged/expired: 索引与真相必须一一对应)。 */
+  private countMemories(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number };
+    return row.n;
+  }
+
+  /**
+   * 从 memories 表重建全文索引 (T1 级重建: 索引 → 索引)。
+   * 上游仍然是真相文件 (memories 表本身可从文件重建), 所以这一步永远可重复执行。
+   */
+  repopulateFts(): number {
+    if (!this.fts.available) return 0;
+    this.fts.clear();
+    const ids = this.db.prepare("SELECT id FROM memories").all() as Array<{ id: string }>;
+    let n = 0;
+    for (const { id } of ids) {
+      const row = this.db.prepare("SELECT * FROM memories WHERE id = ?").get(id) as
+        RowLike | undefined;
+      if (!row) continue;
+      this.fts.upsert(id, searchableText(rowToEntry(row)));
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * 引擎能力自述 (RetrievalSource.capabilities): 检索层据此决定降级策略。
+   * 注意 semantic:false 是**诚实**的 —— 目前没有 embedding 通道, 不要假装有语义检索。
+   */
+  capabilities(): RetrievalCapabilities {
+    const s = this.ftsStatus();
+    return {
+      engine: s.available ? "sqlite-fts5+cjk" : "sqlite-like",
+      fullText: s.available,
+      cjk: s.available,
+      semantic: false,
+      graph: "relations",
+      multiProcess: true,
+    };
+  }
+
+  /**
+   * 派生索引身份 (ADR-023): 真相文件格式 + 分词版本。
+   * 任一变化都意味着"旧索引不可复用", 必须重建 (由构造函数与 rebuildFromTruth 保证)。
+   */
+  get schemaVersion(): string {
+    return `format${FORMAT_VERSION}+tokenizer${this.fts.tokenizerVersion}`;
+  }
+
+  /** T1 级重建 (索引 ← 真相文件)。语义等价于 rebuildFromFiles(), 端口名是给引擎消费者的。 */
+  rebuildFromTruth(): number {
+    const n = this.rebuildFromFiles();
+    this.writeRevision++;
+    return n;
+  }
+
+  /**
+   * 一致性自检: 索引行数必须等于真相文件里的条目数, 全文索引行数必须等于 memories 行数。
+   * 不追求"逐字段 diff"(那是 conformance 的事), 只给运维一眼可见的"有没有漂移"。
+   */
+  verify(): VerifyReport {
+    const problems: string[] = [];
+    const truth = this.countTruthEntries();
+    const index = this.countMemories();
+    const fullText = this.fts.available ? this.fts.count() : undefined;
+    if (truth !== index) {
+      problems.push(`truth/index mismatch: ${truth} truth entries vs ${index} index rows`);
+    }
+    if (fullText !== undefined && fullText !== index) {
+      problems.push(`index/fulltext mismatch: ${index} rows vs ${fullText} fulltext rows`);
+    }
+    for (const w of this.skipped.slice(0, 10)) problems.push("parse warning: " + w);
+    return {
+      ok: problems.length === 0,
+      truth,
+      index,
+      ...(fullText === undefined ? {} : { fullText }),
+      problems,
+    };
+  }
+
+  /** 真相文件里的条目数 (不依赖索引; 解析警告会累加到 this.skipped)。 */
+  private countTruthEntries(): number {
+    const seen = new Set<string>();
+    for (const dir of [DAILY_DIR, DIGEST_DIR, RULES_DIR]) {
+      const base = join(this.root, dir);
+      if (!existsSync(base)) continue;
+      for (const f of walkMd(base)) {
+        for (const parsed of parseEntryBlocks(f, this.skipped)) seen.add(parsed.id);
+      }
+    }
+    return seen.size;
+  }
+
+  /**
+   * 廉价全量投影 (单条 SQL, 不 hydrate): 供向量索引/FTS 同步。
+   * 之前按查询扫 500 条候选的写法在万级下会**静默漏索引** (实测 10000 条只索引到 519 条)。
+   */
+  indexDocs(): IndexDoc[] {
+    const rows = this.db
+      .prepare("SELECT id, content FROM memories WHERE status NOT IN ('shadow','merged','expired')")
+      .all() as Array<{ id: string; content: string }>;
+    return rows;
+  }
+
+  /** 写版本号: 任何索引写入 (add/update/remove/rebuild) 都会 +1, 用于"变了才同步"。 */
+  revision(): number {
+    return this.writeRevision;
+  }
+
+  /** 检索能力自述 (降级必须可观测: 面板/日志/测试都能看到"现在是 LIKE 而不是 FTS")。 */
+  ftsStatus(): { available: boolean; degraded: string | null; indexed: number; expected: number } {
+    return {
+      available: this.fts.available,
+      degraded: this.fts.degradation,
+      indexed: this.fts.count(),
+      expected: this.countMemories(),
+    };
   }
 
   private initSchema(): void {
@@ -224,6 +470,14 @@ export class FileBackend implements MemoryStore {
         confirmed_at TEXT,
         project TEXT,
         structured TEXT,
+        entities TEXT,
+        importance REAL,
+        confidence REAL,
+        reinforcement INTEGER,
+        last_hit_at TEXT,
+        expires_at TEXT,
+        derived_from TEXT,
+        merged_from TEXT,
         file TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS relations (
@@ -242,12 +496,28 @@ export class FileBackend implements MemoryStore {
       CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
       CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_id);
     `);
-    // 迁移: 老库没有 structured 列 (索引是派生物, 加列不丢真相)。
+    // 迁移: 老库缺列 (索引是派生物, 加列不丢真相 —— 真值文件是唯一事实源)。
     // check-then-ALTER 非原子: 并发打开时可能撞 duplicate column, 这里吞掉该错误。
-    const columns = this.db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
-    if (!columns.some((c) => c.name === "structured")) {
+    const existing = new Set(
+      (this.db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>).map(
+        (c) => c.name,
+      ),
+    );
+    const migrations: ReadonlyArray<readonly [string, string]> = [
+      ["structured", "ALTER TABLE memories ADD COLUMN structured TEXT"],
+      ["entities", "ALTER TABLE memories ADD COLUMN entities TEXT"],
+      ["importance", "ALTER TABLE memories ADD COLUMN importance REAL"],
+      ["confidence", "ALTER TABLE memories ADD COLUMN confidence REAL"],
+      ["reinforcement", "ALTER TABLE memories ADD COLUMN reinforcement INTEGER"],
+      ["last_hit_at", "ALTER TABLE memories ADD COLUMN last_hit_at TEXT"],
+      ["expires_at", "ALTER TABLE memories ADD COLUMN expires_at TEXT"],
+      ["derived_from", "ALTER TABLE memories ADD COLUMN derived_from TEXT"],
+      ["merged_from", "ALTER TABLE memories ADD COLUMN merged_from TEXT"],
+    ];
+    for (const [name, sql] of migrations) {
+      if (existing.has(name)) continue;
       try {
-        this.db.exec("ALTER TABLE memories ADD COLUMN structured TEXT");
+        this.db.exec(sql);
       } catch (error) {
         if (!String(error).includes("duplicate column")) throw error;
       }
@@ -271,6 +541,8 @@ export class FileBackend implements MemoryStore {
   /** 从文件重建索引 (真相 → 索引)。索引丢失后调用 (构造函数也会自动调用一次)。 */
   rebuildFromFiles(): number {
     this.skipped.length = 0;
+    // 全文索引必须一起清掉: 只重建关系/标签会留下"已删条目的全文行", 召回出幽灵记忆。
+    this.fts.clear();
     const seen = new Map<string, MemoryEntry>();
     for (const dir of [DAILY_DIR, DIGEST_DIR, RULES_DIR]) {
       const base = join(this.root, dir);
@@ -311,8 +583,9 @@ export class FileBackend implements MemoryStore {
     }
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO memories (id, kind, content, source, scope, valid_at, asserted_at, status, confirmed_by, confirmed_at, project, structured, file)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO memories (id, kind, content, source, scope, valid_at, asserted_at, status, confirmed_by, confirmed_at, project, structured,
+         entities, importance, confidence, reinforcement, last_hit_at, expires_at, derived_from, merged_from, file)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         e.id,
@@ -327,6 +600,14 @@ export class FileBackend implements MemoryStore {
         e.confirmedAt ?? null,
         e.project ?? null,
         e.structured ? JSON.stringify(e.structured) : null,
+        e.entities?.length ? JSON.stringify(e.entities) : null,
+        e.importance ?? null,
+        e.confidence ?? null,
+        e.reinforcement ?? null,
+        e.lastHitAt ?? null,
+        e.expiresAt ?? null,
+        e.derivedFrom?.length ? JSON.stringify(e.derivedFrom) : null,
+        e.mergedFrom?.length ? JSON.stringify(e.mergedFrom) : null,
         file,
       );
     for (const rel of e.relations ?? []) {
@@ -339,6 +620,9 @@ export class FileBackend implements MemoryStore {
     for (const tag of e.tags?.length ? e.tags : extractTags(e.content)) {
       this.db.prepare("INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?, ?)").run(e.id, tag);
     }
+    // 全文索引 (派生): 正文 + 摘要 + 要点 + 标签 + 实体。
+    this.fts.upsert(e.id, searchableText(e));
+    this.writeRevision++;
     return true;
   }
 
@@ -374,7 +658,14 @@ export class FileBackend implements MemoryStore {
       const oldFile = join(this.root, previous.file);
       if (existsSync(oldFile)) removeBlockFromFile(oldFile, entry.id);
     }
-    upsertBlockInFile(file, entry);
+    // 新条目 + 本进程已规范化写过的文件 → O(1) 追加 (块各自独立, 无需读整个文件再写回)。
+    // 其它情况 (更新/搬移/首次碰外部手写文件) 走精确切片替换, 保持"不碰其它字节"的语义。
+    if (previous === undefined && this.touchedFiles.has(relative)) {
+      appendBlockToFile(file, entry);
+    } else {
+      upsertBlockInFile(file, entry);
+      this.touchedFiles.add(relative);
+    }
     this.db.prepare("DELETE FROM relations WHERE from_id = ?").run(entry.id);
     this.db.prepare("DELETE FROM tags WHERE memory_id = ?").run(entry.id);
     this.indexEntry(entry);
@@ -434,6 +725,44 @@ export class FileBackend implements MemoryStore {
     return (rows as RowLike[]).map((r) => this.hydrate(r));
   }
 
+  /**
+   * 全文检索 (BM25 排序; 中文按 词 + bigram 双列, 见 kernel/cjk.ts)。
+   * 与 query() 的分工: query() 是"结构化条件过滤", searchText() 是"和这段文本最相关"。
+   * 降级: FTS5 不可用时退回 LIKE 宽召回 (仍可用, 但没有相关性排序; 见 ftsStatus())。
+   * 默认可视集 = active + superseded (superseded 仍要能被 history/演进逻辑找到, 由上层过滤)。
+   */
+  searchText(text: string, limit = 20, opts: { includeHidden?: boolean } = {}): MemoryEntry[] {
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+    const cap = Math.max(1, Math.min(limit, 500));
+    const visible = opts.includeHidden ? "" : " AND status NOT IN ('shadow','merged','expired')";
+    const picked: MemoryEntry[] = [];
+    const seen = new Set<string>();
+    const take = (id: string): void => {
+      if (seen.has(id) || picked.length >= cap) return;
+      seen.add(id);
+      const row = this.db.prepare("SELECT * FROM memories WHERE id = ?" + visible).get(id) as
+        RowLike | undefined;
+      if (row) picked.push(this.hydrate(row));
+    };
+    if (this.fts.available) {
+      // 多取一些再按可见性过滤: 否则被过滤掉的命中会让结果莫名变少。
+      for (const hit of this.fts.search(trimmed, cap * 3)) take(hit.id);
+      if (picked.length) return picked;
+      return [];
+    }
+    const escaped = trimmed.replace(/[\\%_]/g, (ch) => "\\" + ch);
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM memories WHERE (content LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\')" +
+          visible +
+          " ORDER BY valid_at DESC, rowid DESC LIMIT ?",
+      )
+      .all("%" + escaped + "%", "%" + escaped + "%", cap) as unknown as RowLike[];
+    for (const row of rows) take(row.id);
+    return picked;
+  }
+
   /** 全量条目 (不截断): warmUp/重建等需要完整集合的调用点。 */
   all(): MemoryEntry[] {
     return this.query({ limit: Number.MAX_SAFE_INTEGER });
@@ -481,12 +810,17 @@ export class FileBackend implements MemoryStore {
       this.db.prepare("DELETE FROM relations WHERE from_id = ?").run(id);
       this.db.prepare("DELETE FROM tags WHERE memory_id = ?").run(id);
       this.db.prepare("DELETE FROM memories WHERE id = ?").run(id);
+      this.fts.remove(id);
       return;
     }
     if (existing.status !== "shadow" && existsSync(file)) {
       upsertBlockInFile(file, { ...existing, status: "shadow" });
+      this.touchedFiles.add(fileFor(existing));
     }
     this.db.prepare("UPDATE memories SET status='shadow' WHERE id = ?").run(id);
+    this.writeRevision++;
+    // 注意: shadow 条目的全文行**保留** —— FTS 行与 memories 行必须一一对应 (计数一致),
+    // 可见性由 searchText 的 status 过滤决定。在这里删掉会让"计数一致性"自检每次打开都触发重建。
   }
 
   close(): void {
@@ -530,6 +864,12 @@ function rowToEntry(row: RowLike): MemoryEntry {
       structured = undefined;
     }
   }
+  const entities = jsonStrings(row.entities);
+  const derivedFrom = jsonStrings(row.derived_from);
+  const mergedFrom = jsonStrings(row.merged_from);
+  const importance = finiteOrUndefined(row.importance);
+  const confidence = finiteOrUndefined(row.confidence);
+  const reinforcement = finiteOrUndefined(row.reinforcement);
   return {
     id: row.id,
     kind: row.kind,
@@ -542,6 +882,14 @@ function rowToEntry(row: RowLike): MemoryEntry {
     confirmedAt: row.confirmed_at ?? undefined,
     project: row.project ?? undefined,
     ...(structured === undefined ? {} : { structured }),
+    ...(entities === undefined ? {} : { entities }),
+    ...(importance === undefined ? {} : { importance }),
+    ...(confidence === undefined ? {} : { confidence }),
+    ...(reinforcement === undefined ? {} : { reinforcement }),
+    ...(row.last_hit_at ? { lastHitAt: row.last_hit_at } : {}),
+    ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+    ...(derivedFrom === undefined ? {} : { derivedFrom }),
+    ...(mergedFrom === undefined ? {} : { mergedFrom }),
   };
 }
 
@@ -604,6 +952,41 @@ function writeFileParts(file: string, parts: FileParts): void {
   writeFileSync(file, segments.join("\n\n") + "\n", "utf8");
 }
 
+/**
+ * 追加一个新块 (新条目专用快路径)。
+ * 不变量必须与 writeFileParts 完全一致: 块之间恰好一个空行, 文件以单个换行结尾;
+ * 有手写前言时前言原样保留 (只在其后追加)。
+ */
+function appendBlockToFile(file: string, e: MemoryEntry): void {
+  const block = entryToMarkdown(e);
+  mkdirSync(dirname(file), { recursive: true });
+  if (!existsSync(file)) {
+    writeFileSync(file, block + "\n", "utf8");
+    return;
+  }
+  // O(1) 追加: 只把"文件终止换行"这一个字节截掉, 再补 "空行 + 新块 + 终止换行"。
+  // 与 writeFileParts 的产物逐字节等价 (含"上一条正文自带尾部空行"的歧义情况) —— 有回归测试钉住。
+  const size = statSync(file).size;
+  const tail = readTail(file, 1);
+  if (tail === "\n" && size > 0) truncateSync(file, size - 1);
+  appendFileSync(file, "\n\n" + block + "\n", "utf8");
+}
+
+/** 读文件末尾 N 字节 (用于 O(1) 判断结尾换行形态)。 */
+function readTail(file: string, count: number): string {
+  const fd = openSync(file, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const length = Math.min(count, size);
+    if (length <= 0) return "";
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, size - length);
+    return buffer.toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** 新增或替换某 id 的块 (按块数组重写, 不碰其它块与前言的字节)。 */
 function upsertBlockInFile(file: string, e: MemoryEntry): void {
   const block = entryToMarkdown(e);
@@ -656,6 +1039,14 @@ function parseSingleBlock(block: string, path: string, skipped?: string[]): Memo
   const tagsRaw = field("tags");
   const structuredRaw = field("structured");
   const relationsRaw = field("relations");
+  const entitiesRaw = field("entities");
+  const importanceRaw = field("importance");
+  const confidenceRaw = field("confidence");
+  const reinforcementRaw = field("reinforcement");
+  const lastHitRaw = field("last_hit_at");
+  const expiresRaw = field("expires_at");
+  const derivedFromRaw = field("derived_from");
+  const mergedFromRaw = field("merged_from");
   // format 标记: 新文件一定带 format → 正文永远不被当作元数据扫描;
   // 旧文件 (无标记) 才允许走 "## relations" 兼容分支。
   const legacyFormat = field("format") === undefined;
@@ -719,6 +1110,17 @@ function parseSingleBlock(block: string, path: string, skipped?: string[]): Memo
     }
   }
 
+  // v2 可选字段: 单个坏值只丢弃该字段并记 warning (不让整条记忆消失);
+  // 但状态/时间戳这类"语义开关"仍 fail-closed (上面已拒绝整条)。
+  const entities = parseStringArray(entitiesRaw);
+  const derivedFrom = parseStringArray(derivedFromRaw);
+  const mergedFrom = parseStringArray(mergedFromRaw);
+  const importance = parseOptionalNumber(importanceRaw, "importance", id, skipped);
+  const confidence = parseOptionalNumber(confidenceRaw, "confidence", id, skipped);
+  const reinforcement = parseOptionalNumber(reinforcementRaw, "reinforcement", id, skipped);
+  const lastHitAt = parseOptionalIso(lastHitRaw, "last_hit_at", id, skipped);
+  const expiresAt = parseOptionalIso(expiresRaw, "expires_at", id, skipped);
+
   return {
     id,
     kind,
@@ -732,8 +1134,60 @@ function parseSingleBlock(block: string, path: string, skipped?: string[]): Memo
     ...(project === undefined ? {} : { project }),
     ...(relations?.length ? { relations } : {}),
     ...(structured === undefined ? {} : { structured }),
+    ...(entities === undefined ? {} : { entities }),
+    ...(importance === undefined ? {} : { importance }),
+    ...(confidence === undefined ? {} : { confidence }),
+    ...(reinforcement === undefined ? {} : { reinforcement }),
+    ...(lastHitAt === undefined ? {} : { lastHitAt }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(derivedFrom === undefined ? {} : { derivedFrom }),
+    ...(mergedFrom === undefined ? {} : { mergedFrom }),
     tags: parseTags(tagsRaw),
   };
+}
+
+/** frontmatter 里的 JSON 字符串数组 (非法值 → undefined, 不抛)。 */
+function parseStringArray(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      const out = parsed.map((v) => singleLine(String(v))).filter(Boolean);
+      return out.length ? out : undefined;
+    }
+  } catch {
+    // 落到 undefined
+  }
+  return undefined;
+}
+
+function parseOptionalNumber(
+  raw: string | undefined,
+  name: string,
+  id: string,
+  skipped?: string[],
+): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    skipped?.push("invalid " + name + " for " + id + ": " + JSON.stringify(raw));
+    return undefined;
+  }
+  return n;
+}
+
+function parseOptionalIso(
+  raw: string | undefined,
+  name: string,
+  id: string,
+  skipped?: string[],
+): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!isIso(raw)) {
+    skipped?.push("invalid " + name + " for " + id + ": " + JSON.stringify(raw));
+    return undefined;
+  }
+  return raw;
 }
 
 /** tags: 新格式是 JSON 数组; 旧格式是 "[a, b]" (逗号分隔, 含逗号的值会丢, 故新格式用 JSON)。 */
@@ -827,6 +1281,15 @@ function entryToMarkdown(e: MemoryEntry): string {
   if (e.project) lines.push("project: " + e.project);
   if (e.tags?.length) lines.push("tags: " + JSON.stringify(e.tags));
   if (e.structured) lines.push("structured: " + JSON.stringify(e.structured));
+  // v2 字段: 全部写进 frontmatter —— 否则重建 (删索引/换引擎) 会静默丢掉关联性与衰减状态。
+  if (e.entities?.length) lines.push("entities: " + JSON.stringify(e.entities));
+  if (e.importance !== undefined) lines.push("importance: " + String(e.importance));
+  if (e.confidence !== undefined) lines.push("confidence: " + String(e.confidence));
+  if (e.reinforcement !== undefined) lines.push("reinforcement: " + String(e.reinforcement));
+  if (e.lastHitAt) lines.push("last_hit_at: " + e.lastHitAt);
+  if (e.expiresAt) lines.push("expires_at: " + e.expiresAt);
+  if (e.derivedFrom?.length) lines.push("derived_from: " + JSON.stringify(e.derivedFrom));
+  if (e.mergedFrom?.length) lines.push("merged_from: " + JSON.stringify(e.mergedFrom));
   // relations 也放 frontmatter (JSON): 正文保持纯净, 避免"正文以 ## relations 开头"被误解析。
   if (e.relations?.length) lines.push("relations: " + JSON.stringify(e.relations));
   lines.push("---");
