@@ -1,5 +1,10 @@
 # ADR (架构决策记录)
 
+> 目的: 保留可被编号引用的决策日志 (历史沿革), 供外部与旧文档按编号回指。
+> 边界 (不写什么): 新决策**不再写在这里** —— 一律写成 [Agent Note](../.agents/notes/README.md) (它强制记录被否掉的替代方案);
+> 这里只在需要编号引用时追加一行指向对应 Note。本文件保留 v1/v2 时期的原始记录, 不再扩写。
+> 与代码的关系: 记录取舍而非实现; 实现位置见各条目内的路径引用与 `src/`。
+
 > 只记需要留痕的决策。一条 ADR: 背景 → 选项 → 决策 → 后果。被替换的 ADR 用 supersedes 链接 (呼应产品自身的 supersedes 语义)。
 
 ## ADR-001: 自维护内核 + adapter, 不整包引入市面项目
@@ -99,7 +104,7 @@
 
 - **背景**: v1 只切了"宿主 vs 存储"两条线, 于是业务逻辑散在 `adapters/dsh/*` (DSH 工具直接调 `FileBackend`), Codex 又各写一遍; 换宿主/换检索引擎都要动记忆本体。
 - **选项**: (a) 继续按"宿主 adapter"分文件; (b) 按"变化频率"切四层: 使用层 (多宿主) / 应用层 (记忆加工) / 端口层 (可替换物) / 引擎层 (实现)。
-- **决策**: (b)。端口层集中"一定会换的东西" (TruthStore/DerivedStore/Rebuildable/Retriever/Embedder/Extractor/Reranker/Clock); 应用层只认端口; 使用层只认 Facade。依赖方向 `L3 → L2 → L1 ← L0` 单向, 由 `tests/s1/architecture.test.ts` 断言。
+- **决策**: (b)。端口层集中"一定会换的东西" (TruthStore/DerivedStore/Rebuildable/Retriever/Embedder/Extractor/Reranker/Clock); 应用层只认端口; 使用层只认 Facade。依赖方向 `L3 → L2 → L1 ← L0` 单向。 <!-- verify-docs:allow (该架构测试尚未实现, 见 architecture-v2 §7) -->
 - **后果**: 新增宿主 = 写 Surface, 不改内核; 代价是"多一层间接", 小改动也要想清楚它属于哪一层 (见 [architecture-v2.md](architecture-v2.md))。
 
 ## ADR-016: 检索独立成端口 (Retriever), 同步判定点用投影解决
@@ -135,7 +140,7 @@
 - **背景**: "存储/检索引擎可插拔, 将来轻松迁移"这句话, 如果没有统一验收, 每次迁移都会变成一次考古。
 - **决策**: `tests/conformance/` 一套参数化测试 (端口形状 / 往返无损 / 重建幂等 / 撤回持久 / 检索黄金集 / 降级可观测 / 并发)。任何新引擎必须先过这套测试; 迁移流程固定为"实现端口 → 过 conformance → 从真相全量 rebuild → 影子读对比 → 切换设置项 → 旧引擎保留一版可回滚"。
 - **后果**: 引擎的进入门槛变高 (这是故意的); 换来迁移是"接线"而不是"改造"。
-- **实现状态 (2026-09)**: `tests/conformance/suite.ts` + `backend-contract.test.ts` 已落地, 覆盖 FileBackend 与 MemoryBackend 两个实现 (21 项契约); 新增引擎只需再加一个 `describeBackend`。`Rebuildable.schemaVersion` 让"索引身份"可断言, `RebuildService` 提供 T1 (索引) 与 T2 (抽取重放) 两级重建。
+- **实现状态 (2026-09)**: `tests/conformance/suite.ts` + `tests/conformance/backend-contract.test.ts` 已落地, 覆盖 FileBackend 与 MemoryBackend 两个实现 (21 项契约); 新增引擎只需再加一个 `describeBackend`。`Rebuildable.schemaVersion` 让"索引身份"可断言, `RebuildService` 提供 T1 (索引) 与 T2 (抽取重放) 两级重建。
 
 ## ADR-021: 多宿主 = 一个 Facade + 多个 Surface; MCP 优先
 
@@ -153,7 +158,7 @@
 
 ## ADR-023: 派生索引必须带"身份", 不符即重建
 
-- **背景**: 换 embedding 模型/分词器后混用旧索引, 会得到**静默失真**的检索 (不报错, 只是结果莫名其妙)。HippoRAG 2 用 `index_manifest.json` 绑定 embedding 身份并拒绝复用; 我们 FTS 侧已用 `tokenizer_version` 做同样的事。
+- **背景**: 换 embedding 模型/分词器后混用旧索引, 会得到**静默失真**的检索 (不报错, 只是结果莫名其妙)。HippoRAG 2 用 `index_manifest.json` 绑定 embedding 身份并拒绝复用 <!-- verify-docs:allow (上游项目文件) -->; 我们 FTS 侧已用 `tokenizer_version` 做同样的事。
 - **决策**: 一切派生索引都要带身份字段: FTS → `tokenizer_version`; 向量 → `embedding_model_id` + 维度 + 归一化方式; 图 → 抽取器 id + 本体版本。身份不符**禁止复用**, 必须走对应级别的重建 (T1/T3), 并把重建报告落盘。
 - **后果**: 换引擎/换模型不会"悄悄坏掉"; 代价是每次升级都要跑一次重建 (这正是 ADR-018/020 想要的能力)。
 

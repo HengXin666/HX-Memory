@@ -46,6 +46,13 @@ if ! pnpm run verify-agent-note-format; then
   exit 1
 fi
 
+# 文档同步: 引用可达 + 结构合规 (学习 DSH 的 doc-sync, 轻量版)。
+echo "[verify] docs: refs + structure"
+if ! pnpm run verify-docs; then
+  echo "[verify] FAILED: verify-docs (引用不存在或缺少文档声明)" >&2
+  exit 1
+fi
+
 if [[ "${HX_SKIP_NOTE_COVERAGE:-0}" != "1" ]]; then
   echo "[verify] notes: coverage (非平凡改动必须带 Note)"
   # CI 里工作区是干净的, 必须给出比较基线才判得出来; 本地默认比较 HEAD + 工作区。

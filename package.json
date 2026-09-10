@@ -40,6 +40,7 @@
     "test:s2": "vitest run tests/s2",
     "lint": "tsc --noEmit && vitest run --passWithNoTests",
     "verify": "bash scripts/verify.sh",
+    "verify-docs": "node --experimental-strip-types scripts/verify-docs.ts",
     "verify-agent-note-classification": "node --experimental-strip-types scripts/verify-agent-note-classification.ts",
     "verify-agent-note-format": "node --experimental-strip-types scripts/verify-agent-note-format.ts",
     "verify-agent-note-coverage": "node --experimental-strip-types scripts/verify-agent-note-coverage.ts",
