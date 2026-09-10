@@ -87,7 +87,17 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
         to: { type: "string", description: "Target memory id." },
         type: {
           type: "string",
-          enum: ["relates", "supersedes", "supersededBy", "generalizes", "appliesTo", "sameAs", "contradicts", "instanceOf", "mentions"],
+          enum: [
+            "relates",
+            "supersedes",
+            "supersededBy",
+            "generalizes",
+            "appliesTo",
+            "sameAs",
+            "contradicts",
+            "instanceOf",
+            "mentions",
+          ],
           description: "Relation type (default: relates).",
         },
       },
@@ -125,7 +135,9 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
 ];
 
 function textResult(text: string, isError = false): Record<string, unknown> {
-  return isError ? { content: [{ type: "text", text }], isError: true } : { content: [{ type: "text", text }] };
+  return isError
+    ? { content: [{ type: "text", text }], isError: true }
+    : { content: [{ type: "text", text }] };
 }
 
 function str(value: unknown): string {
@@ -195,7 +207,9 @@ export async function callTool(
       const query = str(args.query);
       if (!query) return textResult("Error: query cannot be empty.", true);
       const rawLimit = Number(args.limit);
-      const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.trunc(rawLimit))) : 10;
+      const limit = Number.isFinite(rawLimit)
+        ? Math.min(20, Math.max(1, Math.trunc(rawLimit)))
+        : 10;
       const project = str(args.project);
       const result = facade.recall({
         text: query,

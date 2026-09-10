@@ -26,14 +26,14 @@
 
 ### 分类 (封闭集合, 定义在 `scripts/agent-note-tree.ts`)
 
-| Class | 覆盖什么 |
-|---|---|
-| `feature` | 面向用户或模型的新能力。 |
-| `bug-fix` | 修复缺陷, 或补上复盘暴露的缺口。 |
-| `simplification` | 删除代码/行为/表面积, 不新增能力。 |
-| `architecture` | 关于**所发布的源码**的结构决策: 模块如何关联、运行时词汇是什么。 |
-| `process` | 代码**周边**的工具、策略、流程 (gate、包管理、脚手架), 不是运行时行为。 |
-| `testing` | 测试基础设施与策略。 |
+| Class            | 覆盖什么                                                                |
+| ---------------- | ----------------------------------------------------------------------- |
+| `feature`        | 面向用户或模型的新能力。                                                |
+| `bug-fix`        | 修复缺陷, 或补上复盘暴露的缺口。                                        |
+| `simplification` | 删除代码/行为/表面积, 不新增能力。                                      |
+| `architecture`   | 关于**所发布的源码**的结构决策: 模块如何关联、运行时词汇是什么。        |
+| `process`        | 代码**周边**的工具、策略、流程 (gate、包管理、脚手架), 不是运行时行为。 |
+| `testing`        | 测试基础设施与策略。                                                    |
 
 归类的分界线: **architecture 是"我们发布的源码", process 是"围绕它的工具与流程"**。
 (`refactor` 刻意不在集合里 —— 它与 `simplification` 重叠, 后者的判别标准"可观察行为变了吗"已经覆盖。)
@@ -89,10 +89,15 @@ Status 不带日期、不带括号补充: 日期在文件名里, 其余在 git �
 
 ```markdown
 ## Problem
+
 ## Proposal
+
 …按需的技术章节…
+
 ## Alternatives considered
+
 ## Acceptance criteria
+
 ## Risks
 ```
 
@@ -102,9 +107,13 @@ Status 不带日期、不带括号补充: 日期在文件名里, 其余在 git �
 
 ```markdown
 ## Problem
+
 ## Decision
+
 …按需的技术章节…
+
 ## Alternatives considered
+
 ## Consequences
 ```
 

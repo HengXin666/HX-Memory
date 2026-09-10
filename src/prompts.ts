@@ -19,5 +19,8 @@ export const DEFAULT_ABSTRACTOR_PROMPT = [
 
 /** 占位符替换: {{name}} → value。缺省保留原文。 */
 export function fillTemplate(tpl: string, vars: Record<string, string>): string {
-  return tpl.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_m, name: string) => vars[name] ?? "{{" + name + "}}");
+  return tpl.replace(
+    /\{\{([a-zA-Z0-9_]+)\}\}/g,
+    (_m, name: string) => vars[name] ?? "{{" + name + "}}",
+  );
 }

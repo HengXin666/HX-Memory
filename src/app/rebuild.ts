@@ -139,7 +139,10 @@ export class RebuildService {
         if (producedIds.has(old.id)) continue;
         if ((old.status ?? "active") !== "active") continue;
         const relations = [...(old.relations ?? [])];
-        if (successor && !relations.some((r) => r.type === "supersededBy" && r.toId === successor)) {
+        if (
+          successor &&
+          !relations.some((r) => r.type === "supersededBy" && r.toId === successor)
+        ) {
           relations.push({ type: "supersededBy", toId: successor });
         }
         await this.store.update(old.id, {

@@ -100,7 +100,15 @@ export function describeBackend(spec: BackendSpec): void {
     const store = (): BackendHarness["store"] => harness.store;
 
     it("端口形状: 必需方法都存在", () => {
-      for (const method of ["add", "get", "query", "all", "traverse", "update", "remove"] as const) {
+      for (const method of [
+        "add",
+        "get",
+        "query",
+        "all",
+        "traverse",
+        "update",
+        "remove",
+      ] as const) {
         expect(typeof store()[method]).toBe("function");
       }
       if (spec.supports.rebuild) expect(typeof store().rebuildFromTruth).toBe("function");
@@ -143,7 +151,9 @@ export function describeBackend(spec: BackendSpec): void {
     });
 
     it("query: 条件过滤 (kind/scope/project/tag/at/limit)", async () => {
-      await store().add(entry({ id: "a", project: "api", scope: "project", tags: ["concurrency"] }));
+      await store().add(
+        entry({ id: "a", project: "api", scope: "project", tags: ["concurrency"] }),
+      );
       await store().add(entry({ id: "b", project: "web", scope: "project" }));
       await store().add(entry({ id: "c", kind: "decision", content: "决定: 采用 pnpm" }));
       await store().add(rule({ id: "r1" }));
@@ -159,9 +169,7 @@ export function describeBackend(spec: BackendSpec): void {
 
     it("关系遍历: 命中目标条目; 撤回的邻居不可见", async () => {
       await store().add(entry({ id: "target", content: "被引用的条目" }));
-      await store().add(
-        entry({ id: "from", relations: [{ type: "relates", toId: "target" }] }),
-      );
+      await store().add(entry({ id: "from", relations: [{ type: "relates", toId: "target" }] }));
       expect((await store().traverse("from", "relates")).map((e) => e.id)).toEqual(["target"]);
       await store().remove("target");
       expect(await store().traverse("from", "relates")).toEqual([]);

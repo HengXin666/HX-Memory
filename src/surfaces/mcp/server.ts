@@ -4,11 +4,7 @@
 // 顺序性: stdio 上的 JSON-RPC 必须**串行处理** (并发会让响应乱序, 客户端无法配对 id)。
 // 健壮性: 单行解析失败只回 -32700, 不终止服务; 输入结束 (EOF) 时优雅退出。
 import type { MemoryFacade } from "../../app/facade.ts";
-import {
-  handleMessage,
-  type JsonRpcRequest,
-  type JsonRpcResponse,
-} from "./protocol.ts";
+import { handleMessage, type JsonRpcRequest, type JsonRpcResponse } from "./protocol.ts";
 
 export interface McpStdioOptions {
   facade: MemoryFacade;
@@ -40,7 +36,11 @@ export async function serveMcpStdio(opts: McpStdioOptions): Promise<void> {
       write(errorResponse(null, -32700, "Parse error"));
       return;
     }
-    if (typeof parsed !== "object" || parsed === null || typeof (parsed as JsonRpcRequest).method !== "string") {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      typeof (parsed as JsonRpcRequest).method !== "string"
+    ) {
       write(errorResponse(null, -32600, "Invalid Request"));
       return;
     }

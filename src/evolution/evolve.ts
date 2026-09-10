@@ -147,11 +147,14 @@ export function decideEvolution(
     }
   }
 
-  if (best && best.coverage >= supersedeFloor && candidateTokens.size >= (opts.minEvidenceTokens ?? 5)) {
+  if (
+    best &&
+    best.coverage >= supersedeFloor &&
+    candidateTokens.size >= (opts.minEvidenceTokens ?? 5)
+  ) {
     const target = best.entry;
     const signal = hasUpdateSignal(candidate.content, opts.updateSignals);
-    const timeOk =
-      candidate.ts === undefined || candidate.ts.validAt >= target.ts.validAt;
+    const timeOk = candidate.ts === undefined || candidate.ts.validAt >= target.ts.validAt;
     const kindOk = target.kind === candidate.kind;
     // 目标不是 rule (规则只能由人改), 且四条同时成立才自动取代。
     if (signal && timeOk && kindOk && target.kind !== "rule") {

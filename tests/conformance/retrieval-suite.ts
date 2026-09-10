@@ -80,7 +80,9 @@ export function describeRetrieval(spec: RetrievalSpec): void {
     beforeEach(async () => {
       harness = await spec.create();
       const vectorIndex =
-        spec.vector === false ? undefined : new LinearVectorIndex({ embedder: stubEmbedder, floor: 0.5 });
+        spec.vector === false
+          ? undefined
+          : new LinearVectorIndex({ embedder: stubEmbedder, floor: 0.5 });
       retriever = new HybridRetriever(harness.source, vectorIndex ? { vectorIndex } : {});
       for (const input of CORPUS) await harness.source.add(input);
     });
@@ -123,34 +125,59 @@ export function describeRetrieval(spec: RetrievalSpec): void {
       // 未确认的 rule 在写入层就被拒 (写不进去就永远召不回)
       await expect(
         Promise.resolve().then(() =>
-          harness.source.add(entry({ id: "rule-bad", kind: "rule", scope: "global", content: "未确认规则" })),
+          harness.source.add(
+            entry({ id: "rule-bad", kind: "rule", scope: "global", content: "未确认规则" }),
+          ),
         ),
       ).rejects.toThrow(/confirmation/);
     });
 
     it("预算: token 预算与条数上限都是硬约束", () => {
-      const out = retriever.retrieveSync({ text: "容器 并发 部署 连接池 pnpm", limit: 2, tokenBudget: 1000 });
+      const out = retriever.retrieveSync({
+        text: "容器 并发 部署 连接池 pnpm",
+        limit: 2,
+        tokenBudget: 1000,
+      });
       expect(out.hits.length).toBeLessThanOrEqual(2);
-      const tight = retriever.retrieveSync({ text: "容器 并发 部署 连接池 pnpm", limit: 10, tokenBudget: 12 });
+      const tight = retriever.retrieveSync({
+        text: "容器 并发 部署 连接池 pnpm",
+        limit: 10,
+        tokenBudget: 12,
+      });
       expect(tight.tokens).toBeLessThanOrEqual(12);
     });
 
     it("演化: 命中旧版本时只注入最新 active 版本", async () => {
       await harness.source.add(
-        entry({ id: "v1", content: "容器并发上限设为 10", status: "superseded", relations: [{ type: "supersededBy", toId: "v2" }] }),
+        entry({
+          id: "v1",
+          content: "容器并发上限设为 10",
+          status: "superseded",
+          relations: [{ type: "supersededBy", toId: "v2" }],
+        }),
       );
       await harness.source.add(
-        entry({ id: "v2", content: "容器并发上限改为 50", relations: [{ type: "supersedes", toId: "v1" }] }),
+        entry({
+          id: "v2",
+          content: "容器并发上限改为 50",
+          relations: [{ type: "supersedes", toId: "v1" }],
+        }),
       );
-      const ids = retriever.retrieveSync({ text: "容器并发上限", limit: 5 }).hits.map((h) => h.entry.id);
+      const ids = retriever
+        .retrieveSync({ text: "容器并发上限", limit: 5 })
+        .hits.map((h) => h.entry.id);
       expect(ids).toContain("v2");
       expect(ids).not.toContain("v1");
     });
 
     it("可见性: shadow/expired 不参与检索", async () => {
-      await harness.source.add(entry({ id: "s1", content: "已被撤回的并发结论", status: "shadow" }));
+      await harness.source.add(
+        entry({ id: "s1", content: "已被撤回的并发结论", status: "shadow" }),
+      );
       await harness.source.add(entry({ id: "e1", content: "已过期的并发结论", status: "expired" }));
-      const ids = retriever.retrieveSync({ text: "并发结论", limit: 10 }).hits.map((h) => h.entry.id);
+      const ids = retriever
+        .retrieveSync({ text: "并发结论", limit: 10 })
+        .hits.map((h) => h.entry.id);
       // 注意: 语料里其它相关条目仍应被召回 —— 契约是"这两个 id 不出现", 不是"结果为空"。
       expect(ids).not.toContain("s1");
       expect(ids).not.toContain("e1");
@@ -158,7 +185,11 @@ export function describeRetrieval(spec: RetrievalSpec): void {
 
     it("图扩展: 结构相关的邻居被召回并给出可审计的 why", async () => {
       await harness.source.add(
-        entry({ id: "seed", content: "容器并发策略缺失", relations: [{ type: "relates", toId: "neighbor", weight: 0.9 }] }),
+        entry({
+          id: "seed",
+          content: "容器并发策略缺失",
+          relations: [{ type: "relates", toId: "neighbor", weight: 0.9 }],
+        }),
       );
       await harness.source.add(entry({ id: "neighbor", content: "部署流水线上的其它注意点" }));
       const out = retriever.retrieveSync({ text: "容器并发策略", limit: 5 });

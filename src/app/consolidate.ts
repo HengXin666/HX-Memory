@@ -108,5 +108,4 @@ export class ConsolidationService {
     if ((entry.status ?? "active") === "active") return;
     await this.store.update(id, { status: "active" } as Partial<MemoryEntry>);
   }
-
 }
