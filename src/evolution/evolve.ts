@@ -11,7 +11,8 @@
 //   - **规则 (rule) 不参与任何自动演化**: 候选是 rule → 只 add; 目标是 rule → 只标记冲突, 不改状态。
 //   - 取代必须"同一话题 + 同一种类 + 时间不倒退 + 有显式信号"四条同时成立。
 //   - 可选语义相似度 (Embedder) 只作为**重复**的兜底信号, 不作为取代依据 (换个说法 ≠ 推翻旧结论)。
-import type { MemoryEntry, MemoryKind } from "../kernel/types.ts";
+import type { MemoryEntry } from "../kernel/types.ts";
+import type { Adjudication } from "./adjudicator.ts";
 import {
   decideAssociation,
   normalizeFingerprint,
@@ -40,6 +41,12 @@ export interface EvolutionOptions extends AssociationOptions {
   semanticSimilarity?: (targetId: string) => number | undefined;
   /** 语义相似度达到该值即视为重复 (默认 0.92)。 */
   semanticDuplicateFloor?: number;
+  /**
+   * 可选: 对"硬冲突"邻居的裁决结果 (由调用方**预先算好**)。
+   * 为什么是预计算而不是回调里 await: 本函数是纯同步逻辑 (S1 可测), 而裁决端口是异步的
+   * (LLM 实现要调模型)。调用方 (Facade) 负责 await 并把结果按 targetId 查表传入。
+   */
+  adjudication?: (targetId: string) => Adjudication | undefined;
 }
 
 export interface EvolutionDecision {
@@ -167,6 +174,27 @@ export function decideEvolution(
       };
     }
     if (hardConflict(candidate.content, target.content)) {
+      const verdict = opts.adjudication?.(target.id);
+      // 双保险: 即使裁决器说 supersede, 目标若是 rule 也绝不取代 (人工闸门, ADR-003)。
+      // 硬约束不该只依赖注入的实现 —— 裁决器换成一个更激进的实现时, 这里必须仍然拦住。
+      if (verdict?.verdict === "supersede" && target.kind !== "rule") {
+        return {
+          action: "supersede",
+          targetId: target.id,
+          similarity: best.similarity,
+          coverage: best.coverage,
+          reason: "adjudicated-supersede: " + verdict.reason,
+        };
+      }
+      if (verdict?.verdict === "duplicate") {
+        return {
+          action: "duplicate",
+          targetId: target.id,
+          similarity: Math.max(best.similarity, verdict.confidence),
+          coverage: best.coverage,
+          reason: "adjudicated-duplicate: " + verdict.reason,
+        };
+      }
       // 目标若是 rule: 只标记冲突 (由人去改规则), 理由写清楚。
       return {
         action: "contradict",
@@ -186,9 +214,4 @@ export function decideEvolution(
     ...(base.mergedTags ? { mergedTags: base.mergedTags } : {}),
     ...(base.mergedEntities ? { mergedEntities: base.mergedEntities } : {}),
   };
-}
-
-/** 供调用方判断"这条候选是否值得走完整演化路径" (太短的候选只走基础去重)。 */
-export function isEvolvable(kind: MemoryKind): boolean {
-  return kind !== "rule";
 }
