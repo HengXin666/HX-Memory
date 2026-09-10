@@ -73,9 +73,30 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 | ④   | **确定性注入** (自动)   | 每个 `agent/pre-step` | 绑定命中的项目, 每次对话自动注入绑定记忆                             | 模型每步都带着相关记忆 (测试 10/10 命中)          |
 | ⑤   | **记忆工具** (模型可调) | DSH 工具区            | 模型自主调用 `memory_search` / `memory_save` / `memory_rule_propose` | 按需检索 / 保存 / 提议规则                        |
 | ⑥   | **推广批次**            | DSH 设置 → 记忆审阅   | 点「运行推广批次」                                                   | 把最近的 lesson/decision 聚类成待审提议           |
-| ⑦   | **Codex CLI**           | 终端                  | `node dist/adapters/codex/cli.js sync/rules`                         | 把全局规则同步进某仓库 AGENTS.md / 列出已确认规则 |
+| ⑦   | **Codex CLI**           | 终端                  | `hx-memory sync/rules/stats/verify/rebuild`                          | 同步 AGENTS.md / 列规则 / 统计 / 一致性自检 / 分级重建 |
+| ⑧   | **MCP 服务**            | Claude Code / Desktop / Cursor / Cline | `hx-memory mcp --root <memRoot>` 配成 MCP server            | 六个工具 (search/save/link/history/forget/stats) 共用同一份记忆 |
+| ⑨   | **衰减整合**            | 终端 / 定时任务       | `hx-memory consolidate [--dry-run]`                                 | 短命记忆按衰减/TTL 置为 `expired` (可逆, 永不删除) |
 
-> 简单说: **① 自动记, ④ 自动注入, ② 管绑定, ③+⑥ 管推广, ⑤ 手动兜底, ⑦ 换宿主用**。
+> 简单说: **① 自动记, ④ 自动注入, ② 管绑定, ③+⑥ 管推广, ⑤ 手动兜底, ⑦⑧ 换宿主用, ⑨ 管遗忘**。
+>
+> 所有入口 (DSH 工具/面板、MCP、CLI) 都经由同一个 `MemoryFacade` —— **换宿主不换语义**:
+> 同一条检索排序、同一套治理闸门 (未确认规则永不召回)、同一份可见性口径 (shadow/expired 默认隐藏)。
+
+### 换成别的宿主 (MCP)
+
+任何支持 MCP 的客户端 (Claude Code / Desktop、Cursor、Cline…) 都能接上同一份记忆:
+
+```jsonc
+// 客户端配置示例 (stdio)
+{
+  "mcpServers": {
+    "hx-memory": { "command": "hx-memory", "args": ["mcp", "--root", "/path/to/memory-root"] }
+  }
+}
+```
+
+工具: `memory_search` / `memory_save` / `memory_link` / `memory_history` / `memory_forget` / `memory_stats`。
+它们与 DSH 工具**共用同一个 Facade 与同一条检索语义** —— 换宿主不换记忆, 也不换规则 (共识与治理闸门一致)。
 >
 > 推广闭环有两个触发点: 面板按钮 (聚类最近的经验) 与 `memory_rule_propose` 工具 (模型直接提议)。
 > 两条都只进人工队列, 都不会自动变成规则。
@@ -131,9 +152,39 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 - `project` 是第一等字段: 本地经验按项目隔离, 全局规则跨项目生效。
   项目键 = **会话工作目录的目录名** (如 `/code/api` → `api`), 捕获/绑定/召回全链路一致。
 
-> [!NOTE] 未实现: `supersedes` 演化链目前只有"语义 + 可重建的关联", 还没有自动写入者
-> (即新记忆不会自动覆盖旧记忆)。计划: 在捕获时按 (project, kind, 主题) 检测冲突并生成
-> supersedes 链, 由人在审阅面板确认。
+### ♻️ 6. 记忆会自己更新 (三档演化, 规则永不被机器改)
+
+写入时按"证据强度"分三档 (ADR-024):
+
+- **合并 (自动)**: 换个说法重记 → 不重复落盘, 强化老条目并把新标签/实体并进去;
+- **取代 (自动, 需显式信号)**: 说"上限**改为** 50"或"这条**不再**适用"时 —— 新条目 `supersedes` 旧的, 旧的置 `superseded` + `supersededBy`, **不删除**, `history` 可查完整版本链, 检索只注入最新版;
+- **冲突标记 (不裁决)**: 数字/极性矛盾但没有更新信号 → 双向 `contradicts` 边, **两条都保留** —— 谁对谁错交给人, 机器不猜。
+
+**规则 (rule) 豁免**: 机器只能标记"某条规则可能过时", 永不自动改写/删除规则 (人工闸门)。
+另外, 共享标签/实体的记忆会自动建 `relates` 边 (默认最多 3 条, 有上限防关联爆炸), 这条边进真相文件、重建后仍在。
+
+### 🔁 7. 分级重建 + 引擎准入 (为什么"换引擎"是接线而不是改造)
+
+- **T1 索引重建**: 真相文件 → 结构化/全文索引 (`rebuildFromTruth`, 幂等)。
+- **T2 抽取重建**: `episodes/YYYY-MM-DD.jsonl` 原文 → 记忆条目 (`rebuild --episodes`)。换了抽取器/规则后**重放**而不是重聊: 同一抽取器重放结果与当初一致 (幂等), 换了抽取器则新结果落盘、旧结果置 `superseded` (不删除, 历史可查)。
+- **引擎准入**: `tests/conformance/` 一套契约跑所有实现 (往返无损 / 治理铁律 / 可见性 / 重建幂等 / 自检 / 持久化); 新增引擎只需加一个 `describeBackend`。当前已覆盖 FileBackend 与 MemoryBackend 两个实现。
+- **索引身份**: 派生索引带 `schemaVersion` (格式 + 分词版本), 不符即重建, 不许混用。
+
+```bash
+hx-memory stats   --root <memRoot>   # 统计 + 引擎状态
+hx-memory verify  --root <memRoot>   # 索引 ↔ 真相 一致性自检 (不一致返回 1)
+hx-memory rebuild --root <memRoot>              # T1: 索引 ← 真相
+hx-memory rebuild --root <memRoot> --episodes   # T2: 记忆 ← 原文重放
+hx-memory consolidate --root <memRoot> [--dry-run]  # 衰减扫描 (过期可逆, rule/lesson 永不过期)
+```
+
+**用进废退**: 被检索并注入的记忆会 `reinforcement+1` 并刷新 `lastHitAt` (同一分钟内的重复命中合并成一次),
+因此常用记忆衰减更慢; 反之从未被用到的 `event`/`context` 会先过期。
+`lesson`/`decision`/`rule` 永不自动过期 (只降权), 且"过期"只是状态 —— 真相文件里仍在, `revive` 可拉回。
+
+> [!NOTE] 未实现: `supersedes` 链目前由**重建 (T2)** 与人工 `memory_link` 写入;
+> 会话中的自动冲突消解 (新记忆推翻旧记忆) 仍在计划中 (见 docs/architecture-v2.md §4.3),
+> 且规则类改动永远走人工闸门。
 
 ### 🔌 4. 自维护内核 + 可插拔接入
 
@@ -153,11 +204,23 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 
 ## 架构一览
 
+> 目标架构 (四层切面: Surface / Application / Ports / Engines) 见 [docs/architecture-v2.md](docs/architecture-v2.md);
+> 市面方案对标见 [docs/open-source-landscape.md](docs/open-source-landscape.md)。
+
 ```text
 src/
   kernel/          # 核心内核 (Port): 只定义抽象, 零依赖
-    types.ts       # MemoryEntry / Relation / Query / Scope (project 第一等字段)
-    ports.ts       # MemoryStore / HarnessAdapter / Generalizer 接口
+    types.ts       # MemoryEntry / Relation / Query / Scope (project 第一等字段) + Episode/演化字段
+    ports.ts       # MemoryStore / HarnessAdapter / Generalizer + Retriever/能力自述 (v2)
+    cjk.ts         # 中英混排分词: 词流 + CJK bigram (索引/查询对称)
+    ranking.ts     # RRF 融合 / 时间衰减 / 强化 / MMR / token 预算 (纯函数)
+  app/             # 使用层唯一 API
+    facade.ts      # MemoryFacade: remember/recall/revise/forget/link/history/stats
+    rebuild.ts     # 分级重建: T1 索引 ← 真相 / T2 抽取 ← episode 原文 (换抽取器用)
+  retrieval/       # 检索层 (端口实现)
+    hybrid.ts      # 多通道召回 → RRF → 覆盖率过滤 → 衰减 → MMR → 预算
+  evolution/       # 演化层
+    associate.ts   # 写入期裁决: 归一化指纹 / 近义去重 / 自动建边
   capture/         # 捕获引擎: turn → MemoryEntry (kind 推断/指纹去重/双时态) + pipeline
   recall/          # 召回引擎: 全局规则跨项目生效 + 项目内经验按需召回
   generalize/      # 推广引擎: 聚类 → 提议 → review 队列 (人工闸门 confirm→rule)
@@ -171,6 +234,10 @@ src/
                    #   client/rpc.ts     Web 面板 ↔ gateway 的唯一 RPC 入口 (/api + {args})
     codex/         #   Codex (AGENTS.md 同步 + CLI)
   storage/         # 存储层: FileBackend (默认, 真相在文件+SQLite 索引) / 可插拔
+    fts-index.ts   # FTS5 全文索引 (双列 词/bigram, 带分词版本号, 不可用时降级 LIKE)
+    file-store.ts  # 真相文件 ↔ 索引 (往返无损, 含演化字段) + Rebuildable (身份自述/重建/自检)
+    episode-store.ts # Episode 追加日志 (原文真相, 支撑抽取级重放; 可开关 + 保留期)
+    memory-store.ts  # 纯内存第二实现 (证明端口可插拔; 同一套 conformance 测试)
   index.ts
 scripts/
   lib/wrap-client-bundle.mjs  # client bundle 包装 (模块 id = 包名, 可单测)
@@ -194,6 +261,7 @@ scripts/
 | S1 内核          | `tests/s1`             | 纯逻辑, 禁网络 (binder / 端口一致性 / 双时态)                                                                  |
 | S2 接入+存储     | `tests/s2`             | 临时资源/stub: 存储完整性、pre-step 去重、设置生效、agents 契约、推广触发、client RPC 约定                     |
 | S3 完整 DSH      | `tests/s3`             | 事件接线 (假 harness)                                                                                          |
+| **引擎准入**     | `tests/conformance`   | 同一套契约跑所有存储/检索引擎 (往返无损/治理/可见性/重建幂等/自检/持久化); 不过不许进 `src/storage`             |
 | static           | `tsc --noEmit` ×2      | 内核 + client 双类型闸门                                                                                       |
 | **真机行为门禁** | `scripts/smoke-dsh.sh` | 隔离 `DSH_HOME` 装插件 → 启 web host → 断言 fiber active / 6 个 RPC 业务成功 / 绑定写读真往返 / bundle 模块 id |
 
@@ -228,6 +296,13 @@ relations/tags/structured 重建无损、CRLF/BOM/反斜杠矩阵逐字往返、
 
 | ADR | 决策                                                                        |
 | --- | --------------------------------------------------------------------------- |
+| 015 | 四层切面 (Surface/Application/Ports/Engines), 依赖方向单向                  |
+| 016 | 检索独立成端口 (Retriever), 同步判定点用投影解决                            |
+| 017 | 全文索引默认 FTS5 + "词 + CJK bigram" 双流分词                              |
+| 018 | Episode 原始轮次是真相的一部分 (支撑抽取级重建)                             |
+| 019 | 演化字段进真相文件; 遗忘是状态而不是删除                                    |
+| 020 | 引擎准入 = conformance 套件                                                 |
+| 021 | 多宿主 = 一个 Facade + 多个 Surface; MCP 优先                               |
 | 001 | 自维护内核 + adapter, 不整包引入市面项目                                    |
 | 002 | 真相在文件 (Markdown), 索引在库 (SQLite), 可重建                            |
 | 003 | 推广 = 后台提议 + 人工 review 队列                                          |

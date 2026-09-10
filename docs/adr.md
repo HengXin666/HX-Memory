@@ -94,3 +94,83 @@
 - **背景**: 设置命名空间只有注册了才会出现在 `settings.describe` 里。0.1.2-rc.1 的入口是 `installSection(owner, ns, schema, entry, hooks)` (hooks 交出权威配置 thunk); 0.1.1-rc.2 没有这个方法, 只有 `register(ns, schema, { base })` 返回 `scope.get()`。此前只实现前者, 导致 0.1.1 上设置命名空间根本不出现 (真机门禁发现)。
 - **决策**: 能力探测: 有 `installSection` 用 `installSection` 并 `adopt(() => current())`; 否则用 `register` 并 `adopt(() => scope.get())`; 两者都没有才退回组合配置并告警。`scripts/smoke-dsh.sh` 断言 `settings.describe` 一定包含 `hx-memory`。
 - **后果**: 两个宿主版本上设置都真的生效; 代价是适配层多一个分支 (由 smoke + settings-adoption 测试覆盖)。
+
+## ADR-015: 四层切面 (Surface / Application / Ports / Engines), 依赖方向单向
+
+- **背景**: v1 只切了"宿主 vs 存储"两条线, 于是业务逻辑散在 `adapters/dsh/*` (DSH 工具直接调 `FileBackend`), Codex 又各写一遍; 换宿主/换检索引擎都要动记忆本体。
+- **选项**: (a) 继续按"宿主 adapter"分文件; (b) 按"变化频率"切四层: 使用层 (多宿主) / 应用层 (记忆加工) / 端口层 (可替换物) / 引擎层 (实现)。
+- **决策**: (b)。端口层集中"一定会换的东西" (TruthStore/DerivedStore/Rebuildable/Retriever/Embedder/Extractor/Reranker/Clock); 应用层只认端口; 使用层只认 Facade。依赖方向 `L3 → L2 → L1 ← L0` 单向, 由 `tests/s1/architecture.test.ts` 断言。
+- **后果**: 新增宿主 = 写 Surface, 不改内核; 代价是"多一层间接", 小改动也要想清楚它属于哪一层 (见 [architecture-v2.md](architecture-v2.md))。
+
+## ADR-016: 检索独立成端口 (Retriever), 同步判定点用投影解决
+
+- **背景**: v1 把检索钉在 `MemoryStore.query` 上, 而且要求**同步** (`SyncMemoryStore` 进了 Binder/RecallService 的构造签名)。后果: ①任何异步引擎 (向量服务/远端库) 接不进来; ②排序策略 (关键词包含评分) 与存储实现绑死, 换引擎等于换排序语义。
+- **选项**: (a) 让所有调用点改成 async; (b) 保留同步注入点, 引入 `Retriever` 端口 + `RetrieverProjection` (预步读投影, 后台刷新)。
+- **决策**: (b)。默认实现 `HybridRetriever` 是同步的 (SQLite 足够快), 因此同时满足 `Retriever` 与 `SyncRetriever`; 将来接异步引擎时在它之上加投影, 不改调用点。投影的硬约束: **只能加速, 不能改变语义** (同请求同集合, 由 conformance 钉住); 过期必须显式标记降级。
+- **后果**: Binder/RecallService/工具三条路共用一次检索语义; 老的关键词路径保留为无 Retriever 时的回退 (不是长期形态)。
+
+## ADR-017: 全文索引默认 FTS5 + "词 + CJK bigram" 双流分词
+
+- **背景**: v1 的检索评分是 `content.includes(词)` 计数 —— 没有词形归一、没有相关性排序、中文无分词。实测 (Node 24.15 / SQLite 3.51.3 / `node:sqlite`): FTS5 自带且 trigram/porter/rtree 可用, 但 **trigram 无法匹配 2 字中文查询** (`MATCH '并发'` → 0 行), unicode61 又把连续汉字当一个 token。
+- **选项**: (a) 引入 jieba 类分词依赖; (b) 只用 trigram (放弃 2 字查询); (c) `Intl.Segmenter` 词流 + CJK bigram 流双列, 交给 unicode61, BM25 列权区分。
+- **决策**: (c)。零依赖, 且"任意 2 字中文查询可召回"是确定性的; 代价是索引膨胀 2-3 倍与 bigram 宽召回 (噪声由检索层的覆盖率过滤 + MMR 压住)。
+- **后果**: 索引带 `tokenizer_version`; 版本不一致时**必须重建**而不是混用 (混用 = 静默召回失真)。规则 (rule) 的确认闸门在检索侧再校验一次。
+
+## ADR-018: Episode 原始轮次是真相的一部分 (支撑抽取级重建)
+
+- **背景**: 记忆是"抽取"的产物, 而抽取器一定会升级 (手写正则 → LLM → 下一代模型)。v1 只存抽取结果, 且 `context` 类**从不落盘**, 于是原文消失; 升级抽取器时只能对已经损失过一次信息的结果再抽一遍。
+- **选项**: (a) 只存抽取结果 (现状); (b) 存原文 episode (追加日志) + 抽取结果, 二者用 `derivedFrom` 关联。
+- **决策**: (b)。Episode 是追加写、永不改写的真相; 全量重建因此分四级: T1 索引重建 / **T2 抽取重建** / T3 嵌入重建 / T4 整体迁移。
+- **后果**: 多一份原始日志的存储与隐私责任 → 必须可配置保留期与关闭开关; 换来"换抽取器 = 重放, 而不是重聊"。
+
+## ADR-019: 演化字段进真相文件; 遗忘是状态而不是删除
+
+- **背景**: 关联性 (entities/relations)、演化 (supersedes/mergedFrom)、衰减 (importance/reinforcement/lastHitAt) 决定记忆怎么被更新与整理。若只存索引, "删库重建/换引擎" 会静默丢掉这些语义 (违反 ADR-011)。
+- **选项**: (a) 演化状态只存索引 (承认是有损派生); (b) 全部写进真相文件 frontmatter 并往返无损。
+- **决策**: (b)。新增可选字段全部进 frontmatter; `status` 扩展出 `merged`/`expired`; **遗忘 = 状态降权 (可复活), 永不物理删除**; 手工编辑出的坏值只丢该字段并记 warning (不让整条记忆消失), 但状态/时间戳这类语义开关仍 fail-closed 整条拒绝。
+- **后果**: 真相文件变长; 换来"删索引/换引擎不丢演化历史", 且人可以直接读/改 (`tests/s2/evolution-fields.test.ts` 钉住往返无损)。
+
+## ADR-020: 引擎准入 = conformance 套件 (没过的实现不进 `src/engines/`)
+
+- **背景**: "存储/检索引擎可插拔, 将来轻松迁移"这句话, 如果没有统一验收, 每次迁移都会变成一次考古。
+- **决策**: `tests/conformance/` 一套参数化测试 (端口形状 / 往返无损 / 重建幂等 / 撤回持久 / 检索黄金集 / 降级可观测 / 并发)。任何新引擎必须先过这套测试; 迁移流程固定为"实现端口 → 过 conformance → 从真相全量 rebuild → 影子读对比 → 切换设置项 → 旧引擎保留一版可回滚"。
+- **后果**: 引擎的进入门槛变高 (这是故意的); 换来迁移是"接线"而不是"改造"。
+- **实现状态 (2026-09)**: `tests/conformance/suite.ts` + `backend-contract.test.ts` 已落地, 覆盖 FileBackend 与 MemoryBackend 两个实现 (21 项契约); 新增引擎只需再加一个 `describeBackend`。`Rebuildable.schemaVersion` 让"索引身份"可断言, `RebuildService` 提供 T1 (索引) 与 T2 (抽取重放) 两级重建。
+
+## ADR-021: 多宿主 = 一个 Facade + 多个 Surface; MCP 优先
+
+- **背景**: 宿主会换 (DSH / Claude Code / Codex / Cursor), 而 v1 的业务逻辑与 DSH 深度绑定 (工具直接 import 引擎、注入逻辑在 adapter 里)。
+- **选项**: (a) 每个宿主一套实现; (b) 抽 `MemoryFacade` 唯一 API, 宿主只写"怎么触发/怎么注入"的 Surface; (c) 只做 MCP, 放弃宿主原生集成。
+- **决策**: (b) + MCP 作为**最高优先级的 Surface** (覆盖面最大的事实标准), 宿主原生 hooks 用于"确定性注入"这类 MCP 给不了的保证。
+- **后果**: 新增宿主 ≤200 行; 代价是 Facade 必须先稳定 (P0), 否则每个 Surface 都会催生自己的方言。
+
+## ADR-022: 宿主适配的鲁棒性契约 (时限 / 降级 / 重入)
+
+- **背景**: 调研发现 MemOS 的 DSH 适配器 (同一个宿主) 明确写了六条工程约束, 其中三条我们此前没有显式化: 召回**硬时限** (`min(recallTimeoutMs, 3000)`)、同轮 `agent/pre-step` **重入去重**、超时**降级到安全截断并显式声明**。记忆层是"锦上添花"的组件, 它绝不能让对话变慢或变哑。
+- **选项**: (a) 依赖检索足够快; (b) 把"时限/降级/重入"写成适配层契约并测试。
+- **决策**: (b)。三条硬约束: ①注入路径有硬时限 (超时 → 用规则保底通道 + 标 `degraded`); ②同轮重入只注入一次 (内容级去重之外再加一层轮次键); ③注入块声明为**不可信历史数据**并标 source (提示注入防护), 同时排除插件自身消息防递归召回。
+- **后果**: 极端情况下宁可少注入也不能阻塞; `degraded` 必须能被面板/测试观察 (与 ADR-016 的降级可见同一条原则)。出处: [MemOS DSH adapter](https://github.com/MemTensor/MemOS/blob/main/apps/memos-local-plugin/adapters/deepseek-harness/README.md)。
+
+## ADR-023: 派生索引必须带"身份", 不符即重建
+
+- **背景**: 换 embedding 模型/分词器后混用旧索引, 会得到**静默失真**的检索 (不报错, 只是结果莫名其妙)。HippoRAG 2 用 `index_manifest.json` 绑定 embedding 身份并拒绝复用; 我们 FTS 侧已用 `tokenizer_version` 做同样的事。
+- **决策**: 一切派生索引都要带身份字段: FTS → `tokenizer_version`; 向量 → `embedding_model_id` + 维度 + 归一化方式; 图 → 抽取器 id + 本体版本。身份不符**禁止复用**, 必须走对应级别的重建 (T1/T3), 并把重建报告落盘。
+- **后果**: 换引擎/换模型不会"悄悄坏掉"; 代价是每次升级都要跑一次重建 (这正是 ADR-018/020 想要的能力)。
+
+## ADR-024: 写入期演化分三档 (去重合并 / 显式取代 / 冲突标记), 规则豁免
+
+- **背景**: "记忆会自己更新"如果做成"新记忆自动推翻旧记忆", 就会把"用户改主意了"和"用户说了句更细的话"一起吞掉; 如果什么都不做, 旧结论会一直和新结论一起被注入 (用户看到的自相矛盾)。调研也发现: mem0 OSS v3 干脆退回 ADD-only, 说明自动演化在生产上很难做对。
+- **选项**: (a) 全自动 LLM 裁决 (mem0 早期 / A-MEM); (b) 只做去重不做演化; (c) 分档: 确定性的自动做, 需要判断的只标记。
+- **决策**: (c)。三档且按"证据强度"升级:
+  1. **duplicate (自动, 只强化)**: 归一化指纹相同, 或候选覆盖率 ≥ 0.75, 或语义余弦 ≥ 0.95 (有 Embedder 时) —— 不重复落盘, 强化老条目并合并标签/实体;
+  2. **supersede (自动, 写演化链)**: 必须**四条同时成立** —— 显式更新信号 (改为/不再/废弃/替换为…)、同一种类、时间不倒退、目标是同话题 (覆盖率 ≥ 0.5); 旧条目置 `superseded` + `supersededBy` (不删除, `history()` 可查);
+  3. **contradict (只标记, 不裁决)**: 数字不一致或极性相反且无更新信号 → 双向 `contradicts` 边, 两条都保持 active, 由人/后续 LLM 裁决。
+- **规则豁免 (硬约束)**: 候选是 rule → 只落盘; 目标是 rule → 只标记冲突, 状态绝不由机器改 (人工闸门 ADR-003 不破)。
+- **后果**: "换个说法重记"不再产生重复; "我把上限改成 50" 能自动生效且历史可查; 真正的矛盾会显式暴露而不是静默覆盖。代价是需要 LLM 的语义裁决仍未自动化 —— 那是下一步, 且必须带闸门。
+
+## ADR-025: 向量召回默认走"同步嵌入 + 线性索引", ANN 引擎后置
+
+- **背景**: "语义召回"如果等接上向量数据库才存在, 那这条通道永远没有测试覆盖, 也没人知道它坏了。另一方面, 预步注入 (`agent/pre-step`) 是**同步**判定点, 而主流向量库/远端嵌入 API 都是异步的 —— 直接把 async 引进检索会让注入路径变形。
+- **选项**: (a) 直接接 sqlite-vec/LanceDB (引入原生依赖 + 异步索引维护); (b) 先做端口 + 同步本地实现 (线性扫描), 需要规模时再换 ANN; (c) 不做向量, 只留词/bigram。
+- **决策**: (b)。三件东西: ①`SyncEmbedder` 端口 (`embedSync`) —— 只有同步嵌入器能进预步路径, 异步嵌入器必须走投影 (architecture-v2 §3.3); ②`VectorIndex` 端口 + 默认 `LinearVectorIndex` (内存线性扫描, 增量同步按内容哈希判断"要不要重嵌", 有 floor 防噪声, 有同步上限并记 `vector:scan-capped` 降级); ③默认嵌入器 `HashingEmbedder` (零依赖零成本, 中文可用, 词汇重合级语义)。
+- **后果**: 语义通道默认可用、有测试 (含"字面不重合但向量相近"的召回契约)、可降级可观测; 千级条目内线性扫描够快, 万级以上必须换 ANN —— 换的时候只实现 `VectorIndex` 端口 (sqlite-vec/LanceDB/Qdrant), 检索层一行不改。身份 (`embedderId`/`dim`) 进索引, 换模型即重建 (ADR-023)。

@@ -1,4 +1,7 @@
-# 架构
+# 架构 (v1 现状)
+
+> [!NOTE] 目标架构 (四层切面 Surface / Application / Ports / Engines) 见 [architecture-v2.md](architecture-v2.md);
+> 本文描述的是**当前代码**的分层, 两者差异与迁移路径在 v2 文档的 §1 与 §7。
 
 > 目的: 说明 HX-Memory 为什么这样分层, 以及每一层的边界。
 > 边界 (不写什么): 不写实现细节 (实现细节在代码注释与 ADR), 不写使用教程 (在 README)。
