@@ -194,6 +194,21 @@ export interface SyncRetriever {
 export interface Clock {
   now(): string;
 }
+
+/**
+ * 检索预热端口 (可选能力)。异步嵌入器的向量由后台补齐, 宿主可以在**注入前带硬时限**地热身:
+ *   await warmup(50) —— 最多等 50ms, 补多少算多少, 永不阻塞对话。
+ * 同步引擎 (FTS/本地哈希) 不需要实现它 (没有它 = 已经就绪)。
+ */
+export interface RetrievalWarmup {
+  /**
+   * 在 deadlineMs 内尽量补齐投影; 超时/未就绪都不算失败 (调用方只需知道"尽力了")。
+   * query 用于把"这一轮要查的文本"一起嵌好 —— 否则首轮查询注定没有语义召回。
+   */
+  warm(deadlineMs: number, query?: string): Promise<void>;
+  /** 是否已就绪 (未就绪时注入结果会带降级说明)。 */
+  ready(): boolean;
+}
 /**
  * Episode 存储端口 (ADR-018): 原始轮次的追加日志, 是真相的一部分。
  * 为什么需要它: 记忆是"抽取"的产物, 抽取器一定会升级; 只存抽取结果的话,
@@ -241,11 +256,17 @@ export interface Rebuildable {
  * 索引侧必须记录 embedding 身份 (modelId + dim), 不符即重建。
  */
 export interface Embedder {
-  /** 身份串 (如 "hashing-v1" / "bge-m3@1024"): 进索引身份, 防止混用两种向量。 */
+  /** 身份串 (如 "lexical-v1" / "bge-m3@1024"): 进索引身份, 防止混用两种向量。 */
   readonly id: string;
   readonly dim: number;
   /** 批量嵌入 (顺序与输入一致)。 */
   embed(texts: readonly string[]): Awaitable<number[][]>;
+  /**
+   * 推荐的余弦下限 (**由各嵌入器按自己的分数分布标定**)。
+   * 为什么必须由嵌入器声明: 不同模型的相似度尺度完全不同 —— 词汇级嵌入的同义改写约 0.2-0.5,
+   * 而真语义模型同一对可能 0.7+; 用一个全局阈值必然有一边失效 (实测过)。
+   */
+  readonly floor?: number;
 }
 /**
  * 同步嵌入面。预步注入 (agent/pre-step) 是同步判定点, 不能等 IO ——
@@ -278,6 +299,18 @@ export interface VectorIndex {
   /** 近邻检索: 返回 id + 余弦分 (降序)。 */
   search(query: string, limit: number): Array<{ id: string; score: number }>;
   size(): number;
+  /**
+   * 可选: 异步补齐向量 (异步嵌入器的投影)。
+   * 同步检索 (预步注入) 只读投影; 宿主在注入前可带**硬时限**地 await 它, 没就绪就降级。
+   */
+  refresh?(): Promise<void>;
+  /**
+   * 可选: 提前登记"下一次要查的文本", 让 warm() 能在同一次限时窗口里把它一起嵌好。
+   * 没有它也能工作, 只是**第一轮**查询注定没有语义召回 (查询向量要等下一轮才就绪)。
+   */
+  prime?(query: string): void;
+  /** 可选: 投影是否已就绪 (未就绪时检索会记 degraded, 不静默)。 */
+  readonly ready?: boolean;
 }
 /** 索引同步用的最简条目投影 (只要 id + 正文, 不做 relations/tags 的二次查询)。 */
 export interface IndexDoc {

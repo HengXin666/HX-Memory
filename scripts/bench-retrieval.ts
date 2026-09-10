@@ -1,5 +1,5 @@
 // scripts/bench-retrieval.ts — 本地性能基准: 万级记忆的读写延迟 (目标: 检索 < 1s)。
-// 用法: node --experimental-strip-types scripts/bench-retrieval.ts [N]
+// 用法: node --experimental-strip-types scripts/bench-retrieval.ts [N] [--semantic]
 // 说明: 这是一份"可复现的性能凭据", 不是断言测试 (CI 机器性能波动大, 断言会变成 flaky)。
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { FileBackend } from "../src/storage/file-store.ts";
 import { HybridRetriever } from "../src/retrieval/hybrid.ts";
 import { LinearVectorIndex } from "../src/retrieval/vector.ts";
 import { HashingEmbedder } from "../src/retrieval/embedding.ts";
+import { LexicalEmbedder } from "../src/retrieval/embedding-lexical.ts";
 import { MemoryFacade } from "../src/app/facade.ts";
 
 const N = Number(process.argv[2] ?? 10000);
@@ -34,7 +35,9 @@ function content(i: number): string {
 
 const ms = (start: number): number => Number((performance.now() - start).toFixed(1));
 const store = new FileBackend({ root });
-const embedder = new HashingEmbedder();
+// --semantic 用离线语义嵌入器 (默认哈希袋); 两者的检索路径完全一致, 只有嵌入成本不同。
+const useSemantic = process.argv.includes("--semantic");
+const embedder = useSemantic ? new LexicalEmbedder() : new HashingEmbedder();
 const vectorIndex = new LinearVectorIndex({ embedder });
 const retriever = new HybridRetriever(store, { vectorIndex });
 const facade = new MemoryFacade({ store, retriever }, { embedder });
@@ -109,6 +112,7 @@ const rebuildMs = ms(t);
 console.log(
   JSON.stringify(
     {
+      embedder: embedder.id,
       entries: N,
       write_total_ms: writeMs,
       write_per_entry_ms: Number((writeMs / N).toFixed(3)),

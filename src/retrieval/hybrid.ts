@@ -8,11 +8,7 @@
 //   - 规则 (已确认跨项目规则) 走独立通道 + 保底配额: 它们不允许被其它通道挤掉 (v1 是"全量候选", 那样会淹没注入预算);
 //   - 命中 superseded/merged 版本时, 自动沿演化链上溯到最新 active 版本 (注入最新, 历史可查);
 //   - 全部为纯逻辑 + 窄端口, S1 可用假 source 测。
-import type {
-  Query,
-  MemoryEntry,
-  RelationType,
-} from "../kernel/types.ts";
+import type { Query, MemoryEntry, RelationType } from "../kernel/types.ts";
 import { expandEvolutionChain } from "../kernel/evolution.ts";
 import { searchableText, termStreams } from "../kernel/cjk.ts";
 import {
@@ -32,6 +28,7 @@ import type {
   RetrievalRequest,
   RetrievalResult,
   RetrievalSource,
+  RetrievalWarmup,
   Retriever,
   SyncRetriever,
   VectorIndex,
@@ -110,7 +107,7 @@ function coverage(text: string, terms: readonly string[]): number {
  * 默认检索器。同步实现 (SQLite 类引擎足够快), 因此同时满足 Retriever 与 SyncRetriever ——
  * 预步注入不需要额外的投影层; 将来接异步引擎时, 这一层之上再加投影即可。
  */
-export class HybridRetriever implements Retriever, SyncRetriever {
+export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmup {
   private readonly channelLimit: number;
   private readonly coverageFloor: number;
   private readonly graphHops: 0 | 1 | 2;
@@ -145,6 +142,35 @@ export class HybridRetriever implements Retriever, SyncRetriever {
 
   capabilities(): RetrievalCapabilities {
     return this.caps;
+  }
+
+  /**
+   * 预热向量投影 (异步嵌入器专用), 带硬时限。
+   * 语义: "尽力而为" —— 超时不报错、不抛出, 未补完的部分下轮继续;
+   * 预步注入因此在最坏情况下也只多花 deadlineMs, 而换来后续轮次的真语义召回。
+   */
+  async warm(deadlineMs = 50, query?: string): Promise<void> {
+    const refresh = this.vectorIndex?.refresh;
+    if (!refresh) return;
+    // 先触发一次同步投影登记 (否则 refresh 无活可干)。
+    this.syncVectorIndex();
+    // 把本轮查询也排进队列: 否则第一轮永远只有"文档就绪、查询未就绪" (命中为空)。
+    if (query) this.vectorIndex?.prime?.(query);
+    const bounded = Math.max(0, Math.min(deadlineMs, 2000));
+    if (bounded === 0) return;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.resolve(refresh.call(this.vectorIndex)).catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, bounded);
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  ready(): boolean {
+    return this.vectorIndex?.ready !== false;
   }
 
   async retrieve(req: RetrievalRequest): Promise<RetrievalResult> {
@@ -206,7 +232,13 @@ export class HybridRetriever implements Retriever, SyncRetriever {
     const inScope = (e: MemoryEntry): boolean => {
       if (at && e.ts.validAt > at) return false;
       if (req.kinds?.length && !req.kinds.includes(e.kind)) return false;
-      if (req.scope?.project !== undefined && e.project !== undefined && e.project !== req.scope.project && e.scope === "project") return false;
+      if (
+        req.scope?.project !== undefined &&
+        e.project !== undefined &&
+        e.project !== req.scope.project &&
+        e.scope === "project"
+      )
+        return false;
       if (req.scope?.global === false && e.scope === "global") return false;
       return true;
     };
@@ -254,7 +286,11 @@ export class HybridRetriever implements Retriever, SyncRetriever {
         remember(r);
         addReason(r.id, "rules:confirmed-global");
       }
-      ranked.push({ channel: "rules", ids: scored.map((s) => s.r.id), weight: weightOf("rules") * 1.5 });
+      ranked.push({
+        channel: "rules",
+        ids: scored.map((s) => s.r.id),
+        weight: weightOf("rules") * 1.5,
+      });
     }
 
     // ---- 通道 2: 全文检索 (BM25) ----
@@ -282,6 +318,14 @@ export class HybridRetriever implements Retriever, SyncRetriever {
     // ---- 通道 2b: 向量 (语义召回) ----
     if (enabled("vector") && text.trim() && this.vectorIndex) {
       this.syncVectorIndex();
+      // 异步嵌入器的投影: 触发后台补齐 (不 await —— 预步注入绝不等 IO);
+      // 未就绪时明确记降级, 而不是静默地"这次没有语义召回"。
+      if (typeof this.vectorIndex.refresh === "function") {
+        void this.vectorIndex.refresh().catch(() => undefined);
+        if (this.vectorIndex.ready === false) {
+          degraded.push("vector:projection-warming (异步嵌入器尚未补齐, 本轮仅字面召回)");
+        }
+      }
       const vectorIds: string[] = [];
       for (const hit of this.vectorIndex.search(text, candidateWindow)) {
         const entry = byId.get(hit.id) ?? this.source.get(hit.id) ?? undefined;
@@ -347,7 +391,8 @@ export class HybridRetriever implements Retriever, SyncRetriever {
 
     // ---- 融合 + 演化链上溯 + 综合打分 ----
     const fused = rrfFuse(ranked, this.rrfK);
-    const resolved: Array<{ entry: MemoryEntry; score: number; channels: Channel[]; why: string }> = [];
+    const resolved: Array<{ entry: MemoryEntry; score: number; channels: Channel[]; why: string }> =
+      [];
     const takenIds = new Set<string>();
     for (const [id, hit] of fused) {
       const e = byId.get(id);

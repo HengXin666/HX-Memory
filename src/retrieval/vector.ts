@@ -46,7 +46,8 @@ export class LinearVectorIndex implements VectorIndex {
     this.embedder = opts.embedder;
     this.embedderId = opts.embedder.id;
     this.dim = opts.embedder.dim;
-    this.floor = opts.floor ?? 0.35;
+    // 下限优先级: 显式配置 > 嵌入器自述 (已标定) > 保守默认。
+    this.floor = opts.floor ?? opts.embedder.floor ?? 0.35;
   }
 
   get embeddedCount(): number {
