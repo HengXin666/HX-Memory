@@ -1,7 +1,12 @@
 // src/adapters/dsh/client/locale.ts — review / bindings 面板文案。
+//
+// 约定: 两个字典的键必须完全一致 —— bindingZh/reviewZh 显式标注为
+// typeof bindingEn / typeof reviewEn, 少一个键就是编译错误, 不会漏到运行时
+// 变成界面上的一条英文/空字符串。
 
 export type Locale = typeof reviewEn;
 export type BindingLocale = typeof bindingEn;
+
 export const bindingEn = {
   nav: "Memory Bindings",
   title: "Memory Bindings (VCP-style topology)",
@@ -24,6 +29,34 @@ export const bindingEn = {
   saveFailed: "Save failed",
   remove: "remove",
   any: "(any)",
+
+  // 一键模板 (presets): 免填 6 个字段的主路径。
+  presets: "One-click templates",
+  presetHint: "Each template appends a ready-made binding to {project}.",
+  presetUntitled: "(untitled project)",
+  presetCrossRules: "Cross-project rules",
+  presetProjectLessons: "This project's lessons",
+  presetSharedAgent: "Shared across workspaces",
+  presetLessonsDecisions: "Lessons and decisions",
+  presetAdded: "Added template: {name}",
+  presetDupe: "{name} is already bound to {project}",
+
+  // 当前项目 (从宿主会话 cwd 派生) 的自动行。
+  currentProjectTag: "current",
+  currentProjectHint: "This row is pre-filled from the session working directory.",
+
+  // 高级模式: 默认只留 id/kind/scope/信号词。
+  advanced: "Advanced",
+  advancedHint: "Shows weight, max and the project filter.",
+
+  // 结构与状态。
+  twoStepHint: "No project yet? Pick a template below — the current project row is created for you.",
+  bindingsCount: "{n} source(s)",
+  noBindings: "No sources bound yet — pick a template above.",
+  removeProject: "Remove project",
+  saveHint: "Save writes every project's list at once.",
+  dirty: "Unsaved edits — auto-refresh is paused.",
+  loading: "Loading…",
 };
 
 export const reviewEn = {
@@ -59,9 +92,45 @@ export const reviewEn = {
   invOutput: "output",
   invOk: "ok",
   invFail: "fail",
+
+  // 批次状态栏 (generalizationStatus 轮询)。
+  statusTitle: "Batch status",
+  statusRefresh: "Refresh",
+  statusNever: "No batch has run yet.",
+  statusAt: "last run {at}",
+  statusConsidered: "considered",
+  statusClusters: "clusters",
+  statusProposed: "proposed",
+  statusSkipped: "covered-skip",
+  statusMs: "ms",
+  statusUsedLlm: "LLM abstraction",
+  statusRuleOnly: "rule match only",
+  abstractorOn: "AI abstraction: ON",
+  abstractorOff: "AI abstraction: OFF",
+  abstractorOffWarn:
+    "No AI abstractor is attached: a batch can only emit draft rules that you must rewrite by hand. Expect weak results until one is configured.",
+  statusError: "Last run failed: {error}",
+  statusUnavailable: "Status unavailable: {error}",
+  queueProposed: "pending",
+  queueConfirmed: "confirmed",
+  queueRejected: "rejected",
+
+  // 运行中 / 批次报告。
+  runningLive: "Running… {n}s",
+  reportTitle: "Last batch report",
+  reportFailed: "Batch failed: {error}",
+
+  // 记忆浏览 (相关度排序, 规则不再霸榜)。
+  rank: "#{n}",
+  browseHint:
+    "Relevance-ranked: the closest match first. Nothing unrelated is padded in, and confirmed rules appear only when they are relevant.",
+  browseEmpty: "No relevant memory found. That is a normal result — try other words.",
+  searchBtn: "Search",
+  proposalsCount: "{n} pending",
+  loading: "Loading…",
 };
 
-export const bindingZh = {
+export const bindingZh: BindingLocale = {
   nav: "记忆绑定",
   title: "记忆绑定 (VCP 式记忆拓扑)",
   desc: "声明每个项目绑定哪些记忆源。绑定源在每个 pre-step 确定性注入 — 不依赖模型自觉调工具。",
@@ -83,9 +152,33 @@ export const bindingZh = {
   saveFailed: "保存失败",
   remove: "移除",
   any: "(任意)",
+
+  presets: "一键模板",
+  presetHint: "点一下就把现成的绑定加到 {project}。",
+  presetUntitled: "(未命名项目)",
+  presetCrossRules: "跨项目规则",
+  presetProjectLessons: "本项目经验",
+  presetSharedAgent: "跨工作区共享",
+  presetLessonsDecisions: "只看教训与决策",
+  presetAdded: "已添加模板: {name}",
+  presetDupe: "{project} 里已经有 {name} 了",
+
+  currentProjectTag: "当前",
+  currentProjectHint: "这一行由会话工作目录自动带出。",
+
+  advanced: "高级",
+  advancedHint: "展开权重 / 上限 / 项目过滤。",
+
+  twoStepHint: "还没有项目? 直接点下面的模板, 当前项目这一行会自动建好。",
+  bindingsCount: "{n} 个绑定",
+  noBindings: "还没有绑定源 — 点上面的模板即可。",
+  removeProject: "移除项目",
+  saveHint: "保存会一次性写入所有项目。",
+  dirty: "有未保存改动 — 自动刷新已暂停。",
+  loading: "读取中…",
 };
 
-export const reviewZh = {
+export const reviewZh: Locale = {
   nav: "HX-Memory 审阅",
   title: "HX-Memory 推广审阅队列",
   desc: "确认或驳回推广提议。确认后提议成为跨项目规则。",
@@ -117,4 +210,37 @@ export const reviewZh = {
   invOutput: "输出",
   invOk: "成功",
   invFail: "失败",
+
+  statusTitle: "批次状态",
+  statusRefresh: "刷新",
+  statusNever: "还没跑过推广批次。",
+  statusAt: "上次运行 {at}",
+  statusConsidered: "考虑",
+  statusClusters: "聚类",
+  statusProposed: "提议",
+  statusSkipped: "跳过已覆盖",
+  statusMs: "毫秒",
+  statusUsedLlm: "AI 提炼",
+  statusRuleOnly: "仅规则匹配",
+  abstractorOn: "AI 提炼: 开",
+  abstractorOff: "AI 提炼: 关",
+  abstractorOffWarn:
+    "当前没有挂载 AI 提炼器: 批次只能产出草稿规则, 必须你手动重写, 效果会明显偏差。配置后才会好转。",
+  statusError: "上次运行失败: {error}",
+  statusUnavailable: "状态读取失败: {error}",
+  queueProposed: "待审",
+  queueConfirmed: "已确认",
+  queueRejected: "已驳回",
+
+  runningLive: "运行中… {n}s",
+  reportTitle: "上次批次报告",
+  reportFailed: "批次失败: {error}",
+
+  rank: "第 {n} 位",
+  browseHint:
+    "按相关度排序: 最相关的排最前。不会拿不相关的内容凑数, 已确认的规则也只在相关时才出现。",
+  browseEmpty: "没有找到相关记忆。这是正常结果, 可以换个词再搜。",
+  searchBtn: "搜索",
+  proposalsCount: "待审 {n} 条",
+  loading: "读取中…",
 };

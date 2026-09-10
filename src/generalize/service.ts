@@ -6,12 +6,17 @@
 // → runRecent()/enqueueProposal(); 没有触发点时 review 队列永远是空的, 推广闭环是空转的。
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { MemoryEntry, GeneralizationProposal } from "../kernel/types.ts";
+import type {
+  MemoryEntry,
+  GeneralizationProposal,
+  GeneralizationRunReport,
+  GeneralizationStatus,
+} from "../kernel/types.ts";
 import type { ProposalStatus, QueuedProposal } from "../kernel/types.ts";
 import type { Abstractor, Generalizer, MemoryStore } from "../kernel/ports.ts";
 import { clusterByTheme } from "./cluster.ts";
 
-export type { ProposalStatus, QueuedProposal };
+export type { ProposalStatus, QueuedProposal, GeneralizationRunReport, GeneralizationStatus };
 export type { Abstractor };
 
 /** 单条规则的长度上限: 过长的"规则"实际上不可执行, 也会污染注入上下文。 */
@@ -64,12 +69,16 @@ export interface GeneralizerOptions {
   onAbstractError?: (error: unknown, cluster: { theme: string }) => void;
 }
 
+
+
 export class GeneralizerService implements Generalizer {
   // 显式字段 + 赋值 (不用 TS 参数属性): Node strip-only 模式不支持, 子进程 import 时会崩。
   private readonly store: MemoryStore;
   private readonly reviewDir: string;
   private readonly abstractor?: Abstractor;
   private readonly options: GeneralizerOptions;
+  /** 最近一次批次的可观测报告 (面板 generalizationStatus 读它)。 */
+  private lastRun?: GeneralizationRunReport;
 
   constructor(
     store: MemoryStore,
@@ -83,13 +92,22 @@ export class GeneralizerService implements Generalizer {
     this.options = options;
   }
 
+  /**
+   * 启发式"规则": 无 LLM 时的兜底草稿。
+   *
+   * **单实例必须返回 null** (2026-09 修): 把唯一那条实例原文抄成"规则"没有任何推广价值,
+   * 而且会直接把**用户的一句指令**变成队列里的一条提议 (实测: 一条"帮我修改一下当前项目…"
+   * 被当成 decision 聚类后原样进了审阅队列, 用户只能驳回)。推广的定义是"从多条实例抽象",
+   * 单条没有可抽象的共性 —— 宁可不提议。
+   */
   private heuristicRule(cluster: { theme: string; contents: string[] }): {
     rule: string;
     confidence: number;
-  } {
+  } | null {
     const texts = cluster.contents;
-    if (texts.length === 1) return { rule: texts[0]!, confidence: 0.4 };
-    const distinct = new Set(texts);
+    // 去重后不足 2 条: 没有"共性"可提炼 (重复文本也不构成两条独立证据)。
+    const distinct = new Set(texts.map((t) => t.trim()).filter(Boolean));
+    if (distinct.size < 2) return null;
     const confidence = Math.min(0.9, 0.5 + distinct.size * 0.1);
     return {
       rule: `经验: ${cluster.theme} 相关的 ${distinct.size} 条实例已沉淀, 建议复核提炼为跨项目规则`,
@@ -105,7 +123,12 @@ export class GeneralizerService implements Generalizer {
     theme: string;
     contents: string[];
     sources: string[];
-  }): Promise<{ rule: string; confidence: number }> {
+  }): Promise<{ rule: string; confidence: number; usedLlm: boolean } | null> {
+    // 推广 = 从多条实例提炼共性。去重后不足 2 条的簇**一律不提议** (含 LLM 路径):
+    // 单条实例没有"共性"可抽象, 抄成品就是"把一句话当规则" —— 实测这条路径会把用户的
+    // 一句指令 (被 structurer 归成 decision) 原样送进审阅队列。阈值放在两条是这条语义的下限。
+    const distinct = new Set(cluster.contents.map((c) => c.trim()).filter(Boolean));
+    if (distinct.size < 2) return null;
     if (this.abstractor) {
       try {
         const raw = await this.abstractor.abstract(cluster);
@@ -117,25 +140,30 @@ export class GeneralizerService implements Generalizer {
             theme: cluster.theme,
           });
         } else {
-          return { rule, confidence: clamp01(confidence) };
+          return { rule, confidence: clamp01(confidence), usedLlm: true };
         }
       } catch (error) {
         this.options.onAbstractError?.(error, { theme: cluster.theme });
       }
     }
-    return this.heuristicRule({ theme: cluster.theme, contents: cluster.contents });
+    const draft = this.heuristicRule({ theme: cluster.theme, contents: cluster.contents });
+    return draft ? { ...draft, usedLlm: false } : null;
   }
 
   /** 批量推广: 候选条目 → 聚类 → 每簇产 proposal → 落 review 队列 (不入记忆)。 */
   async runBatch(sourceRun: string, candidates: MemoryEntry[]): Promise<QueuedProposal[]> {
     const clusters = clusterByTheme(candidates);
     const created: QueuedProposal[] = [];
+    let usedLlm = false;
     for (const c of clusters) {
       const abstracted = await this.abstractCluster({
         theme: c.theme,
         contents: c.entries.map((e) => e.content),
         sources: c.entries.map((e) => e.source),
       });
+      // null = 这一簇没有值得提议的内容 (如去重后只剩一条实例的启发式路径)。
+      if (!abstracted) continue;
+      if (abstracted.usedLlm) usedLlm = true;
       created.push(
         this.enqueue({
           rule: abstracted.rule,
@@ -145,27 +173,83 @@ export class GeneralizerService implements Generalizer {
         }),
       );
     }
+    this.lastRun = {
+      at: new Date().toISOString(),
+      considered: candidates.length,
+      coveredSkipped: 0,
+      clusters: clusters.length,
+      proposed: created.length,
+      usedLlm,
+      tookMs: 0,
+    };
     return created;
   }
 
   /**
    * 从存储里取最近的候选 (lesson/pattern/decision) 跑一批 —— 面板/工具/CLI 的统一触发点。
    * 已被队列里任意 proposal 覆盖过的实例会跳过, 避免反复点击产生重复提议。
+   *
+   * 返回报告而不是裸提议数组: 面板要能解释"为什么是 0 条", 漏斗的每一段都要可见。
    */
-  async runRecent(sourceRun: string, limit = 100): Promise<QueuedProposal[]> {
+  async runRecent(sourceRun: string, limit = 100): Promise<GeneralizationRunReport> {
+    const started = Date.now();
     // 只跳过仍然有效的提议 (proposed/confirmed): 驳回是"这次不推广", 不是"永远不再提"。
     const covered = new Set<string>();
     for (const p of this.listQueue()) {
       if (p.status === "rejected") continue;
       for (const id of p.proposal.covers) covered.add(id);
     }
-    const candidates = (await this.store.query({ limit })).filter(
-      (e) =>
-        (e.kind === "lesson" || e.kind === "pattern" || e.kind === "decision") &&
-        !covered.has(e.id),
+    const all = await this.store.query({ limit });
+    const eligible = all.filter(
+      (e) => e.kind === "lesson" || e.kind === "pattern" || e.kind === "decision",
     );
-    if (!candidates.length) return [];
-    return this.runBatch(sourceRun, candidates);
+    const candidates = eligible.filter((e) => !covered.has(e.id));
+    const coveredSkipped = eligible.length - candidates.length;
+    if (!candidates.length) {
+      const report: GeneralizationRunReport = {
+        at: new Date().toISOString(),
+        considered: eligible.length,
+        coveredSkipped,
+        clusters: 0,
+        proposed: 0,
+        usedLlm: false,
+        tookMs: Date.now() - started,
+      };
+      this.lastRun = report;
+      return report;
+    }
+    const created = await this.runBatch(sourceRun, candidates);
+    // runBatch 已写 lastRun; 这里回填"本次扫描到多少 / 跳过了多少"两个只有调用方知道的数。
+    const report: GeneralizationRunReport = {
+      ...(this.lastRun ?? {
+        at: new Date().toISOString(),
+        considered: candidates.length,
+        coveredSkipped,
+        clusters: 0,
+        proposed: created.length,
+        usedLlm: false,
+      }),
+      considered: eligible.length,
+      coveredSkipped,
+      tookMs: Date.now() - started,
+    };
+    this.lastRun = report;
+    return report;
+  }
+
+  /** 面板/CLI 的状态视图: AI 是否可用 + 最近一次批次报告 + 队列计数。 */
+  status(): GeneralizationStatus {
+    const queue = { proposed: 0, confirmed: 0, rejected: 0 };
+    for (const p of this.listQueue()) {
+      if (p.status === "proposed") queue.proposed++;
+      else if (p.status === "confirmed") queue.confirmed++;
+      else queue.rejected++;
+    }
+    return {
+      abstractor: Boolean(this.abstractor),
+      ...(this.lastRun ? { lastRun: this.lastRun } : {}),
+      queue,
+    };
   }
 
   /** 人工/模型直接提议一条规则 (仍进队列, 仍由人确认)。 */

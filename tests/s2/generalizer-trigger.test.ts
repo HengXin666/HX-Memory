@@ -38,15 +38,31 @@ describe("runRecent (面板/工具的统一触发点)", () => {
     lesson("l2", "网关并发竞态");
     const g = new GeneralizerService(store, join(root, "review"));
     const first = await g.runRecent("panel:1");
-    expect(first.length).toBeGreaterThanOrEqual(1);
-    expect(g.listQueue("proposed").length).toBe(first.length);
+    expect(first.proposed).toBeGreaterThanOrEqual(1);
+    expect(first.considered).toBe(2);
+    expect(g.listQueue("proposed").length).toBe(first.proposed);
     const second = await g.runRecent("panel:2");
-    expect(second).toEqual([]); // 已覆盖的实例被跳过
+    expect(second.proposed).toBe(0); // 已覆盖的实例被跳过
+    expect(second.coveredSkipped).toBe(2); // 漏斗里能看到"不是没候选, 是被覆盖了"
   });
 
-  it("没有候选时返回空数组 (不抛错)", async () => {
+  it("没有候选时返回可解释的空报告 (不抛错)", async () => {
     const g = new GeneralizerService(store, join(root, "review"));
-    await expect(g.runRecent("panel:empty")).resolves.toEqual([]);
+    const report = await g.runRecent("panel:empty");
+    expect(report.proposed).toBe(0);
+    expect(report.considered).toBe(0);
+    expect(report.coveredSkipped).toBe(0);
+  });
+
+  it("status(): 报告 AI 是否可用 + 最近批次 + 队列计数", async () => {
+    lesson("l1", "队列并发丢消息");
+    const g = new GeneralizerService(store, join(root, "review"));
+    expect(g.status().abstractor).toBe(false); // 没接 AI 抽象器
+    const report = await g.runRecent("panel:1");
+    const s = g.status();
+    expect(s.lastRun?.proposed).toBe(report.proposed);
+    expect(s.lastRun?.usedLlm).toBe(false);
+    expect(s.queue.proposed).toBe(report.proposed);
   });
 });
 
@@ -67,17 +83,20 @@ describe("抽象器失败必须回退, 不能带崩整批", () => {
     expect(proposals.length).toBeGreaterThanOrEqual(1);
     expect(proposals[0]!.proposal.rule.length).toBeGreaterThan(0);
     expect(errors.length).toBeGreaterThanOrEqual(1);
+    // 同主题两条实例 + 抽象器失败 → 走启发式草稿 (usedLlm 必须如实为 false)。
+    expect(g.status().lastRun?.usedLlm).toBe(false);
   });
 
   it("abstractor 成功时用它的规则与置信度", async () => {
     lesson("l5", "并发写同一张表要加锁");
+    lesson("l5b", "并发更新同一行要加版本号");
     const ok: Abstractor = {
       async abstract() {
         return { rule: "写共享表必须显式加锁", confidence: 0.9 };
       },
     };
     const g = new GeneralizerService(store, join(root, "review"), ok);
-    const [p] = await g.runBatch("run-ok", [store.get("l5")!]);
+    const [p] = await g.runBatch("run-ok", [store.get("l5")!, store.get("l5b")!]);
     expect(p!.proposal.rule).toBe("写共享表必须显式加锁");
     expect(p!.proposal.confidence).toBe(0.9);
   });

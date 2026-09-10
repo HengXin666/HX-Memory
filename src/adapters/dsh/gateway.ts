@@ -13,6 +13,10 @@ import type {
   ProposalStatus,
   QueuedProposal,
 } from "../../generalize/service.ts";
+import type {
+  GeneralizationRunReport,
+  GeneralizationStatus,
+} from "../../kernel/types.ts";
 import type { InvocationLog } from "./invocations.js";
 import type { LlmInvocationRecord } from "./llm-agent.js";
 
@@ -22,7 +26,7 @@ export interface HxMemoryGatewayDeps {
   store: Pick<MemoryOperations, "query" | "get" | "remove" | "recent">;
   generalizer: Pick<
     GeneralizerService,
-    "listQueue" | "confirm" | "reject" | "runBatch" | "runRecent" | "enqueueProposal"
+    "listQueue" | "confirm" | "reject" | "runBatch" | "runRecent" | "enqueueProposal" | "status"
   >;
   /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
   bindingStore?: BindingStore;
@@ -33,6 +37,14 @@ export interface HxMemoryGatewayDeps {
    * (检索排序 + 治理闸门 + 可见性 + 审计)。不注入时退回直连存储的旧行为 (兼容测试/旧宿主)。
    */
   facade?: Pick<MemoryFacade, "recent" | "forget" | "recall">;
+  /**
+   * 当前会话的项目键 (可选)。
+   *
+   * 为什么必须由服务端给: 面板跑在宿主 Web 里, 浏览器的 rpc 调用器**只有 call**, 拿不到
+   * 会话工作目录; 面板此前试图读 `rpc.cwd` (不存在的字段) 于是自动建行永远不生效 ——
+   * 这条能力只能是"知道会话的项目键"的一侧提供 (即 DSH 适配层)。
+   */
+  currentProject?: () => string | undefined;
 }
 
 export interface ReviewQueueView {
@@ -72,18 +84,40 @@ export class HxMemoryGateway extends TypertRemoteService {
    * 没有触发点时 review 队列永远是空的。
    */
   @Remote("runGeneralization")
-  async runGeneralization(
-    limit: number,
-  ): Promise<{ ok: boolean; proposed: number; error?: string }> {
+  async runGeneralization(limit: number): Promise<GeneralizationRunReport & { ok: boolean }> {
+    const at = new Date().toISOString();
     try {
-      const created = await this.deps.generalizer.runRecent(
-        "panel:" + new Date().toISOString(),
-        limit,
-      );
-      return { ok: true, proposed: created.length };
+      const report = await this.deps.generalizer.runRecent("panel:" + at, limit);
+      return { ok: true, ...report };
     } catch (e) {
-      return { ok: false, proposed: 0, error: String(e) };
+      // 失败也要给一份形状完整的报告: 面板只读字段, 不该因为缺字段而崩。
+      return {
+        ok: false,
+        at,
+        considered: 0,
+        coveredSkipped: 0,
+        clusters: 0,
+        proposed: 0,
+        usedLlm: false,
+        tookMs: 0,
+        error: String(e),
+      };
     }
+  }
+
+  /** 状态视图: 面板顶部状态条读它 (AI 是否可用 / 最近一批 / 队列计数)。 */
+  @Remote("generalizationStatus")
+  generalizationStatus(): GeneralizationStatus {
+    return this.deps.generalizer.status();
+  }
+
+  /**
+   * 当前会话的项目键 (面板用它预填"当前项目"那一行; 拿不到就返回空串, 面板照常可用)。
+   * 与捕获/绑定/召回**同一个派生口径** (仓库级键), 否则面板预填的项目名会与记忆里的对不上。
+   */
+  @Remote("currentProject")
+  currentProject(): { project: string } {
+    return { project: this.deps.currentProject?.() ?? "" };
   }
 
   @Remote("confirmProposal")
@@ -171,11 +205,14 @@ export class HxMemoryGateway extends TypertRemoteService {
   async memoryQuery(q: { text?: string; kind?: string; limit?: number }): Promise<unknown[]> {
     const limit = q.limit ?? 10;
     // 有 Facade → 与工具/MCP/CLI 同一条检索语义 (含规则保底、覆盖率过滤、token 预算、降级说明)。
+    // purpose:"recall" —— 面板是"用户主动搜最相关的记忆", 不是"注入不变量"。
+    // 不区分的话规则保底通道会让前几条永远是那几条规则 (用户实测的第一困惑)。
     const entries = this.deps.facade
       ? this.deps.facade
           .recall({
             ...(q.text ? { text: q.text } : {}),
             ...(q.kind ? { kinds: [q.kind as never] } : {}),
+            purpose: "recall",
             limit,
             tokenBudget: Math.max(400, limit * 160),
           })
@@ -186,6 +223,7 @@ export class HxMemoryGateway extends TypertRemoteService {
       kind: e.kind,
       content: e.content,
       scope: e.scope,
+      project: e.project,
       source: e.source,
       confirmedBy: e.confirmedBy,
       confirmedAt: e.confirmedAt,

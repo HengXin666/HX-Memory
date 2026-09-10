@@ -49,7 +49,13 @@ export function apply(ctx: ClientContext): void {
     return () => tag.remove();
   }, "hxMemory.reviewStyles()");
   const { rpc } = ctx.get("connection");
-  const tBind = (key: keyof typeof bindingEn) => ctx.locale.bind(BIND_NS)(String(key));
+  // 两个面板都带 {var} 插值 (部分文案形如 "{n} 个绑定"): 绑定页原先漏了这一步,
+  // 结果把 "{n}" 原样显示给用户 —— 由渲染冒烟测试抓出来。
+  const tBind = (key: keyof typeof bindingEn, vars?: Record<string, unknown>) => {
+    const raw = ctx.locale.bind(BIND_NS)(String(key)) || String(key);
+    if (!vars) return raw;
+    return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(vars[name] ?? ""));
+  };
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {

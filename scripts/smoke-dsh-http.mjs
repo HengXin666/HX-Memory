@@ -81,6 +81,16 @@ async function check(method, args, label) {
 }
 await check("hxMemory/reviewQueue", { status: "proposed" }, "reviewQueue 200 + ok");
 await check("hxMemory/runGeneralization", { limit: 100 }, "runGeneralization 触发点可用");
+await check("hxMemory/generalizationStatus", {}, "generalizationStatus 可用 (批次可观测面)");
+// runGeneralization 现在返回漏斗报告: 面板要读 considered/clusters/proposed/usedLlm,
+// 缺字段会让状态条显示 undefined —— 在这里断言形状而不只是"没报错"。
+const runReport = await callApi("hxMemory/runGeneralization", { limit: 100 });
+const report = runReport?.result?.value ?? {};
+for (const field of ["at", "considered", "coveredSkipped", "clusters", "proposed", "usedLlm", "tookMs"]) {
+  if (!(field in report)) fail("runGeneralization 报告缺字段 " + field);
+}
+if (typeof report.proposed !== "number") fail("runGeneralization.proposed 不是数字");
+ok("runGeneralization 返回漏斗报告 (considered/clusters/proposed/usedLlm/tookMs)");
 await check("hxMemory/listInvocations", { limit: 10 }, "listInvocations 可用");
 await check("hxMemory/recentCaptures", { limit: 10 }, "recentCaptures 可用");
 await check("hxMemory/listBindings", {}, "listBindings 可用 (bindingStore 已挂载)");

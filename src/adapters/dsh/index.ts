@@ -218,6 +218,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       bindingStore,
       invocations: invocationLog,
       facade,
+      // 面板"当前项目"预填: 与捕获/绑定/召回同一派生口径 (仓库级键)。
+      currentProject: () => runtime.project(),
     });
     return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
   }, "hx-memory.gateway()");
@@ -347,6 +349,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       rootAgentsOnly: () => settings().rootAgentsOnly,
       enabled: () => settings().injectBindings,
       warmupMs: () => settings().semanticWarmupMs,
+      language: () => settings().language,
       projectOf: (payload) => projectOfSession(payload.agent.session) ?? payload.agent.session.id,
     }) as never,
   );

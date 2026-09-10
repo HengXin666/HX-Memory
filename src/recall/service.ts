@@ -100,6 +100,8 @@ export class RecallService {
     const limit = input.limit ?? 6;
     const result = this.retriever!.retrieveSync({
       ...(input.text ? { text: input.text } : {}),
+      // 召回 = 按相关性要"最相关的几条"; 规则的不变量保障由 always-on 通道承担。
+      purpose: "recall",
       ...(input.project ? { scope: { project: input.project } } : {}),
       limit: limit * 2,
       tokenBudget: Math.max(256, limit * 160),

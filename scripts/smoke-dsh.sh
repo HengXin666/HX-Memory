@@ -6,7 +6,8 @@
 #   2. patch 不隔离 hxMemory (隔离会让宿主 gateway 看不到服务 → RPC 全 404);
 #   3. runtime/client 两个 fiber 都 active (不是"加载失败但进程还活着");
 #   4. /api/hxMemory/* 业务结果 {ok:true} (channel/endpoint/args 约定正确);
-#   5. runGeneralization 触发点存在且能跑 (推广闭环不是空转);
+#   5. runGeneralization 触发点存在且能跑, 且返回**漏斗报告** (considered/clusters/proposed/
+#      usedLlm/tookMs) —— 面板状态条据此解释"为什么 0 条"; generalizationStatus 可用;
 #   6. saveBindings → listBindings 真往返 (bindingStore 真的挂上了);
 #   7. 设置命名空间真的注册到宿主 (installSection/register 双路径 + 双传输形态);
 #   8. 绑定真的落盘到 bindings.json (truth-in-files);

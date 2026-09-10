@@ -92,7 +92,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 | ③   | **审阅面板**            | DSH 设置 → 记忆审阅                    | 收到推广提议时, 逐条确认/驳回                                        | 确认的提议变成全局规则                                          |
 | ④   | **确定性注入** (自动)   | 每个 `agent/pre-step`                  | 绑定命中的项目, 每次对话自动注入绑定记忆                             | 模型每步都带着相关记忆 (测试 10/10 命中)                        |
 | ⑤   | **记忆工具** (模型可调) | DSH 工具区                             | 模型自主调用 `memory_search` / `memory_save` / `memory_rule_propose` | 按需检索 / 保存 / 提议规则                                      |
-| ⑥   | **推广批次**            | DSH 设置 → 记忆审阅                    | 点「运行推广批次」                                                   | 把最近的 lesson/decision 聚类成待审提议                         |
+| ⑥   | **推广批次**            | DSH 设置 → 记忆审阅                    | 点「运行推广批次」                                                   | 聚类最近的经验成待审提议, 并给出漏斗报告 (候选/跳过/簇/产出/AI 是否启用) |
 | ⑦   | **Codex CLI**           | 终端                                   | `hx-memory sync/rules/stats/verify/rebuild`                          | 同步 AGENTS.md / 列规则 / 统计 / 一致性自检 / 分级重建          |
 | ⑧   | **MCP 服务**            | Claude Code / Desktop / Cursor / Cline | `hx-memory mcp --root <memRoot>` 配成 MCP server                     | 六个工具 (search/save/link/history/forget/stats) 共用同一份记忆 |
 | ⑨   | **衰减整合**            | 终端 / 定时任务                        | `hx-memory consolidate [--dry-run]`                                  | 短命记忆按衰减/TTL 置为 `expired` (可逆, 永不删除)              |
@@ -169,8 +169,12 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 - 记忆本体是 **Markdown 文件** (人可读/可审计/可 git diff); SQLite 只存派生索引, 删库不丢真相。
 - 索引重建是**无损**的: relations / tags / structured 都写进文件并可被 `rebuildFromFiles()` 读回 (有测试钉住)。
 - 双时态 `validAt` / `assertedAt`; 演化链语义在 `kernel/evolution.ts` 且关联可重建。
-- `project` 是第一等字段: 本地经验按项目隔离, 全局规则跨项目生效。
-  项目键 = **会话工作目录的目录名** (如 `/code/api` → `api`), 捕获/绑定/召回全链路一致。
+- `project` 是第一等字段, 记忆因此分三层: **全局规则** (跨项目) / **项目经验** (按仓库隔离) /
+  **`scope:"agent"` 共享层** (跨工作区, 不属于任何项目, 对每个项目都常驻注入)。
+  项目键 = **会话工作目录所属仓库的目录名** (git root; 非 git 目录回退目录名) ——
+  同一 monorepo 的任意子包得到同一个键, 经验不会按子包碎片化; 跨仓库仍然隔离。
+- 检索按**目的**分层: 注入 (`purpose:"inject"`, 默认) 带规则保底; 显式搜索/面板浏览
+  (`purpose:"recall"`) 只按相关性排 —— 面板搜索的前几条不再是无条件垫在最前的规则。
 
 ### ♻️ 6. 记忆会自己更新 (三档演化, 规则永不被机器改)
 
@@ -349,7 +353,7 @@ relations/tags/structured 重建无损、CRLF/BOM/反斜杠矩阵逐字往返、
 | 007 | `project` 第一等字段 (跨项目隔离与生效)                                     |
 | 008 | "何时读记忆"由声明式绑定决定, 不靠模型自觉 (VCP 式)                         |
 | 009 | 宿主契约必须真机验证: 组合层/模块 id/RPC 约定用 `scripts/smoke-dsh.sh` 钉住 |
-| 010 | `project` 键 = 会话工作目录名 (而非 session id), 捕获/绑定/召回全链路统一   |
+| 010 | `project` 键 = 会话工作目录所属仓库名 (而非 session id 或目录名), 捕获/绑定/召回全链路统一 |
 | 011 | 真相 → 索引必须无损往返 (relations/tags/structured 全部写回文件并可读回)    |
 
 ## License

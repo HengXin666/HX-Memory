@@ -46,6 +46,13 @@ describe("GeneralizerService: 推广 + 人工闸门", () => {
     expect(proposals[0]!.proposal.covers.sort()).toEqual(["a", "b"]);
   });
 
+  it("单实例簇不产提议: 没有共性可抽象, 更不能把一句话抄成规则", async () => {
+    // 真实踩坑: 一条用户指令被 structurer 归成 decision, 单条成簇后被原样送进审阅队列。
+    const proposals = await service.runBatch("run-single", [mkLesson("solo", "帮我修改一下当前项目")]);
+    expect(proposals).toHaveLength(0);
+    expect(service.listQueue().some((p) => p.sourceRun === "run-single")).toBe(false);
+  });
+
   it("proposal never auto-confirms into a rule", () => {
     const rules = store.query({ kind: "rule" });
     expect(rules).toHaveLength(0);
@@ -72,7 +79,10 @@ describe("GeneralizerService: 推广 + 人工闸门", () => {
   });
 
   it("reject() marks queue item rejected, no rule created", async () => {
-    const proposals = await service.runBatch("run-2", [mkLesson("c", "部署后忘了加健康检查")]);
+    const proposals = await service.runBatch("run-2", [
+      mkLesson("c", "部署后忘了加健康检查"),
+      mkLesson("d", "部署回滚没有留下版本号"),
+    ]);
     expect(proposals).toHaveLength(1);
     const id = proposals[0]!.id;
     service.reject(id);

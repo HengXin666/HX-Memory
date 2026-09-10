@@ -65,7 +65,12 @@ export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
       const alwaysOnCost = cache.reduce((n, e) => n + e.content.length + 8, 0);
       const intentsBudget = Math.max(0, decision.budgetTokens - alwaysOnCost);
       if (intentsBudget > 0) {
-        for (const hit of deps.facade.recall({ text, limit: 6, tokenBudget: intentsBudget }).hits) {
+        for (const hit of deps.facade.recall({
+          text,
+          purpose: "recall",
+          limit: 6,
+          tokenBudget: intentsBudget,
+        }).hits) {
           out.set(hit.entry.id, hit.entry);
         }
       }

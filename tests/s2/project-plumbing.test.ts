@@ -7,7 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileBackend } from "../../src/storage/file-store.ts";
 import { CapturePipeline } from "../../src/capture/pipeline.ts";
-import { HxMemoryRuntime, projectOfSession } from "../../src/adapters/dsh/runtime.ts";
+import {
+  HxMemoryRuntime,
+  projectKeyOfCwd,
+  projectOfSession,
+} from "../../src/adapters/dsh/runtime.ts";
 import { registerMemoryTools } from "../../src/adapters/dsh/tools.ts";
 import { GeneralizerService } from "../../src/generalize/service.ts";
 import { Binder } from "../../src/kernel/binder.ts";
@@ -24,14 +28,35 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("projectOfSession", () => {
-  it("取工作目录的目录名", () => {
-    expect(projectOfSession({ id: "s", header: { cwd: "/home/me/code/api" } })).toBe("api");
-    expect(projectOfSession({ id: "s", header: { cwd: "/home/me/code/api/" } })).toBe("api");
+describe("projectOfSession / projectKeyOfCwd", () => {
+  it("非 git 目录回退到目录名", () => {
+    const git = () => {
+      throw new Error("not a git repository");
+    };
+    expect(projectKeyOfCwd("/home/me/code/api", git, new Map())).toBe("api");
+    expect(projectKeyOfCwd("/home/me/code/api/", git, new Map())).toBe("api");
   });
+
+  it("git 仓库取仓库根目录名 —— monorepo 子包与仓库根得到同一个键", () => {
+    // 同一个 git root 下的任意子目录都该落成同一个项目键 (否则记忆按子包碎片化)。
+    const git = () => "/home/me/code/monorepo\n";
+    const cache = new Map<string, string>();
+    expect(projectKeyOfCwd("/home/me/code/monorepo/packages/a", git, cache)).toBe("monorepo");
+    expect(projectKeyOfCwd("/home/me/code/monorepo/packages/b", git, cache)).toBe("monorepo");
+    expect(projectKeyOfCwd("/home/me/code/monorepo", git, cache)).toBe("monorepo");
+  });
+
   it("无 cwd → undefined", () => {
     expect(projectOfSession({ id: "s" })).toBeUndefined();
     expect(projectOfSession({ id: "s", header: { cwd: "" } })).toBeUndefined();
+  });
+
+  it("runtime.project(): 面板预填用的当前项目来自最近会话 (同一派生口径)", () => {
+    const runtime = new HxMemoryRuntime(new CapturePipeline(store), () => ({ autoCapture: true }));
+    expect(runtime.project()).toBeUndefined();
+    runtime.onSessionStart({ id: "s-1", header: { cwd: "/code/api" } });
+    // 与 projectOfSession 同口径: 面板预填的项目名必须等于记忆里的 project, 否则对不上。
+    expect(runtime.project()).toBe(projectOfSession({ id: "s-1", header: { cwd: "/code/api" } }));
   });
 });
 

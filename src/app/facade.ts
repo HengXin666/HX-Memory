@@ -230,7 +230,9 @@ export class MemoryFacade {
    * always-on 内容 (跨项目已确认规则 + 本项目关键事实/偏好/决策), 受 token 预算约束。
    * 这是触发层的**保底通道**: 与任何意图判定无关, 因此"模型完全没意识到要查"时也有记忆可用。
    */
-  async alwaysOn(opts: { project?: string; budgetTokens?: number } = {}): Promise<MemoryEntry[]> {
+  async alwaysOn(
+    opts: { project?: string; budgetTokens?: number; ruleBudgetRatio?: number } = {},
+  ): Promise<MemoryEntry[]> {
     // 优先用廉价投影 (单条 SQL, 不 hydrate 关系/标签)。10k 条实测: 6ms vs 137ms。
     // 投影只含选择所需字段 (id/kind/content/scope/project/importance/status), 对 selectAlwaysOn 足够。
     const candidates = this.store.entrySummaries
@@ -239,6 +241,7 @@ export class MemoryFacade {
     return selectAlwaysOn(candidates as MemoryEntry[], {
       ...(opts.project ? { project: opts.project } : {}),
       budgetTokens: opts.budgetTokens ?? 400,
+      ...(opts.ruleBudgetRatio === undefined ? {} : { ruleBudgetRatio: opts.ruleBudgetRatio }),
       estimate: estimateTokens,
     });
   }

@@ -8,6 +8,8 @@ import type {
   Episode,
   EpisodeInput,
   GeneralizationProposal,
+  GeneralizationRunReport,
+  GeneralizationStatus,
   MemoryEntry,
   MemoryEntryInput,
   MemoryKind,
@@ -108,8 +110,10 @@ export interface HarnessAdapter {
 export interface Generalizer {
   /** Batch-abstract concrete lessons into candidate rules (never auto-confirm). */
   runBatch(sourceRun: string, candidates: MemoryEntry[]): Promise<QueuedProposal[]>;
-  /** 取最近候选跑一批 (面板/工具的统一触发点)。 */
-  runRecent(sourceRun: string, limit?: number): Promise<QueuedProposal[]>;
+  /** 取最近候选跑一批 (面板/工具的统一触发点); 返回漏斗报告 (面板据此解释"为什么是 0 条")。 */
+  runRecent(sourceRun: string, limit?: number): Promise<GeneralizationRunReport>;
+  /** 状态视图 (AI 是否可用 / 最近一次批次 / 队列计数)。 */
+  status(): GeneralizationStatus;
   listQueue(status?: ProposalStatus): QueuedProposal[];
   /** 人工确认 (异步: 存储端口允许异步后端)。 */
   confirm(id: string, by: string): Promise<{ ok: boolean; ruleId?: string; error?: string }>;
@@ -167,6 +171,18 @@ export interface RetrievalCapabilities {
 export interface RetrievalRequest {
   /** 当前任务文本 (用户最近一条消息 / 会话首条)。 */
   text?: string;
+  /**
+   * 检索目的: "inject" (默认) 或 "recall"。
+   *
+   * 为什么要分开: 规则保底通道对**注入**是对的 (跨项目不变量必须永远在场, 见 ADR-006),
+   * 但同一个语义被"显式搜索/面板浏览/意图召回"复用后, 前几条永远是那几条规则 ——
+   * 规则通道不受覆盖率过滤, 通道权重 1.5 + boost 0.5, 数学上碾压所有字面命中。
+   * 规则本来就已由 always-on 通道单独注入, 在这些路径再垫一遍纯属重复占位。
+   *
+   * "recall" 语义: 关掉规则保底通道与相应 boost, 只按相关性排 ——
+   * 调用方要回答的是"哪条记忆最相关"。仍可显式传 channels.rules.enabled 覆盖。
+   */
+  purpose?: "inject" | "recall";
   /** 双时态切片: "那时为真的是什么" (按 validAt 过滤)。 */
   asOf?: string;
   scope?: { project?: string; global?: boolean };

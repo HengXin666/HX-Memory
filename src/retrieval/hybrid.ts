@@ -156,7 +156,11 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
 
     const text = req.text ?? "";
     const terms = queryTerms(text);
-    const enabled = (c: Channel): boolean => req.channels?.[c]?.enabled !== false;
+    // recall = 显式搜索/面板浏览/意图召回: 规则保底通道默认关闭 (要的是"最相关")。
+    // 显式传 channels.rules.enabled 仍可覆盖 —— 目的是改默认, 不是禁掉该通道。
+    const recall = req.purpose === "recall";
+    const enabled = (c: Channel): boolean =>
+      req.channels?.[c]?.enabled ?? (recall && c === "rules" ? false : true);
     const weightOf = (c: Channel): number => req.channels?.[c]?.weight ?? 1;
 
     const byId = new Map<string, MemoryEntry>();
@@ -276,7 +280,8 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       if (!current || takenIds.has(current.id)) continue;
       takenIds.add(current.id);
       const base = hit.score;
-      const boost = hit.channels.includes("rules") ? 0.5 : 0;
+      // boost 同理只在注入语义下给规则 (recall 已关掉该通道; 这里再挡一次显式开启的用例)。
+      const boost = !recall && hit.channels.includes("rules") ? 0.5 : 0;
       const score = compositeScore({ base, entry: current, now: this.now(), boost });
       const why = (reasons.get(id) ?? ["fused"]).join(", ");
       resolved.push({ entry: current, score, channels: hit.channels as Channel[], why });

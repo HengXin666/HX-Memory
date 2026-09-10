@@ -72,6 +72,7 @@ export async function resolveNeighbors(
     deps.retriever
       .retrieveSync({
         text: draft.content,
+        purpose: "recall",
         limit: deps.neighborLimit,
         kinds: [draft.kind],
         expand: { graph: 0 },

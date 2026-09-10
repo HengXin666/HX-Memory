@@ -45,11 +45,19 @@ export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDe
           if (!q) return "Error: query cannot be empty.";
           const limit = Math.min(20, Math.max(1, Number(args.limit) || 10));
           // 检索路径优先级: Facade (使用层, 含命中强化) → Retriever (过渡) → 结构化过滤 (老行为)。
+          // purpose:"recall": 显式搜索要的是"最相关的条目"。
+          // 规则若确实相关, 走 bm25/rules 通道仍会被召回, 只是不再无差别霸占前排。
           const listed = deps.facade
-            ? deps.facade.recall({ text: q, limit, tokenBudget: Math.max(400, limit * 160) }).hits
+            ? deps.facade.recall({
+                text: q,
+                purpose: "recall",
+                limit,
+                tokenBudget: Math.max(400, limit * 160),
+              }).hits
             : deps.retriever
               ? deps.retriever.retrieveSync({
                   text: q,
+                  purpose: "recall",
                   limit,
                   tokenBudget: Math.max(400, limit * 160),
                 }).hits

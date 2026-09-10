@@ -295,17 +295,36 @@ export class TriggerPolicy {
   }
 }
 
+/**
+ * always-on 选择的入参。
+ *
+ * `ruleBudgetRatio` (2026-09): 规则组最多占预算的比例, 其余留给项目事实。
+ * 为什么必须分仓: 修复前规则按 (score 100 + importance) 全排在前面, 6 条规则约 300 token
+ * 会吃光 400 token 预算 —— 真正随任务变化的"架构决策/项目约定"一条都注入不进来 (实测确认)。
+ * 规则是**不变量**, 但不该是**全部**。只在规则与其它两组都有候选时启用上限。
+ */
+export interface AlwaysOnOptions {
+  project?: string;
+  budgetTokens?: number;
+  estimate: (text: string) => number;
+  /** 规则组预算占比 (默认 0.6)。传 1 可恢复"规则优先填满"的旧行为。 */
+  ruleBudgetRatio?: number;
+}
+
 /** 从条目里挑 always-on 内容: 已确认规则 + 项目关键事实/偏好 (受预算约束)。 */
 export function selectAlwaysOn(
   entries: readonly MemoryEntry[],
-  opts: { project?: string; budgetTokens?: number; estimate: (text: string) => number },
+  opts: AlwaysOnOptions,
 ): MemoryEntry[] {
   const budget = opts.budgetTokens ?? 400;
+  const ratio = Math.min(1, Math.max(0, opts.ruleBudgetRatio ?? 0.6));
   const scored = entries
     .filter((e) => {
       if ((e.status ?? "active") !== "active") return false;
       if (e.kind === "rule") return e.scope === "global" && Boolean(e.confirmedBy && e.confirmedAt);
-      // 非规则: 只取项目内的关键事实/偏好/决策 (lesson 由意图通道按需召回, 不常驻)。
+      // 非规则: 项目内关键事实/偏好/决策 (lesson 由意图通道按需召回, 不常驻)。
+      // scope:"agent" 的关键事实/偏好是**跨工作区共享层**: 不属于任何项目, 对每个项目都常驻候选。
+      if (e.scope === "agent") return e.kind === "fact" || e.kind === "preference";
       if (opts.project && e.scope === "project" && e.project !== opts.project) return false;
       return e.kind === "fact" || e.kind === "preference" || e.kind === "decision";
     })
@@ -318,13 +337,25 @@ export function selectAlwaysOn(
     }))
     .sort((a, b) => b.score - a.score);
 
+  const rules = scored.filter((s) => s.entry.kind === "rule");
+  const others = scored.filter((s) => s.entry.kind !== "rule");
+  // 两组都有候选时才切分预算; 只有一组时用满, 不让分仓变成浪费。
+  const ruleCap = rules.length > 0 && others.length > 0 ? Math.floor(budget * ratio) : budget;
+
   const out: MemoryEntry[] = [];
+  const taken = new Set<string>();
   let used = 0;
-  for (const item of scored) {
-    const cost = opts.estimate(item.entry.content) + 8;
-    if (used + cost > budget) continue;
-    used += cost;
-    out.push(item.entry);
-  }
+  const fill = (group: typeof scored, cap: number): void => {
+    for (const item of group) {
+      if (taken.has(item.entry.id)) continue;
+      const cost = opts.estimate(item.entry.content) + 8;
+      if (used + cost > cap) continue;
+      used += cost;
+      taken.add(item.entry.id);
+      out.push(item.entry);
+    }
+  };
+  fill(rules, ruleCap);
+  fill(others, budget);
   return out;
 }

@@ -8,6 +8,8 @@
 export const HXMEM_REMOTE_METHODS = [
   "reviewQueue",
   "runGeneralization",
+  "generalizationStatus",
+  "currentProject",
   "confirmProposal",
   "rejectProposal",
   "listBindings",

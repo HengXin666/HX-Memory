@@ -36,6 +36,7 @@ function lesson(id: string, content: string) {
 describe("抽象器输出校验", () => {
   it("空规则 → 回退启发式, 不产出空提议", async () => {
     lesson("l1", "并发写同一张表要加锁");
+    lesson("l1b", "并发更新同一行要加版本号");
     const bad: Abstractor = {
       async abstract() {
         return { rule: "   ", confidence: 0.9 };
@@ -45,32 +46,34 @@ describe("抽象器输出校验", () => {
     const g = new GeneralizerService(store, join(root, "review"), bad, {
       onAbstractError: (e) => errors.push(e),
     });
-    const [p] = await g.runBatch("run", [store.get("l1")!]);
+    const [p] = await g.runBatch("run", [store.get("l1")!, store.get("l1b")!]);
     expect(p!.proposal.rule.trim().length).toBeGreaterThan(0);
     expect(errors.length).toBe(1);
   });
 
   it("NaN 置信度 → 回退启发式 (置信度必须是有限数)", async () => {
     lesson("l2", "部署后忘了加健康检查");
+    lesson("l2b", "部署回滚没留版本号");
     const bad: Abstractor = {
       async abstract() {
         return { rule: "一条规则", confidence: Number.NaN };
       },
     };
     const g = new GeneralizerService(store, join(root, "review"), bad);
-    const [p] = await g.runBatch("run", [store.get("l2")!]);
+    const [p] = await g.runBatch("run", [store.get("l2")!, store.get("l2b")!]);
     expect(Number.isFinite(p!.proposal.confidence)).toBe(true);
   });
 
   it("合法输出被保留 (含置信度 clamp)", async () => {
     lesson("l3", "接口必须幂等");
+    lesson("l3b", "同一请求重复提交只应生效一次");
     const good: Abstractor = {
       async abstract() {
         return { rule: "接口必须幂等", confidence: 5 };
       },
     };
     const g = new GeneralizerService(store, join(root, "review"), good);
-    const [p] = await g.runBatch("run", [store.get("l3")!]);
+    const [p] = await g.runBatch("run", [store.get("l3")!, store.get("l3b")!]);
     expect(p!.proposal.rule).toBe("接口必须幂等");
     expect(p!.proposal.confidence).toBe(1);
   });
@@ -96,9 +99,9 @@ describe("驳回语义", () => {
     lesson("l6", "网关并发竞态");
     const g = new GeneralizerService(store, join(root, "review"));
     const first = await g.runRecent("panel:1");
-    expect(first.length).toBeGreaterThanOrEqual(1);
-    for (const p of first) g.reject(p.id);
+    expect(first.proposed).toBeGreaterThanOrEqual(1);
+    for (const p of g.listQueue("proposed")) g.reject(p.id);
     const second = await g.runRecent("panel:2");
-    expect(second.length).toBeGreaterThanOrEqual(1);
+    expect(second.proposed).toBeGreaterThanOrEqual(1);
   });
 });

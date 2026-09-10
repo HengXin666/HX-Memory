@@ -62,6 +62,20 @@ describe("gateway 依赖端口 (review 流)", () => {
     expect(generalizer.listQueue("confirmed").length).toBe(1);
   });
 
+  it("status(): AI 是否可用 / 最近批次 / 队列计数 (面板状态条读它)", async () => {
+    const s0 = generalizer.status();
+    expect(s0.abstractor).toBe(false); // 本用例没有注入 LLM 抽象器
+    await generalizer.runRecent("panel:status", 10);
+    const s1 = generalizer.status();
+    expect(s1.lastRun).toBeTruthy();
+    expect(typeof s1.lastRun?.considered).toBe("number");
+    expect(typeof s1.lastRun?.proposed).toBe("number");
+    expect(s1.lastRun?.usedLlm).toBe(false);
+    expect(s1.queue.proposed + s1.queue.confirmed + s1.queue.rejected).toBe(
+      generalizer.listQueue().length,
+    );
+  });
+
   it("memoryQuery 数据面: store.query 可按文本/kind 过滤", () => {
     const all = store.query({});
     expect(all.length).toBeGreaterThanOrEqual(2);

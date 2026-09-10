@@ -23,7 +23,7 @@ v1 已有正确的骨架 (kernel 零依赖 + Port/Adapter + truth-in-files), 但
 | 7   | `supersedes` 链没有写入者    | ADR-005 只落地了语义与读侧                           | 应用层          | `EvolutionService`: 近邻裁决 → 生成 UPDATE/MERGE/SUPERSEDE               |
 | 8   | 无遗忘/衰减/强化             | 模型里没有 importance/access 字段                    | 应用层 + 引擎层 | `importance`/`reinforcement`/`lastHitAt` + `expired` 状态 (永不物理删除) |
 | 9   | 关联只由 generalizer 写      | `relations` 仅 confirm 时写 generalizes              | 应用层          | `LinkService`: 实体/标签/语义三类建边                                    |
-| 10  | 全局规则"总是全量候选"       | `recall` 直接 query 全部 rule                        | 应用层          | 规则同样走检索, 但给**保底配额** (不允许被挤掉)                          |
+| 10  | 全局规则"总是全量候选"       | `recall` 直接 query 全部 rule                        | 应用层          | 规则同样走检索, 但给**保底配额** (不允许被挤掉); 仅 `purpose="inject"` |
 | 11  | `rebuild` 不在端口里         | `rebuildFromFiles()` 只是 FileBackend 的方法         | 端口层          | `Rebuildable` 端口 + `VerifyReport`                                      |
 | 12  | 单宿主深度绑定               | 业务逻辑散在 `adapters/dsh/*`                        | 使用层          | `MemoryFacade` 唯一 API + 多 Surface (DSH/MCP/Codex/HTTP)                |
 | 13  | 无观测性 (命中率/污染率)     | 只有 `warnings()`                                    | 应用层          | `MemoryMetrics` + 评测集 (recall@k / 误注入率)                           |
@@ -63,7 +63,9 @@ v1 已有正确的骨架 (kernel 零依赖 + Port/Adapter + truth-in-files), 但
 
 v2 规定: **Surface 只能调用 Facade, 不能 import 任何引擎**。
 
-> 状态 (2026-09): DSH 的三条路 (工具 \`memory_search\`、pre-step 绑定注入、面板 RPC \`recentCaptures/deleteEntry/memoryQuery\`) 已全部走 Facade; 面板搜索因此与工具/MCP/CLI 共用同一条检索语义 (规则保底、覆盖率过滤、token 预算、可见性、撤回写审计理由)。CLI(\`hx-memory\`) 与 MCP 也走 \`openMemoryStack\` 同一份组装。
+> 状态 (2026-09): DSH 的三条路 (工具 \`memory_search\`、pre-step 绑定注入、面板 RPC \`recentCaptures/deleteEntry/memoryQuery\`) 已全部走 Facade; 面板搜索因此与工具/MCP/CLI 共用同一条检索语义 (覆盖率过滤、token 预算、可见性、撤回写审计理由)。CLI(\`hx-memory\`) 与 MCP 也走 \`openMemoryStack\` 同一份组装。
+>
+> 检索**目的**是这条语义上的一个显式维度 (\`RetrievalRequest.purpose\`): \`"inject"\` (默认) 开规则保底通道, 供"不变量必须永远在场"的注入路径; \`"recall"\` 关规则保底与相应 boost, 供"要最相关的几条"的路径 (面板浏览、\`memory_search\`、按需召回、意图召回、近邻裁决)。此前两者共用默认语义, 导致面板搜索前几条永远是与查询无关的规则 (见 Agent Note "检索目的分层")。
 
 ```ts
 // src/app/facade.ts —— 唯一的对外 API (面向上层用例, 不是面向存储)
@@ -249,8 +251,8 @@ score(entry) = RRF(各通道排名)
              × timeDecay(exp(-λ·age), λ 按 kind 分档)
              × importance(1..10 归一)
              × reinforcement(log(1+hits))     // 命中即强化 (lastHitAt 更新)
-             + rulesBoost(已确认规则保底配额)     // 缺陷 10: 规则不允许被挤掉
-之后: MMR 去冗余 (λ=0.7) → token 预算裁剪 (rules/digest/local 三段配额) → 注入格式化
+             + rulesBoost(仅 purpose="inject")   // 规则保底配额; recall 语义下不加
+之后: MMR 去冗余 (λ=0.7) → token 预算裁剪 (规则组配额 + 其余) → 注入格式化
 ```
 
 ### 3.6 Conformance: 换引擎的验收协议

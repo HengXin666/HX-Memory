@@ -13,6 +13,7 @@
 // (session-events.ts: 版本无关 + 按 surface 过滤) 里本插件 source 的注入。
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Binder } from "../../kernel/binder.ts";
+import { MEMORY_BLOCK_HEADING, memoryFrameNote } from "../../kernel/format-frame.ts";
 import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { sessionEvents } from "./session-events.js";
 
@@ -100,9 +101,13 @@ export function makePreStepHandler(
     projectOf?: (payload: PreStepPayload) => string;
     /** 注入前预热异步投影的硬时限 (ms, 默认 50; 0 = 不预热)。 */
     warmupMs?: () => number;
+    /** 框架句语言 (设置里的 language; 默认 zh)。 */
+    language?: () => "zh" | "en";
   },
 ) {
   const projectOf = options.projectOf ?? ((p: PreStepPayload) => p.agent.session.id);
+  // 每次求值 (面板里改语言当轮生效) —— 参数属性/构造期固化在 strip-only 下同样不可用。
+  const language = (): "zh" | "en" => options.language?.() ?? "zh";
   return async (
     payload: PreStepPayload,
     next: () => Promise<PreStepDecision>,
@@ -123,7 +128,10 @@ export function makePreStepHandler(
     await binder.warm(options.warmupMs?.() ?? 50, text);
     const bound = binder.injectFor(project, text);
     if (!bound) return decision;
-    const injectedText = "【HX-Memory 绑定注入】\n" + bound;
+    // 框架句在最前: 让模型知道这是"检索出来的证据", 并声明不覆盖当前指令 (对齐 DSH 的
+    // workspace-instruction 做法)。硬约束: 框架句必须与记忆内容同块, 否则"证据"语义会丢。
+    const injectedText =
+      MEMORY_BLOCK_HEADING + "\n" + memoryFrameNote(language()) + "\n" + bound;
     // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
     const msgs = decision.messages as unknown[];
     if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;

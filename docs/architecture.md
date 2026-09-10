@@ -38,15 +38,17 @@
 5. 推广必须人工闸门: 机器只提议, rule 确认记录 (谁/何时/实例) 必须留存。
 6. 撤回是**持久**的: `remove()` 在真相文件里写 `status: shadow`, 否则重建会让撤回的记忆复活。
 7. 注入必须可去重: 注入块要能按会话日志 (`agent.session.events` + 本插件 source) 识别, 否则每个 step 都会重复注入。
-8. 宿主契约必须真机验证: 组合层 (`isolate`)、client bundle 模块 id、RPC 约定 (`/api` + `hxMemory/<method>` + `{args}` + `{ok,value}`) 只有真机才看得见问题。
-9. 正文与元数据必须可逆编码: 正文里"看起来像块边界"的行写入时转义 (`format: 2` 起), 否则一条普通记忆能在重建后伪造出条目。
-10. 索引是派生物, 但必须自愈: 索引为空而真相目录有 Markdown 时构造函数自动重建; 并发打开同一索引要等待而不是失败。
-11. 宿主 API 漂移要集中处理: 版本差异 (如 `Session.events` 在 0.1.2-rc.1 被移除) 只允许出现在 `session-events.ts` 这类适配层; 注入去重按 `surface.nodes` 可见性判断。
-12. AI 增强走一次性模型调用 (`ctx.llm.stream`), 不造 agent —— agent 会带工具面、产生自己的会话事件, 被本插件再次捕获。流以 `error/aborted/max-tokens` 结束时必须视为失败 (半截输出不能当成功)。
-13. 宿主设置双路径: `installSection` (0.1.2+) 或 `register(ns, schema, {base})` (0.1.1), 两条都必须真的注册命名空间; 读取永远走"权威 thunk / scope.get()", 不缓存快照。
-14. subagent 会话不捕获、不注入 (`rootAgentsOnly`): 子 agent 的任务提示词也是 `source.kind=user`, 只看来源挡不住。
-15. 文件写入只重写"块区域": 第一个块之前的手写前言原样保留, 块间分隔符容忍单换行; 时间戳字段必须是 `Z` 结尾的 ISO 串 (参与文件名与时间切片)。
-16. 会话离开 store (`session/disposed`) 立即冲刷缓冲并回收状态; 插件卸载时 `flushAll()` 的 promise 必须返回给 cordis (它会 await disposer)。
+   注入块第一行固定为 `【HX-Memory 绑定注入】` 并跟一句"证据非指令"的框架句 (`src/kernel/format-frame.ts`), 三条注入路径共用同一措辞 —— 措辞分叉不会报错, 但会让同一条记忆在不同入口的效力不一致。
+8. 检索必须区分**目的**: `purpose:"inject"` (默认) 保留规则保底通道; `purpose:"recall"` (面板浏览/显式搜索/按需召回/近邻裁决) 关闭保底与规则 boost, 只按相关性排。共用一个默认值会让"搜索"退化成"永远先列规则"。
+9. 宿主契约必须真机验证: 组合层 (`isolate`)、client bundle 模块 id、RPC 约定 (`/api` + `hxMemory/<method>` + `{args}` + `{ok,value}`) 只有真机才看得见问题。
+10. 正文与元数据必须可逆编码: 正文里"看起来像块边界"的行写入时转义 (`format: 2` 起), 否则一条普通记忆能在重建后伪造出条目。
+11. 索引是派生物, 但必须自愈: 索引为空而真相目录有 Markdown 时构造函数自动重建; 并发打开同一索引要等待而不是失败。
+12. 宿主 API 漂移要集中处理: 版本差异 (如 `Session.events` 在 0.1.2-rc.1 被移除) 只允许出现在 `session-events.ts` 这类适配层; 注入去重按 `surface.nodes` 可见性判断。
+13. AI 增强走一次性模型调用 (`ctx.llm.stream`), 不造 agent —— agent 会带工具面、产生自己的会话事件, 被本插件再次捕获。流以 `error/aborted/max-tokens` 结束时必须视为失败 (半截输出不能当成功)。
+14. 宿主设置双路径: `installSection` (0.1.2+) 或 `register(ns, schema, {base})` (0.1.1), 两条都必须真的注册命名空间; 读取永远走"权威 thunk / scope.get()", 不缓存快照。
+15. subagent 会话不捕获、不注入 (`rootAgentsOnly`): 子 agent 的任务提示词也是 `source.kind=user`, 只看来源挡不住。
+16. 文件写入只重写"块区域": 第一个块之前的手写前言原样保留, 块间分隔符容忍单换行; 时间戳字段必须是 `Z` 结尾的 ISO 串 (参与文件名与时间切片)。
+17. 会话离开 store (`session/disposed`) 立即冲刷缓冲并回收状态; 插件卸载时 `flushAll()` 的 promise 必须返回给 cordis (它会 await disposer)。
 
 ## 测试映射
 

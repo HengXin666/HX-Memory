@@ -144,6 +144,42 @@ export interface GeneralizationProposal {
 
 export type ProposalStatus = "proposed" | "confirmed" | "rejected";
 
+/**
+ * 一次推广批次的**可观测报告** (面板要回答"这次到底做了什么 / 为什么没效果")。
+ *
+ * 为什么必须落这份数据: 只回一个 proposed 计数时, 用户看到 "0 条提议" 分不清是
+ * "没有候选" / "候选都被已提议覆盖" / "聚类没命中主题" / "AI 抽象降级成草稿" ——
+ * 于是只能得出"这个功能没用"的结论。报告把漏斗的每一段暴露出来。
+ */
+export interface GeneralizationRunReport {
+  /** 本次批次开始时间 (ISO)。 */
+  at: string;
+  /** 进入批次的候选条目数 (lesson/pattern/decision)。 */
+  considered: number;
+  /** 因已被队列里未驳回的提议覆盖而跳过的条目数。 */
+  coveredSkipped: number;
+  /** 实际形成主题簇的数量 (无主题信号的条目不进簇)。 */
+  clusters: number;
+  /** 本次新入队的提议数。 */
+  proposed: number;
+  /** 是否至少有一簇走了 AI 抽象 (false = 全部启发式草稿)。 */
+  usedLlm: boolean;
+  /** 耗时 (ms)。 */
+  tookMs: number;
+  /** 失败原因 (成功时不出现)。 */
+  error?: string;
+}
+
+/** 推广子系统对面板/CLI 的状态视图。 */
+export interface GeneralizationStatus {
+  /** 是否接上了 AI 抽象器 (false = 只能产需要人工改写的草稿规则)。 */
+  abstractor: boolean;
+  /** 最近一次批次报告 (从未跑过则不出现)。 */
+  lastRun?: GeneralizationRunReport;
+  /** 队列按状态计数。 */
+  queue: { proposed: number; confirmed: number; rejected: number };
+}
+
 /** One review-queue item: a machine/user proposal awaiting the human gate. */
 export interface QueuedProposal {
   id: string;
