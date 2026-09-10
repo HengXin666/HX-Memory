@@ -7,7 +7,7 @@
 //   manifest: "通过向量检索动态地将日记内容注入到系统提示词中"。
 // 这里落到声明式、类型化、可测试形态: MemoryBinding + 确定性判定。
 import type { MemoryEntry, Query } from "./types.ts";
-import type { SyncMemoryStore } from "./ports.ts";
+import type { RetrievalRequest, SyncMemoryStore, SyncRetriever } from "./ports.ts";
 
 /** 每个绑定: 查询条件 + 权重 + 条数预算 + 可选信号词门控。 */
 export interface MemoryBinding {
@@ -84,12 +84,46 @@ export function formatBoundEntries(heading: string, entries: MemoryEntry[]): str
  *  旧线: recall() 只按"当前文本"搜全局规则, 会话是否注入靠 guidance 引导模型调工具;
  *  新线: 项目声明的 bindings 先于模型思考被解析, 命中即注入, 与模型自觉无关。
  */
+/**
+ * 绑定 → 检索请求 (v2)。绑定的 query 是"结构化条件", 加上当前文本就是一次混合检索:
+ * 文本负责相关性, query 负责范围, max 负责条数, token 预算按条数保守换算。
+ */
+export function bindingToRequest(binding: MemoryBinding, text: string): RetrievalRequest {
+  const q = binding.query;
+  const limit = binding.max ?? 6;
+  const req: RetrievalRequest = { text, limit, tokenBudget: Math.max(64, limit * 120) };
+  if (q.kind) req.kinds = [q.kind];
+  const scope: RetrievalRequest["scope"] = {};
+  if (q.project) scope.project = q.project;
+  if (q.scope === "global") scope.global = true;
+  if (q.scope === "project") scope.global = false;
+  if (Object.keys(scope).length) req.scope = scope;
+  if (q.tag) req.tags = [q.tag];
+  if (q.at) req.asOf = q.at;
+  if (q.includeShadow) req.includeHidden = true;
+  return req;
+}
+
 export class Binder {
-  /** 依赖同步查询面 (pre-step 是同步判定点); 异步后端需要自带缓存层。 */
+  private readonly queryFn: SyncMemoryStore["query"];
+  private readonly configs: () => BindingConfig[];
+  /**
+   * v2 检索器 (可选): 传入则绑定走混合检索 (BM25 + 图扩展 + 预算 + 治理闸门);
+   * 不传则走 v1 的关键词路径 —— 后者保留是为了不让"没升级的宿主/老测试"被迫一起改,
+   * 不是长期形态 (见 docs/architecture-v2.md §7 P1)。
+   */
+  private readonly retriever?: SyncRetriever;
+
+  /** 依赖同步查询面 (pre-step 是同步判定点); 异步后端需要自带缓存层/投影。 */
   constructor(
-    private readonly queryFn: SyncMemoryStore["query"],
-    private readonly configs: () => BindingConfig[],
-  ) {}
+    queryFn: SyncMemoryStore["query"],
+    configs: () => BindingConfig[],
+    retriever?: SyncRetriever,
+  ) {
+    this.queryFn = queryFn;
+    this.configs = configs;
+    this.retriever = retriever;
+  }
 
   /** 取某项目声明的绑定 (无则空)。 */
   bindingsFor(project: string): MemoryBinding[] {
@@ -102,10 +136,17 @@ export class Binder {
     const bindings = this.bindingsFor(project);
     const blocks: string[] = [];
     for (const b of bindings) {
-      const entries = resolveBinding(b, this.queryFn(b.query), text);
+      const entries = this.resolve(b, text);
       const block = formatBoundEntries(b.id, entries);
       if (block) blocks.push(block);
     }
     return blocks.join("\n");
+  }
+
+  /** 解析一条绑定: 有 Retriever 走混合检索 (带治理闸门与预算), 否则走 v1 关键词路径。 */
+  private resolve(binding: MemoryBinding, text: string): MemoryEntry[] {
+    if (!bindingShouldInject(binding, text)) return [];
+    if (!this.retriever) return resolveBinding(binding, this.queryFn(binding.query), text);
+    return this.retriever.retrieveSync(bindingToRequest(binding, text)).hits.map((h) => h.entry);
   }
 }
