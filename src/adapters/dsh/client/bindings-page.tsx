@@ -2,7 +2,7 @@
 // 列出 项目 → 绑定源, 支持增删改, 保存经 gateway RPC (listBindings/saveBindings)。
 // 字段保真: 面板只编辑 id/kind/scope/project/weight/max/signalWords, 其余字段原样透传,
 // 避免"面板保存一次就抹掉手工写的配置"。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { BindingLocale } from "./locale.js";
 import { callHxMemory, type HxMemoryRpcCaller } from "./rpc.js";
 
@@ -47,6 +47,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
     try {
       const list = await callHxMemory<ProjectBindings[]>(rpc, "listBindings");
       setConfigs(list ?? []);
+      dirtyRef.current = false; // 刚从后端拉过, 当前编辑状态与后端一致
     } catch (e) {
       setMsg(String(e));
       setConfigs([]);
@@ -57,18 +58,48 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
     void load();
   }, [load]);
 
+  /**
+   * 打开期间跟随后端变化 (别的窗口/CLI 改了绑定也应该看到)。
+   * 与审阅页同一策略: focus + visibilitychange + 可见时轮询。
+   * 注意: 用户正在编辑时**不要**覆盖输入框 —— 有未保存改动就跳过自动刷新。
+   */
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    const auto = () => {
+      if (!dirtyRef.current && document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", auto);
+    document.addEventListener("visibilitychange", auto);
+    const timer = setInterval(auto, 5000);
+    return () => {
+      window.removeEventListener("focus", auto);
+      document.removeEventListener("visibilitychange", auto);
+      clearInterval(timer);
+    };
+  }, [load]);
+
+  // 所有编辑入口都置脏: 有未保存改动时自动刷新会跳过, 避免覆盖用户正在输入的内容。
   const addProject = () => {
+    dirtyRef.current = true;
     setConfigs((c) => [...c, { project: "", bindings: [] }]);
   };
 
-  const setProject = (i: number, v: string) =>
+  const setProject = (i: number, v: string) => {
+    dirtyRef.current = true;
     setConfigs((c) => c.map((x, j) => (j === i ? { ...x, project: v } : x)));
-  const removeProject = (i: number) => setConfigs((c) => c.filter((_, j) => j !== i));
-  const addBinding = (i: number) =>
+  };
+  const removeProject = (i: number) => {
+    dirtyRef.current = true;
+    setConfigs((c) => c.filter((_, j) => j !== i));
+  };
+  const addBinding = (i: number) => {
+    dirtyRef.current = true;
     setConfigs((c) =>
       c.map((x, j) => (j === i ? { ...x, bindings: [...x.bindings, { id: "", query: {} }] } : x)),
     );
-  const setBinding = (i: number, bi: number, patch: Partial<BindingRow>) =>
+  };
+  const setBinding = (i: number, bi: number, patch: Partial<BindingRow>) => {
+    dirtyRef.current = true;
     setConfigs((c) =>
       c.map((x, j) =>
         j === i
@@ -76,10 +107,13 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
           : x,
       ),
     );
-  const removeBinding = (i: number, bi: number) =>
+  };
+  const removeBinding = (i: number, bi: number) => {
+    dirtyRef.current = true;
     setConfigs((c) =>
       c.map((x, j) => (j === i ? { ...x, bindings: x.bindings.filter((_, k) => k !== bi) } : x)),
     );
+  };
 
   const save = async () => {
     setSaving(true);
@@ -114,7 +148,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
         configs: clean,
       });
       setMsg(res.ok === false ? t("saveFailed") + (res.error ?? "") : t("saved"));
-      await load();
+      await load(); // load 会把 dirty 复位
     } catch (e) {
       setMsg(String(e));
     } finally {

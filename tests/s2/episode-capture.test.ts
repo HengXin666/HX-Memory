@@ -36,7 +36,7 @@ const mk = () =>
     new CapturePipeline(store),
     () => ({ autoCapture: true, autoMemoryInterval: 1 }),
     {
-      episodes,
+      episodes: () => episodes,
       surface: "dsh",
     },
   );
@@ -66,7 +66,7 @@ describe("捕获 → Episode 血缘", () => {
     const runtime = new HxMemoryRuntime(
       new CapturePipeline(store),
       () => ({ autoCapture: true, autoMemoryInterval: 2 }),
-      { episodes, surface: "dsh" },
+      { episodes: () => episodes, surface: "dsh" },
     );
     const session = { id: "s3" };
     runtime.onSessionStart(session);
@@ -92,7 +92,7 @@ describe("捕获 → Episode 血缘", () => {
     const runtime = new HxMemoryRuntime(
       new CapturePipeline(store),
       () => ({ autoCapture: true, autoMemoryInterval: 1 }),
-      { episodes: failing as never, onError: (e) => errors.push(e) },
+      { episodes: () => failing as never, onError: (e) => errors.push(e) },
     );
     const session = { id: "s4" };
     runtime.onSessionStart(session);

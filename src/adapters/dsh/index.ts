@@ -104,7 +104,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const facade = new MemoryFacade(
     { store, retriever },
     // 语义兜底去重默认开启 (本地零依赖哈希袋); 自动演化 (取代/冲突) 由设置控制。
-    { embedder: localEmbedder, autoEvolve: settings().autoEvolve },
+    // 传函数: 面板里改 autoEvolve 当轮生效 (不再需要重启)。
+    { embedder: localEmbedder, autoEvolve: () => settings().autoEvolve },
   );
   facade.withIndexStatus(() => store.ftsStatus());
 
@@ -197,22 +198,30 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   };
   // Episode 追加日志 (ADR-018): 原文是真相的一部分, 让"换抽取器"能重放而不是重聊。
   // 可关闭 (captureEpisodes) 且带保留期; 关闭时记忆照常捕获, 只是没有原文可重放。
-  const episodes = new EpisodeStore({
-    root,
-    retentionDays: settings().episodeRetentionDays,
-  });
-  if (settings().captureEpisodes && settings().episodeRetentionDays > 0) {
-    try {
-      const removed = episodes.prune();
-      if (removed > 0) ctx.logger("hx-memory").info("pruned %d expired episodes", removed);
-    } catch (error) {
-      logWarn("episode prune failed: %s", error);
+  // Episode 日志: 保留期与开关都要**实时**读设置 (面板改动不必重启)。
+  // 保留期变化时重建实例 (EpisodeStore 的 prune 只在构造时读保留期)。
+  let episodes: EpisodeStore | null = null;
+  let episodesRetention = -1;
+  const episodeStore = (): EpisodeStore | null => {
+    if (!settings().captureEpisodes) return null;
+    const retention = settings().episodeRetentionDays;
+    if (!episodes || retention !== episodesRetention) {
+      episodes = new EpisodeStore({ root, retentionDays: retention });
+      episodesRetention = retention;
     }
+    return episodes;
+  };
+  // 启动时清理过期原文 (只跑一次; 保留期改小后由下次 prune 生效)。
+  try {
+    const removed = episodeStore()?.prune() ?? 0;
+    if (removed > 0) ctx.logger("hx-memory").info("pruned %d expired episodes", removed);
+  } catch (error) {
+    logWarn("episode prune failed: %s", error);
   }
   const runtime = new HxMemoryRuntime(pipe, settings, {
     onError: (error) => logWarn("capture failed: %s", error),
     surface: "dsh",
-    ...(settings().captureEpisodes ? { episodes } : {}),
+    episodes: () => episodeStore(),
   });
   // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用/失败时回退启发式。
   const generalizer = new GeneralizerService(

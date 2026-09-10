@@ -113,8 +113,8 @@ export interface FacadeOptions {
   embedder?: Embedder;
   /** 语义判重的阈值 (默认 0.95; 越高越保守)。 */
   semanticDuplicateFloor?: number;
-  /** 关闭自动演化 (取代/冲突标记): 只做去重与建边。 */
-  autoEvolve?: boolean;
+  /** 关闭自动演化 (取代/冲突标记): 只做去重与建边。可传函数以实时读取设置。 */
+  autoEvolve?: boolean | (() => boolean);
   /** 单次写入最多建几条结构关联边 (默认 3; 0 = 关闭)。 */
   maxStructuralLinks?: number;
 }
@@ -130,7 +130,8 @@ export class MemoryFacade {
   private readonly now: () => string;
   private readonly embedder?: Embedder;
   private readonly semanticDuplicateFloor: number;
-  private readonly autoEvolve: boolean;
+  /** 实时求值: 面板里改 autoEvolve 必须当轮生效, 不能等到重启。 */
+  private readonly autoEvolve: () => boolean;
   private readonly maxStructuralLinks: number;
 
   constructor(deps: { store: FacadeStore; retriever: SyncRetriever }, opts: FacadeOptions = {}) {
@@ -141,7 +142,9 @@ export class MemoryFacade {
     this.now = opts.now ?? (() => new Date().toISOString());
     if (opts.embedder) this.embedder = opts.embedder;
     this.semanticDuplicateFloor = opts.semanticDuplicateFloor ?? 0.95;
-    this.autoEvolve = opts.autoEvolve !== false;
+    const autoEvolveOpt = opts.autoEvolve;
+    this.autoEvolve =
+      typeof autoEvolveOpt === "function" ? autoEvolveOpt : () => autoEvolveOpt !== false;
     this.maxStructuralLinks = opts.maxStructuralLinks ?? 3;
   }
 
@@ -179,7 +182,7 @@ export class MemoryFacade {
       ...(semantic ? { semanticSimilarity: (id: string) => semantic.get(id) } : {}),
       ...(this.embedder ? { semanticDuplicateFloor: this.semanticDuplicateFloor } : {}),
       // 关闭自动演化: 把阈值抬到不可能达到的高度 —— 只保留字面去重与建边, 不取代不标记不语义合并。
-      ...(this.autoEvolve
+      ...(this.autoEvolve()
         ? {}
         : { supersedeFloor: 2, conflictFloor: 2, semanticDuplicateFloor: 2 }),
     });

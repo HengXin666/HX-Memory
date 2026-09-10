@@ -69,10 +69,11 @@ export interface RuntimeOptions {
   /** 落盘失败的旁路通知 (记忆写入失败绝不能影响宿主)。 */
   onError?: (error: unknown) => void;
   /**
-   * Episode 追加日志 (可选, ADR-018): 保留原文, 支撑"换抽取器 → 全量重放"。
-   * 关闭时记忆仍照常捕获, 只是没有原文可重放。
+   * Episode 追加日志 (ADR-018): 保留原文, 支撑"换抽取器 → 全量重放"。
+   * **用"提供者"而不是直接给实例**: 开关 (captureEpisodes) 在面板里是可改的,
+   * 而构造插件时读一次会让改动必须重启才生效 (真实踩过)。
    */
-  episodes?: EpisodeStore;
+  episodes?: () => EpisodeStore | null;
   /** 捕获来源标记 (写进 episode.surface, 便于多宿主共存时溯源)。 */
   surface?: string;
 }
@@ -138,10 +139,12 @@ export class HxMemoryRuntime {
       turn += 1;
       // 先写原文 (真相), 再抽取记忆并带上血缘: 顺序反了会出现"有记忆无原文"的孤儿条目。
       let episodeId: string | undefined;
-      if (this.options.episodes) {
+      // 每次落盘时**重新求值** (面板能在会话中途开关 episode 记录)。
+      const episodeStore = this.options.episodes?.() ?? null;
+      if (episodeStore) {
         try {
           // 端口允许异步实现 (远端日志/批量刷盘), 这里是 await 点。
-          const episode = await this.options.episodes.append({
+          const episode = await episodeStore.append({
             session: session.id,
             turn,
             role: "user",

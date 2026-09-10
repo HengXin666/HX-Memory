@@ -39,7 +39,7 @@ async function seed(texts: string[]): Promise<void> {
   const runtime = new HxMemoryRuntime(
     new CapturePipeline(store),
     () => ({ autoCapture: true, autoMemoryInterval: 1 }),
-    { episodes, surface: "dsh" },
+    { episodes: () => episodes, surface: "dsh" },
   );
   const session = { id: "s1" };
   runtime.onSessionStart(session);

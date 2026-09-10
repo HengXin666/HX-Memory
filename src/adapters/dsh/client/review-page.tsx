@@ -71,6 +71,27 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     void refresh();
   }, [refresh]);
 
+  /**
+   * 面板打开期间也要跟着变: 记忆捕获、推广批次、别处确认都可能改变后端状态。
+   * 只挂载时拉一次会让显示长期陈旧 —— 用户唯一的办法是重启宿主 (真实反馈)。
+   * 三重刷新: 窗口重新获得焦点 / 面板重新可见 / 定时轮询 (切到后台时停, 不浪费请求)。
+   */
+  useEffect(() => {
+    const onFocus = () => void refresh();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (document.visibilityState === "visible") timer = setInterval(onFocus, 5000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== undefined) clearInterval(timer);
+    };
+  }, [refresh]);
+
   const act = async (
     id: string,
     method: "confirmProposal" | "rejectProposal",
