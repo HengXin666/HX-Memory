@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HX-Memory 触发层设计: 对标市面记忆系统</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2128; --line: #30363d;
+    --fg: #e6edf3; --dim: #8b949e; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 80px; background: var(--bg); color: var(--fg);
+    font: 15px/1.75 -apple-system, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+  }
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 8px; letter-spacing: -0.3px; }
+  h2 {
+    font-size: 21px; margin: 48px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 16px; margin: 26px 0 10px; color: var(--accent); }
+  .sub { color: var(--dim); margin: 0 0 28px; }
+  .lead {
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 16px 20px; margin: 24px 0;
+  }
+  .lead strong { color: #fff; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-weight: 600; }
+  tr:nth-child(even) td { background: #12161d; }
+  code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 12.5px;
+         font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stars { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px;
+         border: 1px solid var(--line); color: var(--dim); }
+  .tag.ok { color: var(--ok); border-color: #2ea04366; }
+  .tag.bad { color: var(--bad); border-color: #f8514966; }
+  .tag.warn { color: var(--warn); border-color: #d2992266; }
+  .diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+             padding: 18px; margin: 20px 0; overflow-x: auto; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .card h4 { margin: 0 0 8px; font-size: 14px; color: var(--accent); }
+  .card p { margin: 0; font-size: 13.5px; color: #c9d1d9; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .note { color: var(--dim); font-size: 13px; }
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } body { padding: 24px 14px 60px; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>HX-Memory 触发层设计</h1>
+<p class="sub">对标市面长期记忆系统 · 回答"AI 怎么会想到去查记忆" · 2026-09</p>
+
+<div class="lead">
+<strong>一句话结论:</strong> 市面方案大多把"何时查记忆"交给<strong>模型自觉</strong>(工具调用)或<strong>无条件全量注入</strong>,
+两者都有明确缺陷 —— 前者该查时不查, 后者吃预算且引入噪声。
+HX-Memory 的做法是<strong>代码强制的四通道触发</strong>: 与模型是否"想起来"解耦, 同时保留模型主动深挖的能力。
+</div>
+
+<h2>一、市面记忆系统对照 (按 star 量级)</h2>
+<p class="note">星标为 2026-09-10 通过 GitHub API 实测; "触发方式"一列是本表的核心对比维度。空白表示该项目不在该维度提供机制。</p>
+
+<table>
+<thead><tr>
+  <th>项目</th><th class="stars">Stars</th><th>许可</th><th>存储/检索</th>
+  <th>触发方式 (怎么会去查)</th><th>自动整理</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td><strong>claude-mem</strong><br /><span class="note">thedotmack</span></td>
+  <td class="stars">93.6k</td><td>Apache-2.0</td>
+  <td>本地 SQLite + 全文/语义; 3 层 MCP 工具 (search→timeline→get_observations)</td>
+  <td><span class="tag bad">模型自觉</span> 4 个 MCP 工具, 靠模型主动调; 另有 observer 侧写日志</td>
+  <td>observer 后台观察 + 记忆压缩</td>
+</tr>
+<tr>
+  <td><strong>RAGFlow</strong><br /><span class="note">infiniflow</span></td>
+  <td class="stars">90.4k</td><td>Apache-2.0</td>
+  <td>深度文档解析 + 切片 + 向量/全文混合检索</td>
+  <td><span class="tag bad">模型自觉</span> 检索是 API/工具, 由上层应用决定何时调</td>
+  <td>文档解析管线 (非对话记忆)</td>
+</tr>
+<tr>
+  <td><strong>MCP servers (memory)</strong><br /><span class="note">modelcontextprotocol</span></td>
+  <td class="stars">90.2k</td><td>NOASSERTION</td>
+  <td>本地 JSON 知识图 (实体-关系-观察)</td>
+  <td><span class="tag bad">模型自觉</span> 纯工具面, 无注入机制</td>
+  <td>无</td>
+</tr>
+<tr>
+  <td><strong>mem0</strong><br /><span class="note">mem0ai</span></td>
+  <td class="stars">65.1k</td><td>Apache-2.0</td>
+  <td>可换向量库 + SQLite history; 混合检索 (语义+BM25+实体)</td>
+  <td><span class="tag warn">混合</span> SDK 提供 <code>search()</code>; 官方 DSH 插件走 <code>system-prompt/assemble</code> 注入 + <code>session/event</code> 捕获</td>
+  <td>写入期 LLM 裁决 (v3 已退化为 ADD-only) + 过期隐藏</td>
+</tr>
+<tr>
+  <td><strong>LlamaIndex</strong><br /><span class="note">run-llama</span></td>
+  <td class="stars">52.1k</td><td>MIT</td>
+  <td>任意 (可插拔 vector store / docstore)</td>
+  <td><span class="tag bad">模型自觉</span> 提供 memory 模块与检索 API, 何时查由应用编排</td>
+  <td>ChatMemoryBuffer / 摘要式记忆</td>
+</tr>
+<tr>
+  <td><strong>Khoj</strong><br /><span class="note">khoj-ai</span></td>
+  <td class="stars">37.3k</td><td>AGPL-3.0</td>
+  <td>文档 + 向量, 多端同步</td>
+  <td><span class="tag bad">模型自觉</span> 工具/API 检索</td>
+  <td>文档索引增量更新</td>
+</tr>
+<tr>
+  <td><strong>Graphiti</strong><br /><span class="note">getzep (Zep 引擎)</span></td>
+  <td class="stars">30.8k</td><td>Apache-2.0</td>
+  <td>时序知识图 (Neo4j/FalkorDB); BM25+cosine+BFS 三路 → RRF/MMR 重排</td>
+  <td><span class="tag bad">模型自觉</span> 官方 MCP server 暴露 <code>search_memory_facts</code> 等工具</td>
+  <td><strong>边级双时态</strong>: 矛盾边失效而非删除 + community 摘要刷新</td>
+</tr>
+<tr>
+  <td><strong>Cognee</strong><br /><span class="note">topoteretes</span></td>
+  <td class="stars">30.6k</td><td>Apache-2.0</td>
+  <td>图 + 向量 + 关系层, 自动路由检索策略</td>
+  <td><span class="tag warn">混合</span> MCP / Claude Code / Codex 插件 + REST</td>
+  <td><code>remember/recall/improve/forget</code> 显式 API, 会话蒸馏进永久图</td>
+</tr>
+<tr>
+  <td><strong>Letta</strong> (原 MemGPT)</td>
+  <td class="stars">24.7k</td><td>Apache-2.0</td>
+  <td>MemFS: git + Markdown frontmatter; 默认无向量索引</td>
+  <td><span class="tag ok">强制</span> <code>system/</code> 目录**每轮进系统提示** (always-on); 其余靠文件树按需读</td>
+  <td><strong>dreaming</strong> (sleep-time compute) 后台子代理整合; <code>/doctor</code> 审计</td>
+</tr>
+<tr>
+  <td><strong>txtai</strong><br /><span class="note">neuml</span></td>
+  <td class="stars">12.9k</td><td>Apache-2.0</td>
+  <td>稀疏+稠密向量 + 图网络 + 关系库</td>
+  <td><span class="tag bad">模型自觉</span> 检索 API / MCP</td>
+  <td>无专门演化</td>
+</tr>
+<tr>
+  <td><strong>MemOS</strong><br /><span class="note">MemTensor</span></td>
+  <td class="stars">11.3k</td><td>Apache-2.0</td>
+  <td>本地版 SQLite+FTS5+向量; 服务版 Neo4j+Qdrant</td>
+  <td><span class="tag ok">强制</span> 官方 DSH 插件在 <code>agent/pre-step</code> 有界召回 (硬时限 3s) + 六工具</td>
+  <td>L1/L2/L3 分层演化 + 技能结晶</td>
+</tr>
+<tr>
+  <td><strong>HippoRAG 2</strong><br /><span class="note">OSU-NLP-Group</span></td>
+  <td class="stars">4.0k</td><td>MIT</td>
+  <td>OpenIE 图 + 向量; Personalized PageRank 多跳检索</td>
+  <td><span class="tag bad">模型自觉</span> 库函数, 无宿主注入</td>
+  <td>增量索引 + <code>index_manifest.json</code> 绑定 embedding 身份</td>
+</tr>
+<tr>
+  <td><strong>Basic Memory</strong></td>
+  <td class="stars">3.9k</td><td>AGPL-3.0</td>
+  <td>Markdown 真相 + SQLite 索引; 可选语义 + rerank</td>
+  <td><span class="tag bad">模型自觉</span> MCP 原生 (写/读/搜 + build_context)</td>
+  <td>双向同步 + watcher</td>
+</tr>
+<tr>
+  <td><strong>Memobase</strong></td>
+  <td class="stars">2.9k</td><td>Apache-2.0</td>
+  <td>用户画像 + 事件时间线</td>
+  <td><span class="tag warn">混合</span> API 为主, 提供 profile/context 组装</td>
+  <td>画像增量更新 (2026-01 后停更)</td>
+</tr>
+<tr>
+  <td><strong>VCPToolBox (VCP)</strong><br /><span class="note">lioensky</span></td>
+  <td class="stars">2.3k</td><td>NOASSERTION</td>
+  <td>日记文件 (热) + TDB 冷知识库 + 多层时间尺度; TagMemo 浪潮算法</td>
+  <td><span class="tag ok">强制</span> <strong>日记 DSL 占位符</strong> <code>[[小克日记本::TagMemo+::Rerank+]]</code> 写在 Agent 模板里, 每轮由 processMessages 判定并注入</td>
+  <td>AgentDream 离线联想重构; EPA 残差金字塔分析上下文深度</td>
+</tr>
+<tr>
+  <td><strong>mcp-memory-service</strong></td>
+  <td class="stars">1.9k</td><td>Apache-2.0</td>
+  <td>向量 + SQLite</td>
+  <td><span class="tag bad">模型自觉</span> MCP 工具</td>
+  <td>无</td>
+</tr>
+<tr>
+  <td><strong>LangMem</strong><br /><span class="note">langchain-ai</span></td>
+  <td class="stars">1.7k</td><td>MIT</td>
+  <td>跟随 LangGraph store (内存/Postgres)</td>
+  <td><span class="tag bad">模型自觉</span> <code>create_search_memory_tool</code> 工具</td>
+  <td>后台 memory manager 抽取+合并; 程序记忆 metaprompt 优化</td>
+</tr>
+<tr>
+  <td><strong>A-MEM</strong></td>
+  <td class="stars">1.2k</td><td>MIT</td>
+  <td>ChromaDB + BM25 混合</td>
+  <td><span class="tag bad">模型自觉</span> 库函数</td>
+  <td><strong>Zettelkasten 演化</strong>: 新记忆触发邻居 strengthen/update (2025-12 后停更)</td>
+</tr>
+<tr>
+  <td><strong>agentic-memory / ai-memory</strong><br /><span class="note">社区 hook 方案</span></td>
+  <td class="stars">—</td><td>—</td>
+  <td>多 collection + 向量</td>
+  <td><span class="tag ok">强制</span> <strong>UserPromptSubmit hook</strong>: 关键词触发器 (20+16+27 条模式) + 置信度门控 (hard_skip/soft_gate) + 话题漂移检测 + 自适应预算</td>
+  <td>分层记忆 (决策/会话/最佳实践)</td>
+</tr>
+</tbody>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>发现 1: 触发方式只有三种, 且大多是最弱的一种</h4>
+    <p><strong>模型自觉 (最多)</strong> — mem0 SDK、Graphiti、claude-mem、Basic Memory、LangMem、MCP memory server: 提供工具, 指望模型想起来调。<br />
+    <strong>无条件注入 (Letta / VCP)</strong> — 声明式占位符或 <code>system/</code> 常驻, 每轮必进。<br />
+    <strong>hook 强制 + 门控 (ai-memory / MemOS)</strong> — 中间件判定后注入, 最接近我们认为正确的形态。</p>
+  </div>
+  <div class="card">
+    <h4>发现 2: 只有少数项目把"该不该查"当成一等工程问题</h4>
+    <p>绝大多数项目的文档只讲"怎么存/怎么搜", 对"模型何时会想到搜"没有机制。
+    <strong>VCP 与 Letta 用声明式注入解决了"必进"</strong>, 但代价是常驻内容吃预算;
+    <strong>ai-memory 的 hook 方案</strong>最完整 (模式库 + 置信度门控 + 话题漂移 + 自适应预算),
+    但只在 Claude Code hook 生态内, 且没有"always-on 保底"这条线。</p>
+  </div>
+</div>
+
+<h2>二、问题拆解: 模型为什么"不知道要查"</h2>
+<ul>
+  <li><strong>模型不知道自己的知识边界。</strong>它无法可靠区分"我不知道"与"我知道但记错了" —— 于是默认用参数记忆作答 (幻觉自足), 不触发检索。</li>
+  <li><strong>工具调用是概率行为。</strong>调用与否取决于提示词、上下文压力、任务形态, 同一份记忆在不同轮次表现不一致。</li>
+  <li><strong>成本与噪声的反向压力。</strong>为避免"每轮都查", 常见做法是让模型自己判断 —— 这恰恰把可靠性交回给了不可靠的环节。</li>
+  <li><strong>无绑定即失效。</strong>声明式方案 (含我们 v1 的 Binder) 只对"配置过绑定的项目"生效; 新项目/没配置的项目完全无记忆。</li>
+</ul>
+
+<h2>三、HX-Memory 的答案: 四通道触发</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 1100 620" width="100%" role="img" aria-label="HX-Memory 触发流程">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#58a6ff" />
+    </marker>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#3fb950" />
+    </marker>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#8b949e" />
+    </marker>
+  </defs>
+
+  <rect x="20" y="20" width="1060" height="70" rx="10" fill="#1c2128" stroke="#30363d" />
+  <text x="44" y="48" fill="#e6edf3" font-size="15" font-weight="600">用户输入</text>
+  <text x="44" y="72" fill="#8b949e" font-size="13">当前轮最新一条 user 文本 (只认直接用户输入; 插件注入的上下文被排除)</text>
+
+  <line x1="200" y1="90" x2="200" y2="130" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#a)" />
+  <text x="212" y="116" fill="#58a6ff" font-size="12">agent/pre-step (waterfall, 异步)</text>
+
+  <rect x="20" y="130" width="1060" height="42" rx="8" fill="#161b22" stroke="#30363d" stroke-dasharray="4 3" />
+  <text x="44" y="157" fill="#e6edf3" font-size="14" font-weight="600">warm(50ms 硬时限)</text>
+  <text x="230" y="157" fill="#8b949e" font-size="13">并行预热: 向量投影 + always-on 缓存 — 超时不报错, 绝不阻塞对话</text>
+
+  <rect x="20" y="200" width="250" height="150" rx="10" fill="#16211a" stroke="#2ea043" />
+  <text x="40" y="226" fill="#3fb950" font-size="14" font-weight="600">通道 1 · always-on</text>
+  <text x="40" y="250" fill="#c9d1d9" font-size="12.5">跨项目已确认规则</text>
+  <text x="40" y="270" fill="#c9d1d9" font-size="12.5">+ 本项目关键事实/偏好/决策</text>
+  <text x="40" y="296" fill="#8b949e" font-size="12">不看意图, 无条件注入</text>
+  <text x="40" y="316" fill="#3fb950" font-size="12">= 模型没意识时的唯一保证</text>
+  <text x="40" y="338" fill="#8b949e" font-size="12">预算 400 tokens</text>
+
+  <rect x="290" y="200" width="250" height="150" rx="10" fill="#1a1a24" stroke="#58a6ff" />
+  <text x="310" y="226" fill="#58a6ff" font-size="14" font-weight="600">通道 2 · 意图门控</text>
+  <text x="310" y="250" fill="#c9d1d9" font-size="12.5">6 类"回忆型提问"形状:</text>
+  <text x="310" y="270" fill="#c9d1d9" font-size="12.5">决策理由 / 接续进度 / 约定偏好</text>
+  <text x="310" y="290" fill="#c9d1d9" font-size="12.5">踩坑教训 / 项目背景 / 既有做法</text>
+  <text x="310" y="316" fill="#8b949e" font-size="12">不依赖项目是否声明过绑定</text>
+  <text x="310" y="338" fill="#8b949e" font-size="12">预算 300 tokens</text>
+
+  <rect x="560" y="200" width="250" height="150" rx="10" fill="#1c2128" stroke="#30363d" />
+  <text x="580" y="226" fill="#e6edf3" font-size="14" font-weight="600">通道 3 · 话题漂移</text>
+  <text x="580" y="250" fill="#c9d1d9" font-size="12.5">重叠系数检测换话题</text>
+  <text x="580" y="270" fill="#c9d1d9" font-size="12.5">drift ≥ 0.8 → 强制重查</text>
+  <text x="580" y="294" fill="#8b949e" font-size="12">(旧注入的上下文已失效)</text>
+  <text x="580" y="318" fill="#8b949e" font-size="12">短追问/指代词 → 判为同话题</text>
+
+  <rect x="830" y="200" width="250" height="150" rx="10" fill="#1c2128" stroke="#30363d" />
+  <text x="850" y="226" fill="#e6edf3" font-size="14" font-weight="600">通道 4 · 去重</text>
+  <text x="850" y="250" fill="#c9d1d9" font-size="12.5">同话题连续追问不重复注入</text>
+  <text x="850" y="272" fill="#c9d1d9" font-size="12.5">省预算 + 避免重复噪声</text>
+  <text x="850" y="298" fill="#8b949e" font-size="12">内容级去重 (跨 step/跨轮)</text>
+
+  <line x1="145" y1="350" x2="145" y2="392" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ag)" />
+  <line x1="415" y1="350" x2="415" y2="392" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#a)" />
+  <line x1="685" y1="350" x2="685" y2="392" stroke="#8b949e" stroke-width="1.5" marker-end="url(#ar)" />
+
+  <rect x="20" y="392" width="1060" height="60" rx="10" fill="#161b22" stroke="#30363d" />
+  <text x="44" y="418" fill="#e6edf3" font-size="14" font-weight="600">TriggerDecision (可审计)</text>
+  <text x="250" y="418" fill="#8b949e" font-size="13">inject · intent · confidence · topicDrift · mode · reason · budgetTokens</text>
+  <text x="44" y="440" fill="#8b949e" font-size="12.5">"为什么没注入" 与 "注入了什么" 一样可查 — mode ∈ {always-on, intent, drift-refresh, skip-similar, skip-no-signal}</text>
+
+  <line x1="550" y1="452" x2="550" y2="486" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#a)" />
+
+  <rect x="20" y="486" width="1060" height="52" rx="10" fill="#1a1f2b" stroke="#58a6ff" />
+  <text x="44" y="512" fill="#e6edf3" font-size="14" font-weight="600">混合检索 (仅当 inject=true)</text>
+  <text x="270" y="512" fill="#8b949e" font-size="13">规则保底 → BM25 → 向量(语义) → 图扩展 → RRF → 覆盖率过滤 → 衰减 → MMR → 预算裁剪</text>
+  <text x="44" y="532" fill="#8b949e" font-size="12">治理: 未确认的 rule 在任何通道都召不回</text>
+
+  <line x1="550" y1="538" x2="550" y2="570" stroke="#3fb950" stroke-width="1.5" marker-end="url(#ag)" />
+  <rect x="350" y="570" width="400" height="40" rx="10" fill="#16211a" stroke="#2ea043" />
+  <text x="380" y="595" fill="#3fb950" font-size="14" font-weight="600">注入到 context (作为证据, 非指令)</text>
+</svg>
+</div>
+
+<h3>与旧做法的差别</h3>
+<table>
+<thead><tr><th>场景</th><th>旧实现 (只有项目绑定)</th><th>四通道触发</th></tr></thead>
+<tbody>
+<tr><td>项目没配绑定, 用户下普通指令</td><td><span class="tag bad">零注入</span> 记忆完全失效</td><td><span class="tag ok">always-on</span> 规则与关键事实必达</td></tr>
+<tr><td>用户问"上次这个问题怎么解决的"</td><td><span class="tag bad">零注入</span> (除非绑定了信号词)</td><td><span class="tag ok">intent</span> 命中意图 → 召回具体 lesson</td></tr>
+<tr><td>换了话题但没提回忆线索</td><td><span class="tag bad">沿用旧注入</span> 内容可能已失效</td><td><span class="tag ok">drift-refresh</span> 强制重查</td></tr>
+<tr><td>同一话题连续追问 5 轮</td><td><span class="tag warn">每轮重复注入</span> 吃预算</td><td><span class="tag ok">去重</span> 只注一次</td></tr>
+<tr><td>模型完全没想起要查</td><td><span class="tag bad">无保证</span></td><td><span class="tag ok">代码强制</span> 与模型自觉无关</td></tr>
+</tbody>
+</table>
+
+<h2>四、还能更好: 模型主动深挖 (意识引导)</h2>
+<p>代码通道给的是<strong>通用保底</strong>; 模型若能意识到"这里有历史", 主动检索能拿到更贴题的具体细节。
+因此两条并行, 缺一不可:</p>
+<div class="grid">
+  <div class="card">
+    <h4>① 代码强制 (可靠性)</h4>
+    <p>always-on + 意图门控 + 漂移重查 + 去重。与模型是否"想起来"完全解耦 ——
+    这是"AI 不知道要查时记忆也生效"的答案。</p>
+  </div>
+  <div class="card">
+    <h4>② 意识引导 (精度)</h4>
+    <p>指引与工具描述明确写出<strong>什么样的提问形状该去查</strong> (问理由/问上次/问约定/问既有做法),
+    并说明"查不到就是真的没有, 不要编造"。工具描述按 MCP 最佳实践写明使用时机而非只说能力。</p>
+  </div>
+</div>
+
+<h2>五、结论与取舍</h2>
+<ul>
+  <li><strong>不把可靠性押在模型自觉上。</strong>工具调用保留, 但只是"精度增强", 不是"唯一通道"。</li>
+  <li><strong>不做无条件全量注入。</strong>always-on 只放"不变量"(已确认规则 + 关键事实), 受 400 token 预算约束;
+  具体历史由意图/漂移通道按需召回 —— 避免"lost in the middle"与预算膨胀。</li>
+  <li><strong>每次决策都留痕。</strong>mode + reason + budget 可审计, "为什么这轮没注入"能被回答。</li>
+  <li><strong>已知边界 (诚实记录):</strong> 意图库是模式匹配, 覆盖不到的表达会漏 (可扩 <code>DEFAULT_INTENTS</code>);
+  中文指代型追问靠显式规则兜底; always-on 首次预热有 50ms 硬时限, 超时则该轮退化为无保底 (下一轮补齐)。</li>
+</ul>
+
+<footer>
+数据来源: GitHub API 实测星标 (2026-09-10) · 各项目官方仓库/文档 · VCPToolBox <code>docs/VCP记忆管理系统.md</code> 与 <code>TECHNICAL_LITE.md</code> ·
+本仓库实现: <code>src/trigger/policy.ts</code> · <code>src/kernel/binder.ts</code> · <code>src/adapters/dsh/prestep.ts</code> · 测试 <code>tests/s1/trigger-policy.test.ts</code>、<code>tests/s2/trigger-injection.test.ts</code>
+</footer>
+
+</main>
+</body>
+</html>
