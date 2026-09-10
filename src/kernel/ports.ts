@@ -5,9 +5,12 @@
 // GeneralizerService implements Generalizer, CodexAdapter implements HarnessAdapter。
 // tests/s1/ports.test.ts 用类型断言钉住这层关系, 避免端口退化成装饰性文档。
 import type {
+  Episode,
+  EpisodeInput,
   GeneralizationProposal,
   MemoryEntry,
   MemoryEntryInput,
+  MemoryKind,
   ProposalStatus,
   QueuedProposal,
   Query,
@@ -99,3 +102,197 @@ export interface Abstractor {
 }
 
 export type { GeneralizationProposal };
+// ---------------------------------------------------------------------------
+// v2 检索端口 (见 docs/architecture-v2.md §3.3)
+//
+// 为什么检索要独立成端口: v1 把"检索"钉在 MemoryStore.query 上, 并且要求**同步**
+// (Binder/RecallService 的构造函数要 SyncMemoryStore)。于是任何异步引擎 (向量服务/远端库)
+// 都接不进来。v2 的切法是: 存储只负责"存与取", 检索负责"找与排", 同步注入点读投影。
+// ---------------------------------------------------------------------------
+
+/** 召回通道: why 的可读来源, 也是权重配置的键。 */
+export type Channel = "rules" | "bm25" | "vector" | "graph" | "tag" | "recency";
+
+/** 检索源: 引擎必须能提供的最小能力 (存储实现按需扩展)。 */
+export interface RetrievalSource {
+  /** 全文检索 (BM25 优先, LIKE 降级), 返回顺序即相关性顺序。 */
+  searchText(text: string, limit?: number): MemoryEntry[];
+  /** 结构化条件过滤。 */
+  query(q: Query): MemoryEntry[];
+  get(id: string): MemoryEntry | null;
+  /** 关系遍历 (图扩展的基础)。 */
+  traverse(fromId: string, relationType: string): MemoryEntry[];
+  /** 可选: 引擎自述能力 (检索器据此决定降级策略与 degraded 说明)。 */
+  capabilities?(): RetrievalCapabilities;
+}
+
+/** 引擎能力自述: 上层据此决定"能做什么/降级什么", 而不是猜。 */
+export interface RetrievalCapabilities {
+  engine: string;
+  /** 有真正的全文索引 (BM25) 还是 LIKE 宽召回。 */
+  fullText: boolean;
+  /** 中文分词可用 (2 字查询可召回)。 */
+  cjk: boolean;
+  /** 有向量通道。 */
+  semantic: boolean;
+  /** 图扩展能力。 */
+  graph: "none" | "relations";
+  /** 是否支持多进程共享 (SQLite 是; 纯内存引擎不是)。 */
+  multiProcess: boolean;
+}
+
+export interface RetrievalRequest {
+  /** 当前任务文本 (用户最近一条消息 / 会话首条)。 */
+  text?: string;
+  /** 双时态切片: "那时为真的是什么" (按 validAt 过滤)。 */
+  asOf?: string;
+  scope?: { project?: string; global?: boolean };
+  kinds?: MemoryKind[];
+  tags?: string[];
+  /** 条数上限 (与 tokenBudget 同时生效, 谁先到谁生效)。 */
+  limit?: number;
+  /** 注入预算 (token); 预算裁剪优先保留 reserved 组 (已确认规则)。 */
+  tokenBudget?: number;
+  channels?: Partial<Record<Channel, { weight?: number; enabled?: boolean }>>;
+  /** 图扩展跳数 (默认 1; 0 = 关闭)。 */
+  expand?: { graph?: 0 | 1 | 2 };
+  /** 是否包含已撤回/过期 (默认 false; 面板/审计场景打开)。 */
+  includeHidden?: boolean;
+}
+
+export interface RetrievalHit {
+  entry: MemoryEntry;
+  score: number;
+  /** 命中路径 (可审计: 为什么它被召回)。 */
+  channels: Channel[];
+  why: string;
+}
+
+export interface RetrievalResult {
+  hits: RetrievalHit[];
+  /** 估算注入 token。 */
+  tokens: number;
+  dropped: Array<{ id: string; reason: "budget" | "duplicate" | "filtered" }>;
+  /** 能力缺失导致的降级说明 (空数组 = 全能力)。 */
+  degraded: string[];
+}
+
+export interface Retriever {
+  retrieve(req: RetrievalRequest): Awaitable<RetrievalResult>;
+  capabilities(): RetrievalCapabilities;
+}
+
+/**
+ * 同步查询面: 预步 (agent/pre-step) 是同步判定点, 不能等 IO。
+ * 异步引擎需要自带投影层 (RetrieverProjection) 来满足它。
+ */
+export interface SyncRetriever {
+  retrieveSync(req: RetrievalRequest): RetrievalResult;
+}
+
+/** 可注入时钟 (双时态/衰减/过期的测试确定性)。 */
+export interface Clock {
+  now(): string;
+}
+/**
+ * Episode 存储端口 (ADR-018): 原始轮次的追加日志, 是真相的一部分。
+ * 为什么需要它: 记忆是"抽取"的产物, 抽取器一定会升级; 只存抽取结果的话,
+ * 升级时只能对已经损失过一次信息的结果再抽一遍, 而"全量重建"也就到不了最上游。
+ * 硬约束: 追加写, 永不改写; 可配置保留期; 可整体关闭 (隐私)。
+ */
+export interface EpisodeStore {
+  append(input: EpisodeInput): Awaitable<Episode>;
+  /** 全量 (按 at 升序); 重放 (T2 抽取重建) 的输入。 */
+  all(): Awaitable<Episode[]>;
+  /** 只取某个时间点之后的 (增量重放)。 */
+  since(iso: string): Awaitable<Episode[]>;
+  bySession(session: string): Awaitable<Episode[]>;
+  count(): Awaitable<number>;
+  /** 按保留期清理; 返回删除的 episode 数 (0 = 未配置保留期, 不清理)。 */
+  prune(nowIso?: string): Awaitable<number>;
+}
+/**
+ * 派生索引的自述与重建能力 (ADR-020 / ADR-023)。
+ * 引擎准入的硬条件: 必须能"从真相全量重建", 并且能自证"索引与真相一致"。
+ * 没有这两个能力的实现, 不许进 src/storage/ 或 src/engines/。
+ */
+export interface VerifyReport {
+  ok: boolean;
+  /** 真相 (文件/上游真值) 里的条目数。 */
+  truth: number;
+  /** 结构化索引里的条目数。 */
+  index: number;
+  /** 全文索引里的条目数 (无全文索引时为 undefined)。 */
+  fullText?: number;
+  problems: string[];
+}
+
+export interface Rebuildable {
+  /** 派生 schema/身份版本 (如 "format2+tokenizer1"); 不符即重建, 不许混用 (ADR-023)。 */
+  readonly schemaVersion: string;
+  /** 从真相全量重建派生索引 (T1), 幂等; 返回重建的条目数。 */
+  rebuildFromTruth(): Awaitable<number>;
+  /** 一致性自检 (索引 ↔ 真相)。 */
+  verify(): Awaitable<VerifyReport>;
+}
+/**
+ * 嵌入端口 (ADR-023 的向量侧): 把文本映射成定长向量, 用于语义相似/语义去重/向量召回。
+ * 为什么先定义端口再谈引擎: 换模型 = 换一个实现 + 全量重嵌 (T3), 而不是改业务代码;
+ * 索引侧必须记录 embedding 身份 (modelId + dim), 不符即重建。
+ */
+export interface Embedder {
+  /** 身份串 (如 "hashing-v1" / "bge-m3@1024"): 进索引身份, 防止混用两种向量。 */
+  readonly id: string;
+  readonly dim: number;
+  /** 批量嵌入 (顺序与输入一致)。 */
+  embed(texts: readonly string[]): Awaitable<number[][]>;
+}
+/**
+ * 同步嵌入面。预步注入 (agent/pre-step) 是同步判定点, 不能等 IO ——
+ * 本地实现 (哈希袋/常驻 ONNX) 可以直接满足它; 远端 API 类嵌入器做不到,
+ * 那种情况走投影 (RetrieverProjection): 后台刷新向量, 预步读缓存 (见 architecture-v2 §3.3)。
+ */
+export interface SyncEmbedder extends Embedder {
+  embedSync(texts: readonly string[]): number[][];
+}
+
+/** 能力探测: 只有 embedSync 存在的嵌入器才能进同步检索通道。 */
+export function asSyncEmbedder(embedder: Embedder): SyncEmbedder | null {
+  const candidate = embedder as Partial<SyncEmbedder>;
+  return typeof candidate.embedSync === "function" ? (candidate as SyncEmbedder) : null;
+}
+
+/**
+ * 向量索引端口 (ADR-023 的向量侧): 近邻检索必须能"换引擎 + 全量重建"。
+ * 默认实现是内存线性扫描 (LinearVectorIndex, 见 src/retrieval/vector.ts);
+ * 规模上来后换成 sqlite-vec / LanceDB / Qdrant —— 只实现这个端口, 检索层不改。
+ * 身份 (embedderId/dim) 必须进索引: 换模型就得重建, 不许混用 (HippoRAG 的 index_manifest 同款)。
+ */
+export interface VectorIndex {
+  readonly embedderId: string;
+  readonly dim: number;
+  /** 写入/更新 (幂等: 同 id 覆盖; 内容未变时不重复嵌入)。只吃 id+content 的廉价投影。 */
+  upsert(docs: readonly IndexDoc[]): void;
+  remove(id: string): void;
+  clear(): void;
+  /** 近邻检索: 返回 id + 余弦分 (降序)。 */
+  search(query: string, limit: number): Array<{ id: string; score: number }>;
+  size(): number;
+}
+/** 索引同步用的最简条目投影 (只要 id + 正文, 不做 relations/tags 的二次查询)。 */
+export interface IndexDoc {
+  id: string;
+  content: string;
+}
+
+/**
+ * 派生索引 (向量/FTS) 的同步面。为什么单独定义:
+ * 按查询去"扫一批候选"在万级下必然漏 (这正是本项目实测到的 bug: 5000 条只索引到 519 条)。
+ * 正确做法是"全量投影 + 版本号变更时才同步", 且投影必须是**廉价查询** (单条 SQL, 不 hydrate)。
+ */
+export interface IndexableSource {
+  /** 全量投影 (单次查询; 必须排除 shadow, 但可包含 merged/expired 由索引层决定是否使用)。 */
+  indexDocs(): IndexDoc[];
+  /** 单调递增的写版本号: 变了才需要重新同步索引 (稳态查询零开销)。 */
+  revision(): number;
+}
