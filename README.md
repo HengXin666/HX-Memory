@@ -38,6 +38,26 @@ npm i -g @deepseek-ai/dsh
 dsh plugin add @hengxin666/hx-memory   # 发布后; 本地开发: dsh plugin add file:<本仓库路径>
 ```
 
+**本地开发时更新插件 (`file:` 依赖有个坑)**: 改完代码先 `pnpm run build && pnpm run build:client`,
+再重装。但 pnpm 对"内容变了的 `file:` 依赖"**会显示 `Already up to date` 而不重新拷贝** ——
+若两次构建之间**新增或删除过文件**, 结果是新旧混杂 (被改动的文件因硬链接变成新版, 新增文件根本没进来),
+插件启动即崩。可靠做法是先删掉再装:
+
+```bash
+pnpm run build && pnpm run build:client
+rm -rf ~/.dsh/profiles/web/node_modules/@hengxin666/hx-memory
+cd ~/.dsh/profiles/web && pnpm install
+```
+
+验证装对了 (本地 `dist` 与安装副本必须逐文件一致):
+
+```bash
+diff -rq dist ~/.dsh/profiles/web/node_modules/@hengxin666/hx-memory/dist && echo OK
+```
+
+> 注意 `scripts/smoke-dsh.sh` 用的是**隔离的临时 DSH_HOME**, 因此跑它不会碰你的真实记忆。
+> 若要手动对真实 host 跑 `scripts/smoke-dsh-http.mjs`, 它会**覆盖 `<root>/bindings.json`** —— 先备份。
+
 **版本**: 插件声明 `peerDependencies: @deepseek-ai/dsh-* ^0.1.2-rc.1`, 但两条宿主路径都实测可用:
 
 - 设置面板: 0.1.2-rc.1 走 `ctx.settings.installSection` (接住权威配置 thunk); 0.1.1 走
