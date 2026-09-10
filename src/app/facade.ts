@@ -25,6 +25,8 @@ import { normalizeFingerprint } from "../evolution/associate.ts";
 import { decideEvolution } from "../evolution/evolve.ts";
 import { planStructuralLinks } from "../evolution/link.ts";
 import { semanticScores } from "../retrieval/embedding.ts";
+import { selectAlwaysOn } from "../trigger/policy.ts";
+import { estimateTokens } from "../kernel/ranking.ts";
 import type { Embedder } from "../kernel/ports.ts";
 
 /** Facade 对存储的最小要求 (FileBackend/SQLite/远端实现都能满足)。 */
@@ -177,7 +179,9 @@ export class MemoryFacade {
       ...(semantic ? { semanticSimilarity: (id: string) => semantic.get(id) } : {}),
       ...(this.embedder ? { semanticDuplicateFloor: this.semanticDuplicateFloor } : {}),
       // 关闭自动演化: 把阈值抬到不可能达到的高度 —— 只保留字面去重与建边, 不取代不标记不语义合并。
-      ...(this.autoEvolve ? {} : { supersedeFloor: 2, conflictFloor: 2, semanticDuplicateFloor: 2 }),
+      ...(this.autoEvolve
+        ? {}
+        : { supersedeFloor: 2, conflictFloor: 2, semanticDuplicateFloor: 2 }),
     });
     if (decision.action === "duplicate" && decision.targetId) {
       const target = await this.store.get(decision.targetId);
@@ -242,7 +246,10 @@ export class MemoryFacade {
       ...(relations.length ? { relations } : {}),
     });
     // ---- 回写旧条目 (取代/冲突的反向指针) ----
-    if (decision.targetId && (decision.action === "supersede" || decision.action === "contradict")) {
+    if (
+      decision.targetId &&
+      (decision.action === "supersede" || decision.action === "contradict")
+    ) {
       const target = await this.store.get(decision.targetId);
       if (target) {
         const back: Relation[] = [...(target.relations ?? [])];
@@ -282,6 +289,19 @@ export class MemoryFacade {
     };
   }
 
+  /**
+   * always-on 内容 (跨项目已确认规则 + 本项目关键事实/偏好/决策), 受 token 预算约束。
+   * 这是触发层的**保底通道**: 与任何意图判定无关, 因此"模型完全没意识到要查"时也有记忆可用。
+   */
+  async alwaysOn(opts: { project?: string; budgetTokens?: number } = {}): Promise<MemoryEntry[]> {
+    const all = await this.store.all();
+    return selectAlwaysOn(all, {
+      ...(opts.project ? { project: opts.project } : {}),
+      budgetTokens: opts.budgetTokens ?? 400,
+      estimate: estimateTokens,
+    });
+  }
+
   /** 检索 + 格式化成注入块 (预步/会话开始/工具都走这里, 保证语义一致)。 */
   recall(req: RetrievalRequest): RecallResponse {
     const result = this.retriever.retrieveSync(req);
@@ -306,7 +326,9 @@ export class MemoryFacade {
     const all = await this.store.all();
     return all
       .filter((e) => (e.status ?? "active") !== "shadow")
-      .sort((a, b) => (a.ts.assertedAt < b.ts.assertedAt ? 1 : a.ts.assertedAt > b.ts.assertedAt ? -1 : 0))
+      .sort((a, b) =>
+        a.ts.assertedAt < b.ts.assertedAt ? 1 : a.ts.assertedAt > b.ts.assertedAt ? -1 : 0,
+      )
       .slice(0, limit);
   }
 
@@ -345,7 +367,10 @@ export class MemoryFacade {
     const from = await this.store.get(a);
     if (!from) throw new Error("link: not found: " + a);
     const relation: Relation = { type, toId: b, ...(weight === undefined ? {} : { weight }) };
-    const relations = [...(from.relations ?? []).filter((r) => !(r.type === type && r.toId === b)), relation];
+    const relations = [
+      ...(from.relations ?? []).filter((r) => !(r.type === type && r.toId === b)),
+      relation,
+    ];
     await this.store.update(a, { relations });
   }
 

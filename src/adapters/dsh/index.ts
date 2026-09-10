@@ -107,6 +107,58 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     { embedder: localEmbedder, autoEvolve: settings().autoEvolve },
   );
   facade.withIndexStatus(() => store.ftsStatus());
+
+  // 触发通道的缓存: always-on 集合每次写盘后失效 (写版本号变了才重算, 稳态零查询)。
+  let alwaysOnCache: Awaited<ReturnType<typeof facade.alwaysOn>> = [];
+  let alwaysOnRevision = -1;
+  let alwaysOnInflight: Promise<void> | null = null;
+  /**
+   * 刷新 always-on 缓存 (写版本号变了才重算; 稳态下只做一次内存比较, 零查询)。
+   * 由 triggerSource.warm() 在预步注入前 await, 因此**第一轮就有保底内容**;
+   * 若超时未完成, 该轮退化为"无 always-on"而不是阻塞对话。
+   */
+  const refreshAlwaysOn = (project?: string): Promise<void> => {
+    const revision = store.revision();
+    if (revision === alwaysOnRevision && alwaysOnCache.length) return Promise.resolve();
+    if (alwaysOnInflight) return alwaysOnInflight;
+    alwaysOnInflight = facade
+      .alwaysOn({ ...(project ? { project } : {}), budgetTokens: 400 })
+      .then((entries) => {
+        alwaysOnCache = entries;
+        alwaysOnRevision = revision;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        alwaysOnInflight = null;
+      });
+    return alwaysOnInflight;
+  };
+  /**
+   * 触发通道的召回: 先给 always-on 保底, 再按决策模式补意图召回。
+   * 预算来自决策 (always-on 400 + intent 300), 由检索器自己裁剪。
+   */
+  const recallForTrigger = (
+    text: string,
+    decision: {
+      inject: boolean;
+      mode: string;
+      budgetTokens: number;
+    },
+  ): (typeof alwaysOnCache)[number][] => {
+    if (!decision.inject) return [];
+    const out = new Map<string, (typeof alwaysOnCache)[number]>();
+    for (const entry of alwaysOnCache) out.set(entry.id, entry);
+    // 意图召回与 always-on **并行叠加** (不是二选一): 规则给不变量, 召回给具体历史。
+    // 先扣掉 always-on 已占的预算, 剩下的给意图通道, 避免两条通道互相挤占。
+    const alwaysOnCost = alwaysOnCache.reduce((n, e) => n + e.content.length + 8, 0);
+    const intentsBudget = Math.max(0, decision.budgetTokens - alwaysOnCost);
+    if (intentsBudget > 0) {
+      for (const hit of facade.recall({ text, limit: 6, tokenBudget: intentsBudget }).hits) {
+        out.set(hit.entry.id, hit.entry);
+      }
+    }
+    return [...out.values()];
+  };
   const binder = new Binder(
     (q) => store.query(q),
     () => {
@@ -114,6 +166,14 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       return saved.length ? saved : (opts.bindings ?? []);
     },
     retriever,
+    // 通用触发通道 (无项目绑定时的兜底): always-on 保底 + 回忆意图门控。
+    // 这是"AI 没意识到要查记忆"时记忆仍然生效的保证 (见 src/trigger/policy.ts)。
+    {
+      alwaysOn: () => alwaysOnCache.map((e) => e.id),
+      recallFor: (text, decision) => recallForTrigger(text, decision),
+      now: () => new Date().toISOString(),
+      warm: () => refreshAlwaysOn(),
+    },
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
   const structurer = safeAgent(() => makeLlmStructurer(ctx, settings));
