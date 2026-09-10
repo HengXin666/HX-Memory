@@ -33,7 +33,9 @@ function runChild(script: string, root: string, prefix: string): Promise<number>
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ["--experimental-strip-types", script, root, prefix, "15", "250"],
+      // --no-warnings: Node 22 会对 node:sqlite 打实验性警告; 下面只按退出码判定成败,
+      // 但把警告留在 stderr 里会让排障时误以为出过错。
+      ["--no-warnings", "--experimental-strip-types", script, root, prefix, "15", "250"],
       { stdio: "pipe" },
     );
     let stderr = "";
@@ -102,9 +104,11 @@ describe("跨进程并发", () => {
 
     const run = (script: string, args: string[]) =>
       new Promise<string>((resolve, reject) => {
-        const child = spawn(process.execPath, ["--experimental-strip-types", script, ...args], {
-          stdio: "pipe",
-        });
+        const child = spawn(
+          process.execPath,
+          ["--no-warnings", "--experimental-strip-types", script, ...args],
+          { stdio: "pipe" },
+        );
         let out = "";
         child.stdout.on("data", (c) => (out += String(c)));
         child.on("error", reject);

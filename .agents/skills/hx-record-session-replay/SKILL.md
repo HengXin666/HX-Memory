@@ -66,3 +66,9 @@ expect(store.query({ kind: "lesson" }).length).toBe(1);
 - **只断言"没抛错"**: 静默失效 (例如 capture 签名错了导致什么都不做) 会假通过 —— 本仓库真踩过。
 - **回放里用真实模型**: 慢且不稳定; 用假模型 + 固定响应。
 - **把回放当单测用**: 它慢且依赖环境; 单测能覆盖的逻辑不要塞进回放。
+- **把 stderr 当失败信号**: 子进程往 stderr 写警告不等于出错。本仓库真踩过 ——
+  Node 22 对 `node:sqlite` 打 `ExperimentalWarning` (Node 24 不打), 于是"stderr 非空即失败"
+  的断言在本地全绿、在 CI 必红。正确做法: 子进程加 `--no-warnings`, 且只匹配**真正的错误行**
+  (`Error`/`UnhandledPromiseRejection`/`throw new`), 不匹配任意 stderr。
+- **只在本地 Node 版本上验证**: CI 的 Node 版本可能与本地不同 (本仓库 CI 用 22, 本地常是 24)。
+  凡是依赖运行时行为的回放, 要么在两个版本上都跑过, 要么把差异显式隔离在断言之外。

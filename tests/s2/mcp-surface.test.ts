@@ -175,9 +175,19 @@ describe("MCP 真机 stdio (子进程, 模拟真实客户端)", () => {
 const MCP_CLIENT_SCRIPT = `
 import { spawn } from "node:child_process";
 const [root] = process.argv.slice(2);
-const child = spawn(process.execPath, ["--experimental-strip-types", "REPO/src/adapters/codex/cli.ts", "mcp", "--root", root], { stdio: ["pipe", "pipe", "pipe"] });
+// --no-warnings: 抑制 node:sqlite 的实验性警告 (Node 22 有, Node 24 无), 让断言只关心真错误。
+const child = spawn(process.execPath, ["--no-warnings", "--experimental-strip-types", "REPO/src/adapters/codex/cli.ts", "mcp", "--root", root], { stdio: ["pipe", "pipe", "pipe"] });
+// stderr 不等于失败: Node 22 上 node:sqlite 会打 ExperimentalWarning (Node 24 没有),
+// 把任何 stderr 当错误会让这条测试变成"只在某个 Node 版本上通过" —— CI 真抓到了这个假失败。
+// 因此: 子进程带 --no-warnings 启动, 且这里只统计真正的错误行 (Error/Unhandled/throw)。
 const errors = [];
-child.stderr.on("data", (c) => errors.push(String(c)));
+child.stderr.on("data", (c) => {
+  for (const line of String(c).split("\\n")) {
+    if (/(?:^|\s)(?:Error|TypeError|ReferenceError|UnhandledPromiseRejection)\b|throw new/.test(line)) {
+      errors.push(line);
+    }
+  }
+});
 const pending = new Map();
 let buffer = "";
 child.stdout.on("data", (chunk) => {
