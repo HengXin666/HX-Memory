@@ -12,22 +12,22 @@
 
 v1 已有正确的骨架 (kernel 零依赖 + Port/Adapter + truth-in-files), 但切面切在"宿主 vs 存储"两条, 应用逻辑与端口职责有混叠。下表把 v1 的每一条已知缺陷定位到**它该由哪一层修**。
 
-| # | 缺陷 (现状证据) | 根因 | 归属层 | v2 的修法 |
-| - | --------------- | ---- | ------ | --------- |
-| 1 | 精确哈希去重, 换个说法就绕过 | `capture/engine.ts` contentHash = sha256(全文) | 应用层 + 引擎层 | 归一化指纹 (小写/去标点/去空白) + 语义近邻去重 (Embedder 端口) + 裁决器 |
-| 2 | 信号词是手写正则, 覆盖窄 | `EXPLICIT_PATTERNS`/`LESSON_SIGNALS`/`RULE_SIGNALS` | 应用层 | `Extractor` 端口 (LLM/规则两实现); 正则降级为 fallback |
-| 3 | 中文无分词, 关键词包含评分 | `recall/service.ts` score() = includes() | 引擎层 | FTS5 + 词/bigram 双流分词 (见 §3.5, 已实测) |
-| 4 | 无语义检索 | 无 Embedder | 引擎层 | `Embedder` 端口 + sqlite-vec/LanceDB; 无则降级 BM25 |
-| 5 | 检索被钉死为同步 | `SyncMemoryStore` 进了 Binder/RecallService 构造函数 | 端口层 | `Retriever` 端口 + `RetrieverProjection` (预步读投影) |
-| 6 | 无 token 预算, 只有条数上限 | `maxTokens` 只是注释里的 advisory | 应用层 | 预算分配器 (rules/digest/local 三段配额 + 截断) |
-| 7 | `supersedes` 链没有写入者 | ADR-005 只落地了语义与读侧 | 应用层 | `EvolutionService`: 近邻裁决 → 生成 UPDATE/MERGE/SUPERSEDE |
-| 8 | 无遗忘/衰减/强化 | 模型里没有 importance/access 字段 | 应用层 + 引擎层 | `importance`/`reinforcement`/`lastHitAt` + `expired` 状态 (永不物理删除) |
-| 9 | 关联只由 generalizer 写 | `relations` 仅 confirm 时写 generalizes | 应用层 | `LinkService`: 实体/标签/语义三类建边 |
-| 10 | 全局规则"总是全量候选" | `recall` 直接 query 全部 rule | 应用层 | 规则同样走检索, 但给**保底配额** (不允许被挤掉) |
-| 11 | `rebuild` 不在端口里 | `rebuildFromFiles()` 只是 FileBackend 的方法 | 端口层 | `Rebuildable` 端口 + `VerifyReport` |
-| 12 | 单宿主深度绑定 | 业务逻辑散在 `adapters/dsh/*` | 使用层 | `MemoryFacade` 唯一 API + 多 Surface (DSH/MCP/Codex/HTTP) |
-| 13 | 无观测性 (命中率/污染率) | 只有 `warnings()` | 应用层 | `MemoryMetrics` + 评测集 (recall@k / 误注入率) |
-| 14 | 原文丢失, 无法重放 | `context` 从不捕获 ⇒ 轮次原文不留存 | 引擎层 (真值) | `Episode` 追加日志: 换抽取器时**重放**而非重聊 |
+| #   | 缺陷 (现状证据)              | 根因                                                 | 归属层          | v2 的修法                                                                |
+| --- | ---------------------------- | ---------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| 1   | 精确哈希去重, 换个说法就绕过 | `capture/engine.ts` contentHash = sha256(全文)       | 应用层 + 引擎层 | 归一化指纹 (小写/去标点/去空白) + 语义近邻去重 (Embedder 端口) + 裁决器  |
+| 2   | 信号词是手写正则, 覆盖窄     | `EXPLICIT_PATTERNS`/`LESSON_SIGNALS`/`RULE_SIGNALS`  | 应用层          | `Extractor` 端口 (LLM/规则两实现); 正则降级为 fallback                   |
+| 3   | 中文无分词, 关键词包含评分   | `recall/service.ts` score() = includes()             | 引擎层          | FTS5 + 词/bigram 双流分词 (见 §3.5, 已实测)                              |
+| 4   | 无语义检索                   | 无 Embedder                                          | 引擎层          | `Embedder` 端口 + sqlite-vec/LanceDB; 无则降级 BM25                      |
+| 5   | 检索被钉死为同步             | `SyncMemoryStore` 进了 Binder/RecallService 构造函数 | 端口层          | `Retriever` 端口 + `RetrieverProjection` (预步读投影)                    |
+| 6   | 无 token 预算, 只有条数上限  | `maxTokens` 只是注释里的 advisory                    | 应用层          | 预算分配器 (rules/digest/local 三段配额 + 截断)                          |
+| 7   | `supersedes` 链没有写入者    | ADR-005 只落地了语义与读侧                           | 应用层          | `EvolutionService`: 近邻裁决 → 生成 UPDATE/MERGE/SUPERSEDE               |
+| 8   | 无遗忘/衰减/强化             | 模型里没有 importance/access 字段                    | 应用层 + 引擎层 | `importance`/`reinforcement`/`lastHitAt` + `expired` 状态 (永不物理删除) |
+| 9   | 关联只由 generalizer 写      | `relations` 仅 confirm 时写 generalizes              | 应用层          | `LinkService`: 实体/标签/语义三类建边                                    |
+| 10  | 全局规则"总是全量候选"       | `recall` 直接 query 全部 rule                        | 应用层          | 规则同样走检索, 但给**保底配额** (不允许被挤掉)                          |
+| 11  | `rebuild` 不在端口里         | `rebuildFromFiles()` 只是 FileBackend 的方法         | 端口层          | `Rebuildable` 端口 + `VerifyReport`                                      |
+| 12  | 单宿主深度绑定               | 业务逻辑散在 `adapters/dsh/*`                        | 使用层          | `MemoryFacade` 唯一 API + 多 Surface (DSH/MCP/Codex/HTTP)                |
+| 13  | 无观测性 (命中率/污染率)     | 只有 `warnings()`                                    | 应用层          | `MemoryMetrics` + 评测集 (recall@k / 误注入率)                           |
+| 14  | 原文丢失, 无法重放           | `context` 从不捕获 ⇒ 轮次原文不留存                  | 引擎层 (真值)   | `Episode` 追加日志: 换抽取器时**重放**而非重聊                           |
 
 > 关键洞察 (第 14 条): 如果只存"抽出来的记忆", 那么抽取器/嵌入模型一旦升级, 老数据只能重抽**已有记忆** (信息已经损失过一次)。存**原文 episode** 之后, 全量重建才覆盖到"抽取"这一级。
 
@@ -68,65 +68,65 @@ v2 规定: **Surface 只能调用 Facade, 不能 import 任何引擎**。
 ```ts
 // src/app/facade.ts —— 唯一的对外 API (面向上层用例, 不是面向存储)
 export interface MemoryFacade {
-  remember(input: RememberInput): Promise<RememberResult>;   // 显式/隐式落记忆 (含去重裁决)
-  recall(input: RecallInput): Promise<RecallResult>;         // 混合检索 + 预算裁剪
-  revise(id: string, patch: RevisePatch): Promise<void>;     // 人工修正 (带审计)
-  forget(id: string, why: string): Promise<void>;            // shadow, 永不物理删除
+  remember(input: RememberInput): Promise<RememberResult>; // 显式/隐式落记忆 (含去重裁决)
+  recall(input: RecallInput): Promise<RecallResult>; // 混合检索 + 预算裁剪
+  revise(id: string, patch: RevisePatch): Promise<void>; // 人工修正 (带审计)
+  forget(id: string, why: string): Promise<void>; // shadow, 永不物理删除
   link(a: string, b: string, type: RelationType): Promise<void>;
-  history(id: string): Promise<MemoryEntry[]>;               // 演化链 (含 superseded 版本)
+  history(id: string): Promise<MemoryEntry[]>; // 演化链 (含 superseded 版本)
   consolidate(plan?: ConsolidateRequest): Promise<ConsolidateReport>; // 后台整合
-  proposeRule(input: RuleProposalInput): Promise<QueuedProposal>;     // 只提议, 不落 rule
+  proposeRule(input: RuleProposalInput): Promise<QueuedProposal>; // 只提议, 不落 rule
   stats(): Promise<MemoryStats>;
   export(format: "jsonl" | "markdown"): AsyncIterable<string>;
   import(stream: AsyncIterable<string>): Promise<ImportReport>;
 }
 ```
 
-| Surface | 宿主 | 形态 | 说明 |
-| ------- | ---- | ---- | ---- |
-| `dsh` | DeepSeek Harness | cordis 插件: 工具 + `agent/pre-step` 注入 + RPC 面板 | 现有实现迁到 Facade 之上 |
-| `mcp` ✅ | Claude Code / Desktop / Cursor / 任意 MCP 客户端 | MCP server (stdio 已实现; http 待做) | **多宿主的事实标准**; 六工具全部映射到 Facade |
-| `codex` | Codex CLI | AGENTS.md 同步 + CLI 子命令 | 现有实现迁到 Facade 之上 |
-| `claude` | Claude Code | hooks (SessionStart / UserPromptSubmit) + skill | 与 MCP surface 可共存 |
-| `http` | 其他/脚本/CI | REST + JSON | 兜底与自动化 |
+| Surface  | 宿主                                             | 形态                                                 | 说明                                          |
+| -------- | ------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------- |
+| `dsh`    | DeepSeek Harness                                 | cordis 插件: 工具 + `agent/pre-step` 注入 + RPC 面板 | 现有实现迁到 Facade 之上                      |
+| `mcp` ✅ | Claude Code / Desktop / Cursor / 任意 MCP 客户端 | MCP server (stdio 已实现; http 待做)                 | **多宿主的事实标准**; 六工具全部映射到 Facade |
+| `codex`  | Codex CLI                                        | AGENTS.md 同步 + CLI 子命令                          | 现有实现迁到 Facade 之上                      |
+| `claude` | Claude Code                                      | hooks (SessionStart / UserPromptSubmit) + skill      | 与 MCP surface 可共存                         |
+| `http`   | 其他/脚本/CI                                     | REST + JSON                                          | 兜底与自动化                                  |
 
 新增宿主 = 写一个 Surface (≤200 行) + 跑宿主契约测试; **不改 L0/L1/L2 任何一行**。
 
 ### 2.2 L2 应用层: 六个服务 + 一个治理器
 
-| 服务 | 职责 | 现状 |
-| ---- | ---- | ---- |
-| `CaptureService` | turn → Extractor → 候选条目 (归一化/指纹/双时态) | 已有 `capture/`, 增加 Extractor 端口 |
-| `RecallService` | 检索 + 融合 + 重排 + 预算裁剪 + 注入格式化 | 已有, 检索部分外移到 `Retriever` |
-| `EvolutionService` | 去重/冲突/更新/合并 (写入期 + 近实时) | **新增** |
-| `LinkService` | 实体/标签/语义建边, 图扩展 | **新增** |
-| `ConsolidationService` | 聚类 → 摘要/反思 → 衰减/过期 | 部分 (generalize 的聚类可复用) |
-| `GeneralizeService` | 具体经验 → 候选规则 (人工闸门) | 已有, 保持不变 |
-| `Governance` | 铁律守卫: rule 必须人工确认; 撤回=shadow; 无源不断言 | 已有 (分散在 store/recall), 收敛成一处 |
+| 服务                   | 职责                                                 | 现状                                   |
+| ---------------------- | ---------------------------------------------------- | -------------------------------------- |
+| `CaptureService`       | turn → Extractor → 候选条目 (归一化/指纹/双时态)     | 已有 `capture/`, 增加 Extractor 端口   |
+| `RecallService`        | 检索 + 融合 + 重排 + 预算裁剪 + 注入格式化           | 已有, 检索部分外移到 `Retriever`       |
+| `EvolutionService`     | 去重/冲突/更新/合并 (写入期 + 近实时)                | **新增**                               |
+| `LinkService`          | 实体/标签/语义建边, 图扩展                           | **新增**                               |
+| `ConsolidationService` | 聚类 → 摘要/反思 → 衰减/过期                         | 部分 (generalize 的聚类可复用)         |
+| `GeneralizeService`    | 具体经验 → 候选规则 (人工闸门)                       | 已有, 保持不变                         |
+| `Governance`           | 铁律守卫: rule 必须人工确认; 撤回=shadow; 无源不断言 | 已有 (分散在 store/recall), 收敛成一处 |
 
 ### 2.3 L1 端口层: 切面清单
 
-| 端口 | 为什么它必须是端口 | 替换成本 |
-| ---- | ----------------- | -------- |
-| `TruthStore` | 真相可能从 Markdown 换成 SQLite/JSONL/远端 | 低 (追加语义简单) |
-| `DerivedStore` + `Rebuildable` | 索引可能从 FTS5 换成 LanceDB/Qdrant | 中 (要过 conformance) |
-| `Retriever` | 检索策略 (BM25/向量/图/RRF/LLM rerank) 是最常变的部分 | 中 |
-| `RetrieverProjection` | 同步注入点 vs 异步引擎的矛盾 | 低 (内核自带默认实现) |
-| `Embedder` | 模型/维度/服务会换; 换模型要全量重嵌 | 低 |
-| `Extractor` | 抽取质量是记忆质量的源头, 一定会换 | 低 |
-| `Reranker` | 可选增强 (无则 MMR) | 低 |
-| `Clock` | 双时态/衰减/过期需要可注入时间 (可测性) | 极低 |
+| 端口                           | 为什么它必须是端口                                    | 替换成本              |
+| ------------------------------ | ----------------------------------------------------- | --------------------- |
+| `TruthStore`                   | 真相可能从 Markdown 换成 SQLite/JSONL/远端            | 低 (追加语义简单)     |
+| `DerivedStore` + `Rebuildable` | 索引可能从 FTS5 换成 LanceDB/Qdrant                   | 中 (要过 conformance) |
+| `Retriever`                    | 检索策略 (BM25/向量/图/RRF/LLM rerank) 是最常变的部分 | 中                    |
+| `RetrieverProjection`          | 同步注入点 vs 异步引擎的矛盾                          | 低 (内核自带默认实现) |
+| `Embedder`                     | 模型/维度/服务会换; 换模型要全量重嵌                  | 低                    |
+| `Extractor`                    | 抽取质量是记忆质量的源头, 一定会换                    | 低                    |
+| `Reranker`                     | 可选增强 (无则 MMR)                                   | 低                    |
+| `Clock`                        | 双时态/衰减/过期需要可注入时间 (可测性)               | 极低                  |
 
 ### 2.4 L0 引擎层: 候选与取舍
 
-| 维度 | 候选 | 结论 |
-| ---- | ---- | ---- |
-| 全文检索 | SQLite **FTS5** (built-in) | **默认**。已实测 `node:sqlite` 自带 FTS5/trigram/porter/rtree (SQLite 3.51.3, Node 24) |
-| 中文分词 | `Intl.Segmenter('zh-Hans')` 词切分 + CJK bigram 双流 | **默认**。零依赖, 实测可用 (见 §3.5) |
-| 向量 | `sqlite-vec` (npm 0.1.9, 平台二进制 + `loadExtension`) / LanceDB / Qdrant | 首选 sqlite-vec (同库同事务); 规模化再换 LanceDB/Qdrant |
-| 图 | SQLite `relations` 表 + 递归 CTE | 默认; 需要多跳/时序图时接 Graphiti (Neo4j/FalkorDB/Kuzu) |
-| 嵌入 | 无(降级) / 本地 ONNX / 远端 API | 端口化, 默认无; 用户配置后启用 |
-| 真值 | Markdown (现状) | 保留。人可读 + git 可 diff + 删库不丢真相等价于"可全量重建" |
+| 维度     | 候选                                                                      | 结论                                                                                   |
+| -------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 全文检索 | SQLite **FTS5** (built-in)                                                | **默认**。已实测 `node:sqlite` 自带 FTS5/trigram/porter/rtree (SQLite 3.51.3, Node 24) |
+| 中文分词 | `Intl.Segmenter('zh-Hans')` 词切分 + CJK bigram 双流                      | **默认**。零依赖, 实测可用 (见 §3.5)                                                   |
+| 向量     | `sqlite-vec` (npm 0.1.9, 平台二进制 + `loadExtension`) / LanceDB / Qdrant | 首选 sqlite-vec (同库同事务); 规模化再换 LanceDB/Qdrant                                |
+| 图       | SQLite `relations` 表 + 递归 CTE                                          | 默认; 需要多跳/时序图时接 Graphiti (Neo4j/FalkorDB/Kuzu)                               |
+| 嵌入     | 无(降级) / 本地 ONNX / 远端 API                                           | 端口化, 默认无; 用户配置后启用                                                         |
+| 真值     | Markdown (现状)                                                           | 保留。人可读 + git 可 diff + 删库不丢真相等价于"可全量重建"                            |
 
 ## 3. 端口契约 (迁移的物理基础)
 
@@ -134,11 +134,11 @@ export interface MemoryFacade {
 
 ```ts
 export interface TruthStore {
-  appendEpisodes(episodes: Episode[]): Promise<void>;      // 追加, 永不改写
-  upsertEntries(entries: MemoryEntry[]): Promise<void>;    // 同 id 原位重写 (status/relations 变更)
-  readEntries(): AsyncIterable<MemoryEntry>;               // 全量流式 (重建输入)
-  readEpisodes(since?: string): AsyncIterable<Episode>;    // 重放输入
-  readonly root: string;                                   // 人可读位置 (git/审计)
+  appendEpisodes(episodes: Episode[]): Promise<void>; // 追加, 永不改写
+  upsertEntries(entries: MemoryEntry[]): Promise<void>; // 同 id 原位重写 (status/relations 变更)
+  readEntries(): AsyncIterable<MemoryEntry>; // 全量流式 (重建输入)
+  readEpisodes(since?: string): AsyncIterable<Episode>; // 重放输入
+  readonly root: string; // 人可读位置 (git/审计)
 }
 ```
 
@@ -148,24 +148,24 @@ export interface TruthStore {
 export interface DerivedStore {
   put(entries: MemoryEntry[]): Promise<void>;
   update(id: string, patch: Partial<MemoryEntry>): Promise<void>;
-  remove(id: string): Promise<void>;                        // 逻辑撤回 (shadow)
+  remove(id: string): Promise<void>; // 逻辑撤回 (shadow)
   capabilities(): CapabilityManifest;
 }
 export interface Rebuildable {
-  readonly schemaVersion: number;                           // 不匹配 → 触发重建, 不静默读旧索引
+  readonly schemaVersion: number; // 不匹配 → 触发重建, 不静默读旧索引
   rebuild(truth: TruthStore, opts?: RebuildOptions): Promise<RebuildReport>;
-  verify(truth?: TruthStore): Promise<VerifyReport>;         // 索引 ↔ 真相 一致性自检
+  verify(truth?: TruthStore): Promise<VerifyReport>; // 索引 ↔ 真相 一致性自检
 }
 ```
 
 **三级重建** (用户诉求"全量数据重建"的完整形态):
 
-| 级别 | 输入 | 输出 | 触发场景 |
-| ---- | ---- | ---- | -------- |
-| T1 索引重建 | 记忆条目 (真相) | 全文/标签/关系索引 | 索引损坏、换 FTS 引擎 |
-| T2 抽取重建 | Episode 原文 | 记忆条目 + 关系 | 换 Extractor、改捕获规则 |
-| T3 嵌入重建 | 记忆条目 | 向量 | 换 Embedding 模型/维度 |
-| T4 整体迁移 | TruthStore 全量 | 新引擎全套派生 | 换存储/检索/图引擎 |
+| 级别        | 输入            | 输出               | 触发场景                 |
+| ----------- | --------------- | ------------------ | ------------------------ |
+| T1 索引重建 | 记忆条目 (真相) | 全文/标签/关系索引 | 索引损坏、换 FTS 引擎    |
+| T2 抽取重建 | Episode 原文    | 记忆条目 + 关系    | 换 Extractor、改捕获规则 |
+| T3 嵌入重建 | 记忆条目        | 向量               | 换 Embedding 模型/维度   |
+| T4 整体迁移 | TruthStore 全量 | 新引擎全套派生     | 换存储/检索/图引擎       |
 
 四级的顺序是固定的 `T2 → T1/T3`, 且每一级都要求 **幂等 + 可中断 + 有报告**。
 
@@ -181,21 +181,21 @@ export type Channel = "rules" | "bm25" | "vector" | "graph" | "tag" | "recency";
 
 export interface RetrievalRequest {
   text?: string;
-  asOf?: string;                       // 双时态切片: "那时为真的是什么"
+  asOf?: string; // 双时态切片: "那时为真的是什么"
   scope?: { project?: string; global?: boolean };
   kinds?: MemoryKind[];
   tags?: string[];
   limit?: number;
-  tokenBudget?: number;                // 缺陷 6
+  tokenBudget?: number; // 缺陷 6
   channels?: Partial<Record<Channel, { weight?: number; enabled?: boolean }>>;
-  expand?: { graph?: 0 | 1 | 2 };      // 图扩展跳数
+  expand?: { graph?: 0 | 1 | 2 }; // 图扩展跳数
 }
 
 export interface RetrievalResult {
   hits: Array<{ entry: MemoryEntry; score: number; channels: Channel[]; why: string }>;
   tokens: number;
   dropped: Array<{ id: string; reason: "budget" | "duplicate" | "stale" }>;
-  degraded: string[];                  // 能力缺失导致的降级 (可观测, 不是静默)
+  degraded: string[]; // 能力缺失导致的降级 (可观测, 不是静默)
 }
 ```
 
@@ -203,8 +203,8 @@ export interface RetrievalResult {
 
 ```ts
 export interface RetrieverProjection {
-  retrieveSync(req: RetrievalRequest): RetrievalResult;   // 预步注入读这里, 永不等 IO
-  refresh(): Promise<void>;                              // 事件驱动 + 定时刷新
+  retrieveSync(req: RetrievalRequest): RetrievalResult; // 预步注入读这里, 永不等 IO
+  refresh(): Promise<void>; // 事件驱动 + 定时刷新
   status(): { fresh: boolean; ageMs: number; version: string };
 }
 ```
@@ -215,8 +215,8 @@ export interface RetrieverProjection {
 
 ```ts
 export interface CapabilityManifest {
-  readonly engine: string;                              // "sqlite-fts5" | "lancedb" | ...
-  readonly semantic: boolean;                           // 有向量通道
+  readonly engine: string; // "sqlite-fts5" | "lancedb" | ...
+  readonly semantic: boolean; // 有向量通道
   readonly graph: "none" | "1hop" | "nhop" | "temporal";
   readonly fullText: "none" | "ascii" | "cjk";
   readonly transactions: boolean;
@@ -233,12 +233,12 @@ export interface CapabilityManifest {
 
 中文是 v1 最大的检索缺陷: `includes()` 评分既无词形归一, 也无相关性排序。实测结论 (Node 24.15 / SQLite 3.51.3 / `node:sqlite`):
 
-| 结论 | 证据 |
-| ---- | ---- |
-| `node:sqlite` 自带 FTS5, 且 trigram/porter/rtree 可用 | `CREATE VIRTUAL TABLE t USING fts5(...)` 全部成功 |
-| FTS5 **trigram 无法匹配 2 字中文查询** | `MATCH '并发'` → 0 行; `MATCH '并发策略'` → 命中 |
-| `Intl.Segmenter('zh-Hans', {granularity:'word'})` 可用 | "所有容器实际上都有并发策略问题" → [所有, 容器, 实际, 上, 都有, 并发, 策略, 问题] |
-| 分词后写入 FTS5 unicode61 + bm25 排序可召回 2 字查询 | `MATCH '"并发"'` → 命中; `MATCH '"连接池"'...` 命中 "数据库连接池超时设置" (词切分不完全, 故需 bigram 兜底) |
+| 结论                                                   | 证据                                                                                                        |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `node:sqlite` 自带 FTS5, 且 trigram/porter/rtree 可用  | `CREATE VIRTUAL TABLE t USING fts5(...)` 全部成功                                                           |
+| FTS5 **trigram 无法匹配 2 字中文查询**                 | `MATCH '并发'` → 0 行; `MATCH '并发策略'` → 命中                                                            |
+| `Intl.Segmenter('zh-Hans', {granularity:'word'})` 可用 | "所有容器实际上都有并发策略问题" → [所有, 容器, 实际, 上, 都有, 并发, 策略, 问题]                           |
+| 分词后写入 FTS5 unicode61 + bm25 排序可召回 2 字查询   | `MATCH '"并发"'` → 命中; `MATCH '"连接池"'...` 命中 "数据库连接池超时设置" (词切分不完全, 故需 bigram 兜底) |
 
 因此默认检索通道是**双流分词**: `tokens = Segmenter 词 + CJK bigram` (例如 "连接池超时" → `连接 池超 超时 连接池 接池超 池超时`), 写入 FTS5 `unicode61` 列, BM25 排序。bigram 兜底让 2 字查询与未登录词都能命中; 词流让 BM25 的文档长度归一不至于被 bigram 噪声压垮。两流分数用 RRF 融合。
 
@@ -272,28 +272,42 @@ score(entry) = RRF(各通道排名)
 ### 4.1 领域模型 v2
 
 ```ts
-export interface Episode {                    // 新增: 原始轮次 (追加日志, 真相)
-  id: string; session: string; turn: number;
+export interface Episode {
+  // 新增: 原始轮次 (追加日志, 真相)
+  id: string;
+  session: string;
+  turn: number;
   role: "user" | "assistant";
-  text: string; at: string; project?: string;
-  surface: string;                            // 哪个宿主捕获的 (溯源)
+  text: string;
+  at: string;
+  project?: string;
+  surface: string; // 哪个宿主捕获的 (溯源)
 }
 
-export interface MemoryEntry {                // 扩展字段 (★ = v2 新增)
-  id: string; kind: MemoryKind; content: string;
-  source: string; scope: MemoryScope; project?: string;
-  ts: Timestamps; status?: MemoryStatus; relations?: Relation[];
-  confirmedBy?: string; confirmedAt?: string;
-  tags?: string[]; structured?: { summary: string; points: string[] };
+export interface MemoryEntry {
+  // 扩展字段 (★ = v2 新增)
+  id: string;
+  kind: MemoryKind;
+  content: string;
+  source: string;
+  scope: MemoryScope;
+  project?: string;
+  ts: Timestamps;
+  status?: MemoryStatus;
+  relations?: Relation[];
+  confirmedBy?: string;
+  confirmedAt?: string;
+  tags?: string[];
+  structured?: { summary: string; points: string[] };
   // ★ 关联性与演化
-  entities?: string[];                        // 抽取出的实体 (建边用)
-  importance?: number;                        // 1..10, 影响排序与整合优先级
-  confidence?: number;                        // 0..1
-  reinforcement?: number;                     // 被命中次数 (强化)
-  lastHitAt?: string;                         // 衰减基线
-  expiresAt?: string;                         // event/context 类可设 TTL
-  derivedFrom?: string[];                     // episode id 血缘 (支撑 T2 重放)
-  mergedFrom?: string[];                      // 合并来源 (可回溯)
+  entities?: string[]; // 抽取出的实体 (建边用)
+  importance?: number; // 1..10, 影响排序与整合优先级
+  confidence?: number; // 0..1
+  reinforcement?: number; // 被命中次数 (强化)
+  lastHitAt?: string; // 衰减基线
+  expiresAt?: string; // event/context 类可设 TTL
+  derivedFrom?: string[]; // episode id 血缘 (支撑 T2 重放)
+  mergedFrom?: string[]; // 合并来源 (可回溯)
 }
 ```
 
@@ -301,14 +315,14 @@ export interface MemoryEntry {                // 扩展字段 (★ = v2 新增)
 
 ### 4.2 四级演化流水线
 
-| 级别 | 触发 | 延迟预算 | 做什么 | 允许 LLM? |
-| ---- | ---- | -------- | ------ | --------- |
-| S1 写入期 | 每次捕获 | < 10ms | 归一化、精确/指纹去重、标签/实体建边、双时态 | 否 |
-| S2 近实时 | 队列 + 空闲 | 秒级 | 近邻召回(top-k) → 裁决 ADD/UPDATE/MERGE/SUPERSEDE/CONTRADICT/NOOP → 关系落盘 | 是 (可关) |
-| S3 后台整合 | 定时/空闲/显式 | 分钟级 | 聚类 → 摘要 (digest/reflection) → 规则提议(人工闸门) → 衰减/过期/合并 | 是 |
+| 级别        | 触发           | 延迟预算 | 做什么                                                                       | 允许 LLM? |
+| ----------- | -------------- | -------- | ---------------------------------------------------------------------------- | --------- |
+| S1 写入期   | 每次捕获       | < 10ms   | 归一化、精确/指纹去重、标签/实体建边、双时态                                 | 否        |
+| S2 近实时   | 队列 + 空闲    | 秒级     | 近邻召回(top-k) → 裁决 ADD/UPDATE/MERGE/SUPERSEDE/CONTRADICT/NOOP → 关系落盘 | 是 (可关) |
+| S3 后台整合 | 定时/空闲/显式 | 分钟级   | 聚类 → 摘要 (digest/reflection) → 规则提议(人工闸门) → 衰减/过期/合并        | 是        |
 
 > 状态 (2026-09): S1/S2 的**确定性部分**已落地 (写入期指纹去重 + 候选覆盖率裁决 + 自动建边 + T2 重放); S3 的**确定性部分**也已落地 (\`ConsolidationService\`: 衰减/TTL 扫描 → \`expired\`, 只碰 event/context, 命中过的受保护, 可 revive); 需要 LLM 的部分 (摘要重写/语义合并/冲突裁决) 仍待做, 且必须带闸门。
-| S4 离线重放 | 运维/升级 | 小时级 | episodes → 重抽 → T1/T3 重建 → 一致性报告 | 是 |
+> | S4 离线重放 | 运维/升级 | 小时级 | episodes → 重抽 → T1/T3 重建 → 一致性报告 | 是 |
 
 **硬约束**: S2/S3 永远不阻塞对话路径; 每个后台批次都有 (条数上限, 时间上限); 所有自动化写入都要在条目上留 `source: "auto:s2" | "auto:s3"` 以便审计与回滚。
 
@@ -353,14 +367,14 @@ export interface MemoryEntry {                // 扩展字段 (★ = v2 新增)
 
 ## 5. 使用层: 从"单宿主"到"多宿主"
 
-| 阶段 | Surface | 复用 |
-| ---- | ------- | ---- |
-| 现状 | DSH (cordis 插件 + 面板) | — |
-| P0 | Facade 抽出, DSH 改为 Facade 消费者 | 全部 L1/L2 |
-| P1 | **MCP server** (stdio/http): `memory_search`/`memory_save`/`memory_link`/`memory_history` | Facade 直接映射 MCP tool |
-| P2 | Codex (AGENTS.md + CLI) 改为 Facade 消费者 | 同上 |
-| P3 | Claude Code hooks + skill | 同上 |
-| P4 | HTTP/REST + 导出导入 (CI/迁移用) | 同上 |
+| 阶段 | Surface                                                                                   | 复用                     |
+| ---- | ----------------------------------------------------------------------------------------- | ------------------------ |
+| 现状 | DSH (cordis 插件 + 面板)                                                                  | —                        |
+| P0   | Facade 抽出, DSH 改为 Facade 消费者                                                       | 全部 L1/L2               |
+| P1   | **MCP server** (stdio/http): `memory_search`/`memory_save`/`memory_link`/`memory_history` | Facade 直接映射 MCP tool |
+| P2   | Codex (AGENTS.md + CLI) 改为 Facade 消费者                                                | 同上                     |
+| P3   | Claude Code hooks + skill                                                                 | 同上                     |
+| P4   | HTTP/REST + 导出导入 (CI/迁移用)                                                          | 同上                     |
 
 MCP 优先的原因: 它是 2024 之后多宿主接入的事实标准, 一次实现覆盖 Claude Code/Desktop、Cursor、Cline、Codex 等客户端; 而 hooks 类接入 (DSH/Claude) 只多一层"何时注入"的确定性保证。
 
@@ -381,14 +395,14 @@ MCP 优先的原因: 它是 2024 之后多宿主接入的事实标准, 一次实
 
 ## 7. 分阶段落地与验收
 
-| 阶段 | 内容 | 验收 (可观察) |
-| ---- | ---- | ------------- |
-| **P0 切面** ✅ | `MemoryFacade` + 端口 v2 (Retriever/Rebuildable/Capability/EpisodeStore) + `tests/conformance` 套件; DSH 工具/绑定注入/召回共用同一检索语义 | 314+ 测试全绿; conformance 对两个实现全绿; DSH 真机 smoke 通过 |
-| **P1 检索** ✅ | FTS5 双流分词 (词+bigram) + BM25 + RRF + token 预算 + 覆盖率过滤 + MMR | 中文 2 字查询有召回 (测试钉住); 预步注入走同一检索器 |
-| **P2 演化** ✅(确定性) | ✅ Episode 追加日志 + 指纹/覆盖率/语义余弦三路去重 + 三档演化 (合并/取代/冲突标记, 规则豁免) + 结构建边 + T1/T2 重建 + 命中强化; ⬜ LLM 语义裁决 | ✅ 换说法重记不重复; ✅ 显式更新自动写取代链且历史可查; ✅ 矛盾双向标记不静默覆盖 |
-| **P3 整合** 🔶 | ✅ 衰减/TTL 扫描 (ConsolidationService, 可干跑可复活) + ✅ 命中即强化 (节流合并); ⬜ LinkService 实体/标签共现建边 + ⬜ digest 刷新 + ⬜ 调度器 | ✅ 陈旧 event 自动过期且可观测; ✅ 命中即强化有测试; ⬜ digest 随新条目刷新 |
-| **P4 多宿主** ✅ | ✅ MCP stdio surface (六工具, 真机子进程测试) + ✅ Codex CLI (sync/rules/stats/verify/rebuild/consolidate/mcp) + ✅ DSH 面板/工具全走 Facade | ✅ 各宿主共用同一 Facade 与检索语义; ⬜ 导出导入 / MCP HTTP 传输 |
-| **P5 引擎** ✅(本地) | ✅ `Embedder`/`SyncEmbedder` 端口 + 本地 `HashingEmbedder` + ✅ `VectorIndex` 端口与 `LinearVectorIndex` (向量**召回**通道已接, 含 floor/增量同步/scan-cap 降级) + ✅ 检索侧 conformance; ⬜ 换 ANN 引擎 (sqlite-vec/LanceDB) + ⬜ 远端 Embedder (需投影) + ⬜ 图引擎适配 | ✅ 语义召回默认可用且有契约测试; ✅ 换嵌入器/换索引引擎不动业务代码; ⬜ 影子读对比报告 |
+| 阶段                   | 内容                                                                                                                                                                                                                                                                                                                | 验收 (可观察)                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **P0 切面** ✅         | `MemoryFacade` + 端口 v2 (Retriever/Rebuildable/Capability/EpisodeStore) + `tests/conformance` 套件; DSH 工具/绑定注入/召回共用同一检索语义                                                                                                                                                                         | 314+ 测试全绿; conformance 对两个实现全绿; DSH 真机 smoke 通过                                          |
+| **P1 检索** ✅         | FTS5 双流分词 (词+bigram) + BM25 + RRF + token 预算 + 覆盖率过滤 + MMR                                                                                                                                                                                                                                              | 中文 2 字查询有召回 (测试钉住); 预步注入走同一检索器                                                    |
+| **P2 演化** ✅(确定性) | ✅ Episode 追加日志 + 指纹/覆盖率/语义余弦三路去重 + 三档演化 (合并/取代/冲突标记, 规则豁免) + 结构建边 + T1/T2 重建 + 命中强化; ⬜ LLM 语义裁决                                                                                                                                                                    | ✅ 换说法重记不重复; ✅ 显式更新自动写取代链且历史可查; ✅ 矛盾双向标记不静默覆盖                       |
+| **P3 整合** 🔶         | ✅ 衰减/TTL 扫描 (ConsolidationService, 可干跑可复活) + ✅ 命中即强化 (节流合并); ⬜ LinkService 实体/标签共现建边 + ⬜ digest 刷新 + ⬜ 调度器                                                                                                                                                                     | ✅ 陈旧 event 自动过期且可观测; ✅ 命中即强化有测试; ⬜ digest 随新条目刷新                             |
+| **P4 多宿主** ✅       | ✅ MCP stdio surface (六工具, 真机子进程测试) + ✅ Codex CLI (sync/rules/stats/verify/rebuild/consolidate/mcp) + ✅ DSH 面板/工具全走 Facade                                                                                                                                                                        | ✅ 各宿主共用同一 Facade 与检索语义; ⬜ 导出导入 / MCP HTTP 传输                                        |
+| **P5 引擎** ✅         | ✅ `Embedder`/`SyncEmbedder` 端口 + 三种实现 (离线词典语义 `LexicalEmbedder` 默认 / 远端 OpenAI 兼容 / 词汇袋基线) + ✅ `VectorIndex` 端口 + `LinearVectorIndex`(同步) 与 `ProjectedVectorIndex`(异步投影) + ✅ 预步硬时限预热 + ✅ 检索与语义质量 conformance; ⬜ 换 ANN 引擎 (sqlite-vec/LanceDB) + ⬜ 图引擎适配 | ✅ 同义改写 Recall@1 20%→80%, Recall@3 20%→100% (10k 条检索 13.7ms); ✅ 换嵌入器/换索引引擎不动业务代码 |
 
 依赖关系: P0 → P1 → P2 → P3 强序; P4 可与 P2/P3 并行; P5 依赖 P1 (通道抽象) 与 P2 (去重语义)。
 

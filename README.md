@@ -65,17 +65,17 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 
 ## 使用入口 (你可以在哪些地方触达它)
 
-| #   | 入口                    | 在哪里                | 怎么触发                                                             | 你会得到什么                                      |
-| --- | ----------------------- | --------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
-| ①   | **自动捕获**            | 任何 DSH 会话         | 正常对话 (踩坑/决策/偏好被隐式记录); 或说 "记住 X"                   | 记忆落盘 → 之后的会话自动想起                     |
-| ②   | **绑定管理面板**        | DSH 设置 → 记忆绑定   | 打开面板, 为项目声明记忆源拓扑 (查询/权重/信号词)                    | 可视化增删改, 保存即生效                          |
-| ③   | **审阅面板**            | DSH 设置 → 记忆审阅   | 收到推广提议时, 逐条确认/驳回                                        | 确认的提议变成全局规则                            |
-| ④   | **确定性注入** (自动)   | 每个 `agent/pre-step` | 绑定命中的项目, 每次对话自动注入绑定记忆                             | 模型每步都带着相关记忆 (测试 10/10 命中)          |
-| ⑤   | **记忆工具** (模型可调) | DSH 工具区            | 模型自主调用 `memory_search` / `memory_save` / `memory_rule_propose` | 按需检索 / 保存 / 提议规则                        |
-| ⑥   | **推广批次**            | DSH 设置 → 记忆审阅   | 点「运行推广批次」                                                   | 把最近的 lesson/decision 聚类成待审提议           |
-| ⑦   | **Codex CLI**           | 终端                  | `hx-memory sync/rules/stats/verify/rebuild`                          | 同步 AGENTS.md / 列规则 / 统计 / 一致性自检 / 分级重建 |
-| ⑧   | **MCP 服务**            | Claude Code / Desktop / Cursor / Cline | `hx-memory mcp --root <memRoot>` 配成 MCP server            | 六个工具 (search/save/link/history/forget/stats) 共用同一份记忆 |
-| ⑨   | **衰减整合**            | 终端 / 定时任务       | `hx-memory consolidate [--dry-run]`                                 | 短命记忆按衰减/TTL 置为 `expired` (可逆, 永不删除) |
+| #   | 入口                    | 在哪里                                 | 怎么触发                                                             | 你会得到什么                                                    |
+| --- | ----------------------- | -------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| ①   | **自动捕获**            | 任何 DSH 会话                          | 正常对话 (踩坑/决策/偏好被隐式记录); 或说 "记住 X"                   | 记忆落盘 → 之后的会话自动想起                                   |
+| ②   | **绑定管理面板**        | DSH 设置 → 记忆绑定                    | 打开面板, 为项目声明记忆源拓扑 (查询/权重/信号词)                    | 可视化增删改, 保存即生效                                        |
+| ③   | **审阅面板**            | DSH 设置 → 记忆审阅                    | 收到推广提议时, 逐条确认/驳回                                        | 确认的提议变成全局规则                                          |
+| ④   | **确定性注入** (自动)   | 每个 `agent/pre-step`                  | 绑定命中的项目, 每次对话自动注入绑定记忆                             | 模型每步都带着相关记忆 (测试 10/10 命中)                        |
+| ⑤   | **记忆工具** (模型可调) | DSH 工具区                             | 模型自主调用 `memory_search` / `memory_save` / `memory_rule_propose` | 按需检索 / 保存 / 提议规则                                      |
+| ⑥   | **推广批次**            | DSH 设置 → 记忆审阅                    | 点「运行推广批次」                                                   | 把最近的 lesson/decision 聚类成待审提议                         |
+| ⑦   | **Codex CLI**           | 终端                                   | `hx-memory sync/rules/stats/verify/rebuild`                          | 同步 AGENTS.md / 列规则 / 统计 / 一致性自检 / 分级重建          |
+| ⑧   | **MCP 服务**            | Claude Code / Desktop / Cursor / Cline | `hx-memory mcp --root <memRoot>` 配成 MCP server                     | 六个工具 (search/save/link/history/forget/stats) 共用同一份记忆 |
+| ⑨   | **衰减整合**            | 终端 / 定时任务                        | `hx-memory consolidate [--dry-run]`                                  | 短命记忆按衰减/TTL 置为 `expired` (可逆, 永不删除)              |
 
 > 简单说: **① 自动记, ④ 自动注入, ② 管绑定, ③+⑥ 管推广, ⑤ 手动兜底, ⑦⑧ 换宿主用, ⑨ 管遗忘**。
 >
@@ -90,14 +90,14 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 // 客户端配置示例 (stdio)
 {
   "mcpServers": {
-    "hx-memory": { "command": "hx-memory", "args": ["mcp", "--root", "/path/to/memory-root"] }
-  }
+    "hx-memory": { "command": "hx-memory", "args": ["mcp", "--root", "/path/to/memory-root"] },
+  },
 }
 ```
 
 工具: `memory_search` / `memory_save` / `memory_link` / `memory_history` / `memory_forget` / `memory_stats`。
 它们与 DSH 工具**共用同一个 Facade 与同一条检索语义** —— 换宿主不换记忆, 也不换规则 (共识与治理闸门一致)。
->
+
 > 推广闭环有两个触发点: 面板按钮 (聚类最近的经验) 与 `memory_rule_propose` 工具 (模型直接提议)。
 > 两条都只进人工队列, 都不会自动变成规则。
 
@@ -163,7 +163,24 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 **规则 (rule) 豁免**: 机器只能标记"某条规则可能过时", 永不自动改写/删除规则 (人工闸门)。
 另外, 共享标签/实体的记忆会自动建 `relates` 边 (默认最多 3 条, 有上限防关联爆炸), 这条边进真相文件、重建后仍在。
 
-### 🔁 7. 分级重建 + 引擎准入 (为什么"换引擎"是接线而不是改造)
+### 🧠 7. 语义检索 (换个说法也找得到)
+
+默认就带**离线语义**: 同义词表归一 (上线/发版→发布, 兜底→熔断) + 字级 n-gram, 零依赖零联网。
+
+| 配置                                                         | 效果                                             | 说明                                                                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| 默认 (`LexicalEmbedder`)                                     | 同义改写 **Recall@1 20%→80%, Recall@3 20%→100%** | 离线、同步、零依赖                                                                                         |
+| `HX_MEMORY_EMBEDDING_BASE_URL` + `HX_MEMORY_EMBEDDING_MODEL` | 真语义模型                                       | OpenAI 兼容协议 (OpenAI/Ollama/vLLM/TEI/自建); 异步嵌入 + 后台投影, 预步注入带**硬时限**预热, 永不阻塞对话 |
+| `embedder: null` (API)                                       | 关闭语义通道                                     | 只保留字面检索                                                                                             |
+
+阈值由**嵌入器自己声明** (不同模型分数尺度不同, 全局阈值必然一边失效); 语义不可用时结果里会带 `degraded` 说明, 不静默。
+
+```bash
+node --experimental-strip-types scripts/eval-retrieval.ts   # 语义召回质量评测 (Recall@1/@3)
+node --experimental-strip-types scripts/bench-retrieval.ts 10000 [--semantic]   # 万级性能
+```
+
+### 🔁 8. 分级重建 + 引擎准入 (为什么"换引擎"是接线而不是改造)
 
 - **T1 索引重建**: 真相文件 → 结构化/全文索引 (`rebuildFromTruth`, 幂等)。
 - **T2 抽取重建**: `episodes/YYYY-MM-DD.jsonl` 原文 → 记忆条目 (`rebuild --episodes`)。换了抽取器/规则后**重放**而不是重聊: 同一抽取器重放结果与当初一致 (幂等), 换了抽取器则新结果落盘、旧结果置 `superseded` (不删除, 历史可查)。
@@ -261,7 +278,7 @@ scripts/
 | S1 内核          | `tests/s1`             | 纯逻辑, 禁网络 (binder / 端口一致性 / 双时态)                                                                  |
 | S2 接入+存储     | `tests/s2`             | 临时资源/stub: 存储完整性、pre-step 去重、设置生效、agents 契约、推广触发、client RPC 约定                     |
 | S3 完整 DSH      | `tests/s3`             | 事件接线 (假 harness)                                                                                          |
-| **引擎准入**     | `tests/conformance`   | 同一套契约跑所有存储/检索引擎 (往返无损/治理/可见性/重建幂等/自检/持久化); 不过不许进 `src/storage`             |
+| **引擎准入**     | `tests/conformance`    | 同一套契约跑所有存储/检索引擎 (往返无损/治理/可见性/重建幂等/自检/持久化); 不过不许进 `src/storage`            |
 | static           | `tsc --noEmit` ×2      | 内核 + client 双类型闸门                                                                                       |
 | **真机行为门禁** | `scripts/smoke-dsh.sh` | 隔离 `DSH_HOME` 装插件 → 启 web host → 断言 fiber active / 6 个 RPC 业务成功 / 绑定写读真往返 / bundle 模块 id |
 
