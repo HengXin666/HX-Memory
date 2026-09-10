@@ -4,6 +4,8 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import type { FileBackend } from "../../storage/file-store.ts";
 import type { GeneralizerService } from "../../generalize/service.ts";
+import type { SyncRetriever } from "../../kernel/ports.ts";
+import type { MemoryFacade } from "../../app/facade.ts";
 
 export interface ToolRegistryContext {
   tools: { register(tool: ReturnType<typeof defineTool>): () => void };
@@ -13,6 +15,10 @@ export interface MemoryToolDeps {
   store: FileBackend;
   /** 规则提议工具需要推广服务 (提议只进人工队列, 永不自动落 rule)。 */
   generalizer: GeneralizerService;
+  /** v2 检索器: 有则 memory_search 走混合检索 (BM25 + 图 + 覆盖率 + 治理闸门)。 */
+  retriever?: SyncRetriever;
+  /** v2 Facade: 有则工具直接复用使用层语义 (含命中强化)。 */
+  facade?: MemoryFacade;
 }
 
 export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDeps): () => void {
@@ -35,15 +41,39 @@ export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDe
           const q = String(args.query || "").trim();
           if (!q) return "Error: query cannot be empty.";
           const limit = Math.min(20, Math.max(1, Number(args.limit) || 10));
-          const hits = deps.store.query({ text: q, limit });
-          if (!hits.length) return "No relevant memory found.";
-          return hits
-            .map(
-              (e) =>
-                `[${e.kind}][${e.scope}][${e.id}] ${e.content}` +
-                (e.confirmedBy ? " (confirmed by " + e.confirmedBy + ")" : ""),
-            )
-            .join("\n");
+          // 检索路径优先级: Facade (使用层, 含命中强化) → Retriever (过渡) → 结构化过滤 (老行为)。
+          const listed = deps.facade
+            ? deps.facade.recall({ text: q, limit, tokenBudget: Math.max(400, limit * 160) }).hits
+            : deps.retriever
+              ? deps.retriever.retrieveSync({
+                  text: q,
+                  limit,
+                  tokenBudget: Math.max(400, limit * 160),
+                }).hits
+              : null;
+          let lines: string[];
+          if (listed) {
+            lines = listed.map(
+              (hit) =>
+                `[${hit.entry.kind}][${hit.entry.scope}][${hit.entry.id}] ${hit.entry.content}` +
+                (hit.entry.confirmedBy ? " (confirmed by " + hit.entry.confirmedBy + ")" : "") +
+                (hit.channels.length ? " (why: " + hit.channels.join("+") + ")" : ""),
+            );
+            // 命中即强化: 不 await (工具响应不该等写盘), 失败静默 (记忆层不许拖垮宿主)。
+            if (deps.facade && listed.length) {
+              void deps.facade.reinforce(listed.map((hit) => hit.entry.id)).catch(() => undefined);
+            }
+          } else {
+            lines = deps.store
+              .query({ text: q, limit })
+              .map(
+                (e) =>
+                  `[${e.kind}][${e.scope}][${e.id}] ${e.content}` +
+                  (e.confirmedBy ? " (confirmed by " + e.confirmedBy + ")" : ""),
+              );
+          }
+          if (!lines.length) return "No relevant memory found.";
+          return lines.join("\n");
         },
         output: { schema: { type: "string" }, render: (_a, v) => [{ type: "text", text: v }] },
         presentCall: (args) => ({

@@ -6,7 +6,7 @@
 //   3. 项目内 lesson/pattern 按需召回。
 // 诚实边界: 无语义向量, 用关键词命中评分; 后续可换 VectorBackend (可插拔存储)。
 import type { MemoryEntry, Query } from "../kernel/types.ts";
-import type { SyncMemoryStore } from "../kernel/ports.ts";
+import type { SyncMemoryStore, SyncRetriever } from "../kernel/ports.ts";
 
 export interface RecallInput {
   /** 当前任务文本 (如用户问题/会话首条)。 */
@@ -40,11 +40,19 @@ function topWords(text: string): string[] {
 }
 
 export class RecallService {
-  /** 依赖同步查询面 (会话开始/预步是同步判定点)。 */
-  constructor(private readonly queryFn: SyncMemoryStore["query"]) {}
+  private readonly queryFn: SyncMemoryStore["query"];
+  /** v2 检索器 (可选): 传入则走混合检索 (BM25 + 图 + 预算 + 治理闸门)。 */
+  private readonly retriever?: SyncRetriever;
+
+  /** 依赖同步查询面 (会话开始/预步是同步判定点); 异步后端需要自带投影。 */
+  constructor(queryFn: SyncMemoryStore["query"], retriever?: SyncRetriever) {
+    this.queryFn = queryFn;
+    this.retriever = retriever;
+  }
 
   /** 召回: 全局规则 + 项目内经验。纯逻辑, 无副作用。 */
   recall(input: RecallInput): RecallOutput {
+    if (this.retriever) return this.recallViaRetriever(input);
     const limit = input.limit ?? 6;
     const words = topWords(input.text ?? "");
 
@@ -81,6 +89,43 @@ export class RecallService {
     }
 
     // 3) 组装注入文本
+    const lines: string[] = [];
+    if (rules.length) {
+      lines.push("【跨项目规则 (已确认)】");
+      for (const r of rules) lines.push("- [" + r.id + "] " + r.content);
+    }
+    if (local.length) {
+      lines.push("【本项目相关经验】");
+      for (const e of local) lines.push("- [" + e.kind + "] " + e.content);
+    }
+    return { rules, local, injected: lines.join("\n") };
+  }
+
+  /**
+   * v2 路径: 一次混合检索拿到全部候选, 再按"规则 / 本地经验"分桶。
+   * 规则仍然走保底通道 (在检索器里), 这里只负责分桶与格式化 —— 口径与 v1 输出一致,
+   * 因此 DSH 注入与 Codex AGENTS.md 的消费方无需改动。
+   */
+  private recallViaRetriever(input: RecallInput): RecallOutput {
+    const limit = input.limit ?? 6;
+    const result = this.retriever!.retrieveSync({
+      ...(input.text ? { text: input.text } : {}),
+      ...(input.project ? { scope: { project: input.project } } : {}),
+      limit: limit * 2,
+      tokenBudget: Math.max(256, limit * 160),
+    });
+    const rules: MemoryEntry[] = [];
+    const local: MemoryEntry[] = [];
+    for (const hit of result.hits) {
+      // 治理闸门: 任何来源的 rule 都必须带确认记录 (存储闸门之外的第二道)。
+      if (hit.entry.kind === "rule") {
+        if (hit.entry.scope === "global" && hit.entry.confirmedBy && hit.entry.confirmedAt) {
+          if (rules.length < limit) rules.push(hit.entry);
+        }
+        continue;
+      }
+      if (local.length < limit) local.push(hit.entry);
+    }
     const lines: string[] = [];
     if (rules.length) {
       lines.push("【跨项目规则 (已确认)】");

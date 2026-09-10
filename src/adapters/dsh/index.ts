@@ -21,10 +21,15 @@ import {
 } from "./runtime.js";
 import { makePreStepHandler } from "./prestep.js";
 import { registerMemoryTools } from "./tools.js";
+import { EpisodeStore } from "../../storage/episode-store.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { makeLlmAbstractor } from "./llm-abstractor.js";
 import { makeLlmStructurer } from "./llm-structurer.js";
 import { RecallService } from "../../recall/service.ts";
+import { HybridRetriever } from "../../retrieval/hybrid.js";
+import { MemoryFacade } from "../../app/facade.js";
+import { HashingEmbedder } from "../../retrieval/embedding.js";
+import { LinearVectorIndex } from "../../retrieval/vector.js";
 import { Binder, type BindingConfig } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
 import { HxMemoryGateway } from "./gateway.js";
@@ -82,12 +87,26 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const settings = (): HxMemorySettings => ({ ...DEFAULT_SETTINGS, ...settingsSource.read() });
 
   const bindingStore = new BindingStore(root);
+  // v2 检索器: 绑定注入 / 会话召回 / memory_search 三条路共用同一个检索语义
+  // (能力自述来自存储引擎, 降级会写进 RetrievalResult.degraded)。
+  // 向量通道: 默认本地哈希嵌入器 (同步, 可在 pre-step 用); 换真模型只换 Embedder 实现。
+  const retriever = new HybridRetriever(store, {
+    vectorIndex: new LinearVectorIndex({ embedder: new HashingEmbedder() }),
+  });
+  // 使用层唯一 API: DSH 的工具/召回都经由它, 与 MCP/CLI 共用同一套语义 (ADR-021)。
+  const facade = new MemoryFacade(
+    { store, retriever },
+    // 语义兜底去重默认开启 (本地零依赖哈希袋); 自动演化 (取代/冲突) 由设置控制。
+    { embedder: new HashingEmbedder(), autoEvolve: settings().autoEvolve },
+  );
+  facade.withIndexStatus(() => store.ftsStatus());
   const binder = new Binder(
     (q) => store.query(q),
     () => {
       const saved = bindingStore.list();
       return saved.length ? saved : (opts.bindings ?? []);
     },
+    retriever,
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
   const structurer = safeAgent(() => makeLlmStructurer(ctx, settings));
@@ -109,8 +128,24 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       // 日志失败不影响宿主
     }
   };
+  // Episode 追加日志 (ADR-018): 原文是真相的一部分, 让"换抽取器"能重放而不是重聊。
+  // 可关闭 (captureEpisodes) 且带保留期; 关闭时记忆照常捕获, 只是没有原文可重放。
+  const episodes = new EpisodeStore({
+    root,
+    retentionDays: settings().episodeRetentionDays,
+  });
+  if (settings().captureEpisodes && settings().episodeRetentionDays > 0) {
+    try {
+      const removed = episodes.prune();
+      if (removed > 0) ctx.logger("hx-memory").info("pruned %d expired episodes", removed);
+    } catch (error) {
+      logWarn("episode prune failed: %s", error);
+    }
+  }
   const runtime = new HxMemoryRuntime(pipe, settings, {
     onError: (error) => logWarn("capture failed: %s", error),
+    surface: "dsh",
+    ...(settings().captureEpisodes ? { episodes } : {}),
   });
   // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用/失败时回退启发式。
   const generalizer = new GeneralizerService(
@@ -133,7 +168,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       },
     },
   );
-  const recall = new RecallService((q) => store.query(q));
+  const recall = new RecallService((q) => store.query(q), retriever);
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载。
   // bindingStore 必须无条件注入 —— 否则面板 saveBindings 永远返回 "binding store not mounted"。
@@ -143,6 +178,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       generalizer,
       bindingStore,
       invocations: invocationLog,
+      facade,
     });
     return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
   }, "hx-memory.gateway()");
@@ -204,7 +240,10 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   });
 
   // 工具注册
-  ctx.effect(() => registerMemoryTools(ctx, { store, generalizer }), "hx-memory.tools()");
+  ctx.effect(
+    () => registerMemoryTools(ctx, { store, generalizer, retriever, facade }),
+    "hx-memory.tools()",
+  );
 
   // 生命周期
   ctx.effect(() => {

@@ -11,7 +11,8 @@ export class BindingStore {
   private readonly path: string;
   private configs: BindingConfig[];
 
-  constructor(private readonly root: string) {
+  // 显式字段赋值, 不用参数属性 (strip-only TS 模式不支持)。
+  constructor(root: string) {
     this.path = join(root, BINDINGS_FILE);
     this.configs = this.load();
   }

@@ -5,6 +5,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import type { FileBackend } from "../../storage/file-store.ts";
 import type { MemoryStore } from "../../kernel/ports.ts";
+import type { MemoryFacade } from "../../app/facade.ts";
 import type { BindingStore } from "../../bindings/store.ts";
 import type { BindingConfig } from "../../kernel/binder.ts";
 import type {
@@ -27,6 +28,11 @@ export interface HxMemoryGatewayDeps {
   bindingStore?: BindingStore;
   /** AI 调用记录 (可选: 不注入则「调用记录」tab 不可用)。 */
   invocations?: InvocationLog;
+  /**
+   * 使用层 Facade (可选但推荐): 面板的"最近沉淀/搜索/删除"与工具、MCP、CLI 共用同一套语义
+   * (检索排序 + 治理闸门 + 可见性 + 审计)。不注入时退回直连存储的旧行为 (兼容测试/旧宿主)。
+   */
+  facade?: Pick<MemoryFacade, "recent" | "forget" | "recall">;
 }
 
 export interface ReviewQueueView {
@@ -115,16 +121,21 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   @Remote("recentCaptures")
-  recentCaptures(limit?: number): Array<{
-    id: string;
-    kind: string;
-    content: string;
-    project?: string;
-    scope: string;
-    assertedAt: string;
-    tags?: string[];
-  }> {
-    return this.deps.store.recent(limit ?? 20).map((e) => ({
+  async recentCaptures(limit?: number): Promise<
+    Array<{
+      id: string;
+      kind: string;
+      content: string;
+      project?: string;
+      scope: string;
+      assertedAt: string;
+      tags?: string[];
+    }>
+  > {
+    const entries = this.deps.facade
+      ? await this.deps.facade.recent(limit ?? 20)
+      : this.deps.store.recent(limit ?? 20);
+    return entries.map((e) => ({
       id: e.id,
       kind: e.kind,
       content: e.content,
@@ -136,9 +147,14 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   @Remote("deleteEntry")
-  deleteEntry(id: string): { ok: boolean; error?: string } {
+  async deleteEntry(id: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      this.deps.store.remove(id);
+      if (this.deps.facade) {
+        // 走 Facade: 撤回是 shadow + 留审计理由 (面板删除不再是"无名操作")。
+        await this.deps.facade.forget(id, "panel:deleteEntry");
+      } else {
+        this.deps.store.remove(id);
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: String(e) };
@@ -147,12 +163,19 @@ export class HxMemoryGateway extends TypertRemoteService {
 
   @Remote("memoryQuery")
   async memoryQuery(q: { text?: string; kind?: string; limit?: number }): Promise<unknown[]> {
-    const hits = await this.deps.store.query({
-      text: q.text,
-      kind: q.kind as never,
-      limit: q.limit,
-    });
-    return hits.map((e) => ({
+    const limit = q.limit ?? 10;
+    // 有 Facade → 与工具/MCP/CLI 同一条检索语义 (含规则保底、覆盖率过滤、token 预算、降级说明)。
+    const entries = this.deps.facade
+      ? this.deps.facade
+          .recall({
+            ...(q.text ? { text: q.text } : {}),
+            ...(q.kind ? { kinds: [q.kind as never] } : {}),
+            limit,
+            tokenBudget: Math.max(400, limit * 160),
+          })
+          .hits.map((hit) => hit.entry)
+      : await this.deps.store.query({ text: q.text, kind: q.kind as never, limit });
+    return entries.map((e) => ({
       id: e.id,
       kind: e.kind,
       content: e.content,

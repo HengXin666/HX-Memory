@@ -25,8 +25,12 @@ export class CodexAdapter implements HarnessAdapter {
   readonly name = "codex" as const;
   private readonly recall: RecallService;
   private readonly agentsPath: string;
+  // 不用参数属性 (constructor(private x)): Node 的 strip-only TS 模式会拒绝它,
+  // 而 CLI/MCP 这类入口需要能被 `node src/....ts` 直接跑 (见 tests/s2/mcp-surface.test.ts 的真机测试)。
+  private readonly opts: CodexAdapterOptions;
 
-  constructor(private readonly opts: CodexAdapterOptions) {
+  constructor(opts: CodexAdapterOptions) {
+    this.opts = opts;
     this.recall = new RecallService((q) => opts.store.query(q));
     this.agentsPath = opts.agentsPath ?? opts.repoRoot + "/AGENTS.md";
   }

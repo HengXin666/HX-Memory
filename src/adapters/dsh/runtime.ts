@@ -8,6 +8,7 @@
 // autoMemoryInterval (2026-09 实现): 每 N 轮完成对话才落一次记忆 (0/1 = 每轮);
 // 会话结束时强制冲刷, 保证不丢。
 import type { CapturePipeline } from "../../capture/pipeline.ts";
+import type { EpisodeStore } from "../../kernel/ports.ts";
 
 export interface SessionLike {
   id: string;
@@ -33,6 +34,8 @@ interface TurnState {
   /** 已完成但尚未落盘的 turn 文本 (按 interval 批量冲刷)。 */
   pending: string[];
   project?: string;
+  /** 该会话已落盘的轮次数 (episode.turn 用它保持单调递增, 跨冲刷批次不断档)。 */
+  turnBase: number;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -65,6 +68,13 @@ function textOf(data: unknown): string {
 export interface RuntimeOptions {
   /** 落盘失败的旁路通知 (记忆写入失败绝不能影响宿主)。 */
   onError?: (error: unknown) => void;
+  /**
+   * Episode 追加日志 (可选, ADR-018): 保留原文, 支撑"换抽取器 → 全量重放"。
+   * 关闭时记忆仍照常捕获, 只是没有原文可重放。
+   */
+  episodes?: EpisodeStore;
+  /** 捕获来源标记 (写进 episode.surface, 便于多宿主共存时溯源)。 */
+  surface?: string;
 }
 
 export class HxMemoryRuntime {
@@ -83,6 +93,7 @@ export class HxMemoryRuntime {
       messages: [],
       pending: [],
       project: projectOfSession(session),
+      turnBase: 0,
     });
   }
 
@@ -122,9 +133,37 @@ export class HxMemoryRuntime {
   /** 把缓冲的 turn 逐条落盘 (每条 turn 一条记忆, 保留粒度)。 */
   private async flush(session: SessionLike, state: TurnState): Promise<void> {
     const pending = state.pending.splice(0);
+    let turn = state.turnBase;
     for (const text of pending) {
-      await this.pipe.run({ text, session: session.id, project: state.project });
+      turn += 1;
+      // 先写原文 (真相), 再抽取记忆并带上血缘: 顺序反了会出现"有记忆无原文"的孤儿条目。
+      let episodeId: string | undefined;
+      if (this.options.episodes) {
+        try {
+          // 端口允许异步实现 (远端日志/批量刷盘), 这里是 await 点。
+          const episode = await this.options.episodes.append({
+            session: session.id,
+            turn,
+            role: "user",
+            text,
+            at: new Date().toISOString(),
+            ...(state.project ? { project: state.project } : {}),
+            ...(this.options.surface ? { surface: this.options.surface } : {}),
+          });
+          episodeId = episode.id;
+        } catch (error) {
+          // 原文写失败不能拖垮记忆捕获 (记忆仍可落盘, 只是少了血缘)。
+          this.options.onError?.(error);
+        }
+      }
+      await this.pipe.run({
+        text,
+        session: session.id,
+        ...(state.project ? { project: state.project } : {}),
+        ...(episodeId ? { episodeId } : {}),
+      });
     }
+    state.turnBase = turn;
   }
 
   /** 消费一个 session/event。turn/end 且 reason=completed 时进入缓冲/落盘。 */
@@ -141,6 +180,7 @@ export class HxMemoryRuntime {
           messages: [],
           pending: [],
           project: projectOfSession(session),
+          turnBase: 0,
         });
       }
       return;

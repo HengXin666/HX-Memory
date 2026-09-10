@@ -11,6 +11,9 @@ export const Config = z.object({
   language: z.union(["zh", "en"]).default("zh"),
   injectGuidance: z.boolean().default(true),
   injectBindings: z.boolean().default(true),
+  autoEvolve: z.boolean().default(true),
+  captureEpisodes: z.boolean().default(true),
+  episodeRetentionDays: z.natural().min(0).max(36500).default(90),
   structurerPrompt: z.string().default(DEFAULT_STRUCTURER_PROMPT),
   abstractorPrompt: z.string().default(DEFAULT_ABSTRACTOR_PROMPT),
 });

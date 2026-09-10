@@ -12,6 +12,35 @@ export {
 } from "./capture/engine.ts";
 export { CapturePipeline } from "./capture/pipeline.ts";
 export { RecallService, type RecallInput, type RecallOutput } from "./recall/service.ts";
+export {
+  MemoryFacade,
+  formatRetrieval,
+  type FacadeStore,
+  type RememberInput,
+  type RememberResult,
+  type RememberDecision,
+  type RecallResponse,
+  type MemoryStats,
+} from "./app/facade.ts";
+export { decideAssociation, normalizeFingerprint } from "./evolution/associate.ts";
+export { EpisodeStore, EPISODES_DIR, asEpisode } from "./storage/episode-store.ts";
+export { MemoryBackend } from "./storage/memory-store.ts";
+export {
+  ConsolidationService,
+  DEFAULT_EXPIRABLE_KINDS,
+  type ConsolidateReport,
+  type ConsolidateOptions,
+} from "./app/consolidate.ts";
+export { openMemoryStack, type MemoryStack, type OpenMemoryOptions } from "./app/stack.ts";
+export {
+  RebuildService,
+  captureExtractor,
+  asRebuildable,
+  type RebuildReport,
+  type RebuildLevel,
+  type EpisodeExtractor,
+} from "./app/rebuild.ts";
+export { HybridRetriever, type HybridRetrieverOptions } from "./retrieval/hybrid.ts";
 export { clusterByTheme, themeOf, type ThemeCluster } from "./generalize/cluster.ts";
 export {
   GeneralizerService,

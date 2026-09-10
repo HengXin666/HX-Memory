@@ -14,6 +14,8 @@ export interface TurnInput {
   project?: string;
   session: string;
   occurredAt?: string;
+  /** 该轮对话对应的 episode id (有则写进 derivedFrom —— 支撑抽取级重建与溯源)。 */
+  episodeId?: string;
 }
 
 export interface CaptureOptions {
@@ -116,6 +118,8 @@ export function captureTurn(
     scope,
     ...(input.project ? { project: input.project } : {}),
     ts: { validAt: occurredAt, assertedAt: nowIso() },
+    // 血缘: 这条记忆是从哪一轮原文抽出来的 (换抽取器时按 episode 重放)。
+    ...(input.episodeId ? { derivedFrom: [input.episodeId] } : {}),
   };
   return { entries: [entry], deduped: 0, signal: kind + ":" + hash };
 }
