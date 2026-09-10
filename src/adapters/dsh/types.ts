@@ -16,6 +16,11 @@ export interface HxMemorySettings {
   injectBindings: boolean;
   /** 写入期自动演化 (显式更新信号 → 取代链; 矛盾 → 标记)。关掉只保留字面去重与建边。 */
   autoEvolve: boolean;
+  /**
+   * 注入前预热异步向量投影的硬时限 (ms)。
+   * 0 = 不预热 (预步永不等待); 50 是"几乎无感但足以补齐首批向量"的默认值。
+   */
+  semanticWarmupMs: number;
   /** 记录原始轮次 (episode 追加日志): 支撑"换抽取器 → 全量重放"; 关掉则只留抽取结果。 */
   captureEpisodes: boolean;
   /** episode 保留天数 (0 = 永久保留)。 */
@@ -34,6 +39,7 @@ export const DEFAULT_SETTINGS: HxMemorySettings = {
   injectGuidance: true,
   injectBindings: true,
   autoEvolve: true,
+  semanticWarmupMs: 50,
   captureEpisodes: true,
   episodeRetentionDays: 90,
 };

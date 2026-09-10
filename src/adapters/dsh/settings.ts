@@ -12,6 +12,7 @@ export const Config = z.object({
   injectGuidance: z.boolean().default(true),
   injectBindings: z.boolean().default(true),
   autoEvolve: z.boolean().default(true),
+  semanticWarmupMs: z.natural().min(0).max(2000).default(50),
   captureEpisodes: z.boolean().default(true),
   episodeRetentionDays: z.natural().min(0).max(36500).default(90),
   structurerPrompt: z.string().default(DEFAULT_STRUCTURER_PROMPT),

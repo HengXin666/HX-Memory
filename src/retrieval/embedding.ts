@@ -31,6 +31,8 @@ export interface HashingEmbedderOptions {
 export class HashingEmbedder implements SyncEmbedder {
   readonly id: string;
   readonly dim: number;
+  /** 词汇袋区分度低 (实测同义 0.17 / 无关 0.08), 阈值放宽反而召回噪声, 故偏高。 */
+  readonly floor = 0.35;
 
   constructor(opts: HashingEmbedderOptions = {}) {
     this.dim = Math.max(16, opts.dim ?? 256);

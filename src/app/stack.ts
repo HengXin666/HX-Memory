@@ -5,8 +5,10 @@
 import { FileBackend } from "../storage/file-store.ts";
 import { EpisodeStore } from "../storage/episode-store.ts";
 import { HybridRetriever } from "../retrieval/hybrid.ts";
-import { HashingEmbedder } from "../retrieval/embedding.ts";
+import { LexicalEmbedder } from "../retrieval/embedding-lexical.ts";
 import { LinearVectorIndex } from "../retrieval/vector.ts";
+import { ProjectedVectorIndex } from "../retrieval/vector-projected.ts";
+import { openAiEmbedderFromEnv } from "../retrieval/embedding-http.ts";
 import { asSyncEmbedder, type Embedder } from "../kernel/ports.ts";
 import { MemoryFacade } from "./facade.ts";
 import { RebuildService } from "./rebuild.ts";
@@ -27,7 +29,10 @@ export interface OpenMemoryOptions {
   episodeRetentionDays?: number;
   /** 可注入时钟 (测试确定性)。 */
   now?: () => string;
-  /** 嵌入器 (默认本地 HashingEmbedder: 零依赖零成本)。传 null 关闭语义兜底。 */
+  /**
+   * 嵌入器。默认: 配了 HX_MEMORY_EMBEDDING_BASE_URL/MODEL 用远端真语义 (异步+投影),
+   * 否则用本地 LexicalEmbedder (离线语义近似, 零依赖)。传 null 完全关闭语义通道。
+   */
   embedder?: Embedder | null;
   /** 关闭自动演化 (取代/冲突标记)。 */
   autoEvolve?: boolean;
@@ -37,12 +42,23 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
   const store = new FileBackend({ root });
   const episodes = new EpisodeStore({
     root,
-    ...(opts.episodeRetentionDays === undefined ? {} : { retentionDays: opts.episodeRetentionDays }),
+    ...(opts.episodeRetentionDays === undefined
+      ? {}
+      : { retentionDays: opts.episodeRetentionDays }),
   });
-  // 向量通道: 只有**同步**嵌入器才能进预步注入路径 (异步的要走投影, 见 architecture-v2 §3.3)。
-  const embedder = opts.embedder === null ? undefined : (opts.embedder ?? new HashingEmbedder());
+  // 向量通道: 两种嵌入器两条路 ——
+  //   同步 (本地哈希/常驻 ONNX) → LinearVectorIndex, 预步直接可用;
+  //   异步 (远端 OpenAI 兼容端点) → ProjectedVectorIndex, 后台补齐、预步读投影 (ADR-025)。
+  const embedder =
+    opts.embedder === null
+      ? undefined
+      : (opts.embedder ?? openAiEmbedderFromEnv() ?? new LexicalEmbedder());
   const syncEmbedder = embedder ? asSyncEmbedder(embedder) : null;
-  const vectorIndex = syncEmbedder ? new LinearVectorIndex({ embedder: syncEmbedder }) : undefined;
+  const vectorIndex = !embedder
+    ? undefined
+    : syncEmbedder
+      ? new LinearVectorIndex({ embedder: syncEmbedder })
+      : new ProjectedVectorIndex({ embedder });
   const retriever = new HybridRetriever(store, vectorIndex ? { vectorIndex } : {});
   const facade = new MemoryFacade(
     { store, retriever },

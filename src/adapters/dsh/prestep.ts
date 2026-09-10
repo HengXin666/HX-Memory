@@ -98,6 +98,8 @@ export function makePreStepHandler(
     enabled: () => boolean;
     /** 项目键派生 (默认取 session.id, 测试与 DSH adapter 可覆盖)。 */
     projectOf?: (payload: PreStepPayload) => string;
+    /** 注入前预热异步投影的硬时限 (ms, 默认 50; 0 = 不预热)。 */
+    warmupMs?: () => number;
   },
 ) {
   const projectOf = options.projectOf ?? ((p: PreStepPayload) => p.agent.session.id);
@@ -117,6 +119,8 @@ export function makePreStepHandler(
     const project = projectOf(payload);
     const text = latestUserText(payload.messages);
     if (!text) return decision;
+    // 注入前热身异步向量投影 (硬时限): 首次预热可能补不齐, 后续轮次就有真语义召回了。
+    await binder.warm(options.warmupMs?.() ?? 50, text);
     const bound = binder.injectFor(project, text);
     if (!bound) return decision;
     const injectedText = "【HX-Memory 绑定注入】\n" + bound;

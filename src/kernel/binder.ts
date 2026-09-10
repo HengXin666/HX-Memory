@@ -7,7 +7,7 @@
 //   manifest: "通过向量检索动态地将日记内容注入到系统提示词中"。
 // 这里落到声明式、类型化、可测试形态: MemoryBinding + 确定性判定。
 import type { MemoryEntry, Query } from "./types.ts";
-import type { RetrievalRequest, SyncMemoryStore, SyncRetriever } from "./ports.ts";
+import type { RetrievalRequest, RetrievalWarmup, SyncMemoryStore, SyncRetriever } from "./ports.ts";
 
 /** 每个绑定: 查询条件 + 权重 + 条数预算 + 可选信号词门控。 */
 export interface MemoryBinding {
@@ -129,6 +129,15 @@ export class Binder {
   bindingsFor(project: string): MemoryBinding[] {
     const cfg = this.configs().find((c) => c.project === project);
     return cfg ? cfg.bindings : [];
+  }
+
+  /**
+   * 注入前热身 (可选): 异步嵌入器的向量投影需要在后台补齐才有语义召回。
+   * 带硬时限, 永不阻塞 —— 没补齐就降级 (结果里会说明), 补多少算多少。
+   */
+  async warm(deadlineMs = 50, query?: string): Promise<void> {
+    const retriever = this.retriever as Partial<RetrievalWarmup> | undefined;
+    if (retriever && typeof retriever.warm === "function") await retriever.warm(deadlineMs, query);
   }
 
   /** 对当前文本做确定性预步注入。返回注入文本 (可为空)。 */

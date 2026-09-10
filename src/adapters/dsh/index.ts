@@ -28,8 +28,10 @@ import { makeLlmStructurer } from "./llm-structurer.js";
 import { RecallService } from "../../recall/service.ts";
 import { HybridRetriever } from "../../retrieval/hybrid.js";
 import { MemoryFacade } from "../../app/facade.js";
-import { HashingEmbedder } from "../../retrieval/embedding.js";
+import { LexicalEmbedder } from "../../retrieval/embedding-lexical.js";
 import { LinearVectorIndex } from "../../retrieval/vector.js";
+import { ProjectedVectorIndex } from "../../retrieval/vector-projected.js";
+import { openAiEmbedderFromEnv } from "../../retrieval/embedding-http.js";
 import { Binder, type BindingConfig } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
 import { HxMemoryGateway } from "./gateway.js";
@@ -89,15 +91,20 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const bindingStore = new BindingStore(root);
   // v2 检索器: 绑定注入 / 会话召回 / memory_search 三条路共用同一个检索语义
   // (能力自述来自存储引擎, 降级会写进 RetrievalResult.degraded)。
-  // 向量通道: 默认本地哈希嵌入器 (同步, 可在 pre-step 用); 换真模型只换 Embedder 实现。
+  // 向量通道: 配了 HX_MEMORY_EMBEDDING_BASE_URL/MODEL 就用真语义 (异步 + 投影),
+  // 否则用本地零依赖哈希嵌入器 (同步, 零配置也能跑)。
+  const httpEmbedder = openAiEmbedderFromEnv();
+  const localEmbedder = new LexicalEmbedder();
   const retriever = new HybridRetriever(store, {
-    vectorIndex: new LinearVectorIndex({ embedder: new HashingEmbedder() }),
+    vectorIndex: httpEmbedder
+      ? new ProjectedVectorIndex({ embedder: httpEmbedder })
+      : new LinearVectorIndex({ embedder: localEmbedder }),
   });
   // 使用层唯一 API: DSH 的工具/召回都经由它, 与 MCP/CLI 共用同一套语义 (ADR-021)。
   const facade = new MemoryFacade(
     { store, retriever },
     // 语义兜底去重默认开启 (本地零依赖哈希袋); 自动演化 (取代/冲突) 由设置控制。
-    { embedder: new HashingEmbedder(), autoEvolve: settings().autoEvolve },
+    { embedder: localEmbedder, autoEvolve: settings().autoEvolve },
   );
   facade.withIndexStatus(() => store.ftsStatus());
   const binder = new Binder(
@@ -296,6 +303,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     makePreStepHandler(binder, {
       rootAgentsOnly: () => settings().rootAgentsOnly,
       enabled: () => settings().injectBindings,
+      warmupMs: () => settings().semanticWarmupMs,
       projectOf: (payload) => projectOfSession(payload.agent.session) ?? payload.agent.session.id,
     }) as never,
   );
