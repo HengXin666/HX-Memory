@@ -48,3 +48,15 @@ HX-Memory 是一个**自维护、可插拔**的记忆层: 内核 (Port) 只定�
 - Stop: 运行 `verify_ts.sh` 摘要, 完整日志在 `.git/hx-init/logs/`, 不把全量告警灌进上下文。
 - 所有 `.sh` 写盘后 `chmod 755`。
 - 不生成根 `CLAUDE.md` / `AGENTS.md`; 规则按 agent 落到实体目录.
+
+## Agent Note (方案沉淀, 硬约束)
+
+**每一次非平凡改动都必须在同一批改动里新增或更新至少一篇 Agent Note** —— 这不是自觉, 是 gate:
+
+- `pnpm run verify-agent-note-classification` — lifecycle/class 是封闭集合, 路径与文件名必须合规;
+- `pnpm run verify-agent-note-format` — 头部三行 + 按生命周期的章节骨架 + `## Alternatives considered` 必填;
+- `pnpm run verify-agent-note-coverage` — 改到 `src/**`、`.agents/rules/**`、`scripts/**`、`dsh/**`、`.github/workflows/**`、`package.json`、`tsconfig*.json` 就必须带 Note。
+
+三条都挂在 `scripts/verify.sh`(CI 用) 与 pre-commit hook (`bash scripts/install-commit-hook.sh`) 上。新建用 `pnpm run notes:new -- --lifecycle <...> --class <...> --title "<标题>" --slug <ascii-slug>`。
+
+规则全文与各章节写法: `.agents/notes/README.md`。纯机械改动 (改名/格式化/依赖版本) 用 `--allow-missing` 显式放行, 会打印警告而不是静默通过。

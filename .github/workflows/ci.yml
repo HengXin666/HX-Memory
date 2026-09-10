@@ -12,4 +12,9 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Agent Note 覆盖率需要比较基线: PR 用 base.sha, push 用 before。
+      # 工作区在 CI 里是干净的, 不给基线的话这条 gate 会退化成"永远通过"。
       - run: bash scripts/verify.sh
+        env:
+          HX_NOTE_COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HX_NOTE_COVERAGE_RANGE: ${{ github.event.pull_request.base.sha && format('{0}...{1}', github.event.pull_request.base.sha, github.sha) || '' }}

@@ -1,41 +1,37 @@
 #!/usr/bin/env bash
-# Opt-in Git commit-msg hook installer (house convention: default OFF, only on explicit request).
+# Git hooks installer (house convention: opt-in; 用户明确要求时装)。
+#
+# 装两个 hook, 内容都来自 .agents/hooks/ (单一来源, 便于 review 与复用):
+#   commit-msg — 提交信息必须是 [type] subject
+#   pre-commit — Agent Note 三条硬约束 (结构 / 格式 / 非平凡改动必须带 Note)
+#
+# 用法: bash scripts/install-commit-hook.sh [--force]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FORCE=0
 [[ "${1:-}" = "--force" ]] && FORCE=1
-HOOK="$(git -C "$ROOT" rev-parse --git-path hooks/commit-msg)"
-if [[ -e "$HOOK" ]] && [[ $FORCE = 0 ]] && ! grep -q "hx-memory managed commit-msg hook" "$HOOK"; then
-  echo "[hx-memory] existing commit-msg hook found; use --force to replace" >&2
-  exit 1
-fi
-cat > "$HOOK" <<'HOOKEOF'
-#!/usr/bin/env bash
-# hx-memory managed commit-msg hook: enforce [type] subject
-set -uo pipefail
-MSG_FILE="${1:-}"
-[[ -n "$MSG_FILE" && -f "$MSG_FILE" ]] || { echo "[hx-memory] no msg file" >&2; exit 1; }
-first_line="$(awk '/^[[:space:]]*(#|$)/{next} {sub(/[[:space:]]+$/, ""); print; exit}' "$MSG_FILE")"
-allowed="${HX_COMMIT_TYPES:-feat fix docs style refactor perf test build ci chore revert release deps security}"
-pattern_types="$(printf '%s\n' "$allowed" | tr ',[:space:]' '\n' | sed '/^$/d' | sed 's/[][\\.^$*+?{}()|]/\\&/g' | paste -sd'|' -)"
-if [[ -z "$first_line" ]]; then
-  echo "[hx-memory] Empty commit message. Expected: [feat] subject" >&2; exit 1
-fi
-if [[ "$first_line" =~ ^\[($pattern_types)\][[:space:]][^[:space:]].* ]]; then
-  exit 0
-fi
-cat >&2 <<EOF
-[hx-memory] Invalid commit message:
-  $first_line
 
-Expected: [type] subject
-Allowed types: $allowed
-Examples:
-  [feat] add kernel ports
-  [fix] handle empty hook input
-Fix: git commit -m "[feat] describe the change"
-EOF
-exit 1
-HOOKEOF
-chmod 755 "$HOOK"
-echo "[hx-memory] commit-msg hook installed at $HOOK"
+install_hook() {
+  local name="$1" source="$2"
+  local hook
+  hook="$(git -C "$ROOT" rev-parse --git-path "hooks/$name")"
+  if [[ ! -f "$ROOT/$source" ]]; then
+    echo "[hx-memory] missing hook source: $source" >&2
+    return 1
+  fi
+  if [[ -e "$hook" ]] && [[ $FORCE = 0 ]] && ! grep -q "hx-memory managed $name hook" "$hook"; then
+    echo "[hx-memory] existing $name hook found; use --force to replace" >&2
+    return 1
+  fi
+  {
+    echo "#!/usr/bin/env bash"
+    echo "# hx-memory managed $name hook (source: $source; reinstall: bash scripts/install-commit-hook.sh --force)"
+    # 跳过源文件自带的 shebang, 避免出现两个 shebang。
+    tail -n +2 "$ROOT/$source"
+  } > "$hook"
+  chmod 755 "$hook"
+  echo "[hx-memory] $name hook installed at $hook"
+}
+
+install_hook commit-msg ".agents/hooks/check_commit_msg.sh"
+install_hook pre-commit ".agents/hooks/check_agent_notes.sh"
