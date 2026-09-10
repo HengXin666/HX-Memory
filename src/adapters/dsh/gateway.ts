@@ -53,11 +53,12 @@ declare module "@deepseek-ai/cordis" {
 }
 
 export class HxMemoryGateway extends TypertRemoteService {
-  constructor(
-    ctx: Context,
-    private readonly deps: HxMemoryGatewayDeps,
-  ) {
+  // 显式字段 + 赋值 (不用 TS 参数属性): Node strip-only 模式不支持, 子进程 import 时会崩。
+  private readonly deps: HxMemoryGatewayDeps;
+
+  constructor(ctx: Context, deps: HxMemoryGatewayDeps) {
     super(ctx, "hxMemory");
+    this.deps = deps;
   }
 
   @Remote("reviewQueue")

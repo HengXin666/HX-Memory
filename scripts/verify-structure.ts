@@ -22,8 +22,15 @@ import { join, relative, resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const SRC = join(ROOT, "src");
 
-/** 单文件行数上限。当前最大 1373 (file-store.ts); 设 1400 是"不许更差", 拆完应下调。 */
-const MAX_FILE_LINES = 1400;
+/**
+ * 单文件行数上限: 400 行。
+ *
+ * 依据: 这是**决策**而不是测量 —— DSH 那边没有 TS 行数限制 (他们手写的文件到 2441 行),
+ * 因此不存在"业界阈值"可抄。选 400 的理由是"纯逻辑文件在 400 行内足以表达一个职责":
+ * 超过它通常是两个职责被塞进了一个文件 (本仓库 file-store.ts 1373 行就是 5 个职责)。
+ * 前端 (.tsx / client 目录) 不在此约束内 —— 视图代码天然更长且难以按行数切分。
+ */
+const MAX_FILE_LINES = 400;
 /** 重复代码比例上限 (jscpd 实测当前 0.45%; 设 1% 留余量但不给劣化空间)。 */
 const MAX_DUPLICATION_PCT = 1.0;
 
@@ -40,9 +47,12 @@ function walk(dir: string): string[] {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
+      // client/ 是前端视图代码: 天然更长, 不适用 400 行约束 (见 MAX_FILE_LINES 注释)。
       if (entry.name === "client" || entry.name === "node_modules") continue;
       out.push(...walk(full));
     } else if (entry.name.endsWith(".ts")) {
+      // .tsx 与 client 下的文件是前端, 不受行数约束; 其余 .ts 一律受约束。
+      if (entry.name.endsWith(".tsx")) continue;
       out.push(full);
     }
   }
@@ -107,6 +117,26 @@ for (const fn of SINGLETON_FUNCS) {
     );
   } else if (relative(ROOT, holders[0]!) !== fn.owner) {
     violations.push(`单一事实源: ${fn.name} 的归属应是 ${fn.owner}, 实际在 ${relative(ROOT, holders[0]!)}`);
+  }
+}
+
+/**
+ * 3b) **禁用 TS 参数属性** (constructor(private x: T))。
+ *
+ * 为什么这是一条硬约束: 本仓库的测试与 host 会**子进程直接 import .ts 文件**
+ * (CLI、MCP stdio client、跨进程回放), 而 Node 的 strip-only 类型剥离模式不支持参数属性,
+ * 会抛 ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX。这个错误只在"子进程真的去 import"时才出现 ——
+ * tsc 与普通 vitest 都不会报, 因此必须靠静态检查兜住 (历史上已踩过两次)。
+ */
+const PARAM_PROPERTY = /constructor\s*\([^)]*\b(private|public|protected|readonly)\s+\w+\s*:/;
+for (const file of files) {
+  const text = readFileSync(file, "utf8");
+  const match = PARAM_PROPERTY.exec(text);
+  if (match) {
+    const line = text.slice(0, match.index).split("\n").length;
+    violations.push(
+      `参数属性: ${relative(ROOT, file)}:${line} 使用了 constructor(${match[1]} ...) —— Node strip-only 模式不支持, 子进程 import 时会崩; 请改成显式字段 + 赋值`,
+    );
   }
 }
 

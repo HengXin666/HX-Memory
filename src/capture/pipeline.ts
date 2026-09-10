@@ -17,10 +17,11 @@ export class CapturePipeline {
   private readonly hashes = new Set<string>();
   private readonly structurer: TurnStructurer;
 
-  constructor(
-    private readonly store: MemoryStore,
-    opts: PipelineOptions = {},
-  ) {
+  // 显式字段 + 赋值 (不用 TS 参数属性): Node strip-only 模式不支持, 子进程 import 时会崩。
+  private readonly store: MemoryStore;
+
+  constructor(store: MemoryStore, opts: PipelineOptions = {}) {
+    this.store = store;
     this.structurer = opts.structurer ?? heuristicStructurer();
   }
 

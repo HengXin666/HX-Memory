@@ -65,12 +65,23 @@ export interface GeneralizerOptions {
 }
 
 export class GeneralizerService implements Generalizer {
+  // 显式字段 + 赋值 (不用 TS 参数属性): Node strip-only 模式不支持, 子进程 import 时会崩。
+  private readonly store: MemoryStore;
+  private readonly reviewDir: string;
+  private readonly abstractor?: Abstractor;
+  private readonly options: GeneralizerOptions;
+
   constructor(
-    private readonly store: MemoryStore,
-    private readonly reviewDir: string,
-    private readonly abstractor?: Abstractor,
-    private readonly options: GeneralizerOptions = {},
-  ) {}
+    store: MemoryStore,
+    reviewDir: string,
+    abstractor?: Abstractor,
+    options: GeneralizerOptions = {},
+  ) {
+    this.store = store;
+    this.reviewDir = reviewDir;
+    this.abstractor = abstractor;
+    this.options = options;
+  }
 
   private heuristicRule(cluster: { theme: string; contents: string[] }): {
     rule: string;

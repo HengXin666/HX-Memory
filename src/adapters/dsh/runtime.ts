@@ -83,11 +83,16 @@ export class HxMemoryRuntime {
   /** 已触发但尚未结束的冲刷 (会话 dispose 后不再在 turns 里, flushAll 必须也能等到它们)。 */
   private readonly inflight = new Set<Promise<void>>();
 
-  constructor(
-    private readonly pipe: CapturePipeline,
-    private readonly settings: () => RuntimeSettings,
-    private readonly options: RuntimeOptions = {},
-  ) {}
+  // 显式字段 + 赋值 (不用 TS 参数属性): Node strip-only 模式不支持, 子进程 import 时会崩。
+  private readonly pipe: CapturePipeline;
+  private readonly settings: () => RuntimeSettings;
+  private readonly options: RuntimeOptions;
+
+  constructor(pipe: CapturePipeline, settings: () => RuntimeSettings, options: RuntimeOptions = {}) {
+    this.pipe = pipe;
+    this.settings = settings;
+    this.options = options;
+  }
 
   onSessionStart(session: SessionLike): void {
     this.turns.set(session.id, {

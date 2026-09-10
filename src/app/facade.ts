@@ -9,150 +9,44 @@
 //   recall    = 混合检索 + 格式化注入文本 (预算与降级由检索器给出)
 //   revise/forget/link/history = 治理与审计入口 (撤回是 shadow, 永不物理删除)
 //   stats     = 给面板/CLI 的可观测面
-import type {
-  MemoryEntry,
-  MemoryEntryInput,
-  MemoryKind,
-  MemoryScope,
-  MemoryStatus,
-  Query,
-  Relation,
-  RelationType,
-} from "../kernel/types.ts";
-import type { Awaitable, RetrievalHit, RetrievalRequest, SyncRetriever } from "../kernel/ports.ts";
+import type { MemoryEntry, Relation, RelationType } from "../kernel/types.ts";
+import type { RetrievalRequest, SyncRetriever } from "../kernel/ports.ts";
 import { expandEvolutionChain } from "../kernel/evolution.ts";
-import { normalizeFingerprint } from "../evolution/associate.ts";
+import { buildDraft, adjudicateNeighbors, resolveNeighbors } from "./neighbors.ts";
+import { formatRetrieval } from "./format.ts";
+import { aggregateStats } from "./stats.ts";
 import { decideEvolution } from "../evolution/evolve.ts";
-import {
-  heuristicAdjudicator,
-  type Adjudication,
-  type Adjudicator,
-} from "../evolution/adjudicator.ts";
+import { heuristicAdjudicator, type Adjudicator } from "../evolution/adjudicator.ts";
 import { heuristicDigestBuilder, type Digest, type DigestBuilder } from "./digest.ts";
 import { planStructuralLinks } from "../evolution/link.ts";
-import { hardConflict } from "../evolution/evolve.ts";
 import { semanticScores } from "../retrieval/embedding.ts";
 import { selectAlwaysOn } from "../trigger/policy.ts";
 import { estimateTokens } from "../kernel/ranking.ts";
 import type { Embedder } from "../kernel/ports.ts";
 
-/** Facade 对存储的最小要求 (FileBackend/SQLite/远端实现都能满足)。 */
-export interface FacadeStore {
-  add(entry: MemoryEntryInput): Awaitable<MemoryEntry>;
-  get(id: string): Awaitable<MemoryEntry | null>;
-  update(id: string, patch: Partial<MemoryEntry>): Awaitable<void>;
-  remove(id: string): Awaitable<void>;
-  all(): Awaitable<MemoryEntry[]>;
-  query(q: Query): Awaitable<MemoryEntry[]>;
-  traverse(fromId: string, relationType: string): Awaitable<MemoryEntry[]>;
-  /** 全文检索面 (近邻裁决与"相关内容"用)。 */
-  searchText(text: string, limit?: number): MemoryEntry[];
-  /** 可选: "最近沉淀"视图 (面板用); 缺省时 Facade 用 all() 自行排序。 */
-  recent?(limit?: number): Awaitable<MemoryEntry[]>;
-  /**
-   * 可选: always-on 选择所需的廉价投影 (单条 SQL, 不 hydrate)。
-   * 有它时 alwaysOn() 走快路径 —— 这条路径在预步每轮都跑, 用 all() 会白付 hydrate 成本。
-   */
-  entrySummaries?(): Awaitable<
-    Array<
-      Pick<
-        MemoryEntry,
-        | "id"
-        | "kind"
-        | "content"
-        | "scope"
-        | "project"
-        | "importance"
-        | "status"
-        | "confirmedBy"
-        | "confirmedAt"
-      >
-    >
-  >;
-}
+// 公开类型面在 facade-types.ts (契约与实现分开: 适配层只依赖类型文件)。
+export { formatRetrieval } from "./format.ts";
 
-export interface RememberInput {
-  content: string;
-  kind?: MemoryKind;
-  project?: string;
-  scope?: MemoryScope;
-  /** 溯源: 会话 id / 文件 / URL; 缺省 "facade"。 */
-  source?: string;
-  tags?: string[];
-  entities?: string[];
-  importance?: number;
-  confidence?: number;
-  /** 血缘: 本条由哪些 episode 抽取而来 (支撑抽取级重建)。 */
-  derivedFrom?: string[];
-  validAt?: string;
-  relations?: Relation[];
-}
-
-export type RememberDecision =
-  | "added"
-  /** 近等价重述: 不重复落盘, 强化老条目并合并标签/实体。 */
-  | "duplicate"
-  /** 与老记忆相关: 落盘 + 自动建 relates 边。 */
-  | "linked"
-  /** 显式更新 (改为/不再/废弃...): 新条目 supersedes 旧的, 旧的置 superseded (不删除)。 */
-  | "superseded"
-  /** 数字/极性矛盾且无更新信号: 两边都保留 + 双向 contradicts 边 (等人/LLM 裁决)。 */
-  | "contradicted";
-
-export interface RememberResult {
-  entry: MemoryEntry;
-  decision: RememberDecision;
-  /** duplicate/link 的目标条目。 */
-  targetId?: string;
-  similarity?: number;
-}
-
-export interface RecallResponse {
-  hits: RetrievalHit[];
-  /** 已格式化的注入块 (空串 = 不注入)。 */
-  injected: string;
-  tokens: number;
-  degraded: string[];
-}
-
-export interface ReinforceReport {
-  reinforced: string[];
-  skipped: Array<{ id: string; reason: "not-active" | "coalesced" }>;
-}
-
-export interface MemoryStats {
-  total: number;
-  byKind: Record<string, number>;
-  byStatus: Record<string, number>;
-  projects: string[];
-  rules: number;
-  /** 引擎自述 (索引可用性/降级原因), 有则带上。 */
-  index?: unknown;
-}
-
-export interface FacadeOptions {
-  /** 裁决用的近邻数 (0 = 关闭去重与自动建边)。 */
-  neighborLimit?: number;
-  /** 注入块的标题。 */
-  injectionTitle?: string;
-  now?: () => string;
-  /** 可选嵌入器: 有则启用语义兜底去重 (换说法也能认出重复)。 */
-  embedder?: Embedder;
-  /** 语义判重的阈值 (默认 0.95; 越高越保守)。 */
-  semanticDuplicateFloor?: number;
-  /** 关闭自动演化 (取代/冲突标记): 只做去重与建边。可传函数以实时读取设置。 */
-  autoEvolve?: boolean | (() => boolean);
-  /** 单次写入最多建几条结构关联边 (默认 3; 0 = 关闭)。 */
-  maxStructuralLinks?: number;
-  /**
-   * 冲突裁决器 (可选): 对"数字/极性矛盾但没有显式更新信号"的邻居做裁决。
-   * 默认用确定性启发式 (heuristicAdjudicator); 宿主有模型时可换成 LLM 实现。
-   * 语义: supersede → 取代; duplicate → 强化; keep-both → 两条并存 + contradicts 边。
-   */
-  adjudicator?: Adjudicator;
-  /** 摘要构建器 (可选): 默认确定性启发式; 宿主有模型时可换成 LLM 润色版。 */
-  digestBuilder?: DigestBuilder;
-}
+export type {
+  FacadeStore,
+  FacadeOptions,
+  RecallResponse,
+  ReinforceReport,
+  RememberDecision,
+  RememberInput,
+  RememberResult,
+  MemoryStats,
+} from "./facade-types.ts";
+// re-export 不会把类型引入本文件作用域: 实现内部用到的那几个必须单独 import。
+import type {
+  FacadeOptions,
+  FacadeStore,
+  MemoryStats,
+  RecallResponse,
+  ReinforceReport,
+  RememberInput,
+  RememberResult,
+} from "./facade-types.ts";
 
 /**
  * 唯一对外 API。**所有**宿主 (DSH 工具 / MCP / CLI / HTTP) 都只调这里。
@@ -199,28 +93,22 @@ export class MemoryFacade {
     const content = input.content.trim();
     if (!content) throw new Error("remember: content is required");
     const at = this.now();
-    const scope: MemoryScope = input.scope ?? (input.project ? "project" : "agent");
-    const kind: MemoryKind = input.kind ?? "fact";
-    const draft: MemoryEntry = {
-      id: "draft",
-      kind,
-      content,
-      source: input.source ?? "facade",
-      scope,
-      ts: { validAt: input.validAt ?? at, assertedAt: at },
-      ...(input.project ? { project: input.project } : {}),
-      ...(input.tags?.length ? { tags: input.tags } : {}),
-      ...(input.entities?.length ? { entities: input.entities } : {}),
-      ...(input.importance !== undefined ? { importance: input.importance } : {}),
-      ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
-    };
+    const { draft, scope, kind } = buildDraft(input, content, at, () => "draft");
 
-    const neighbors = await this.neighborsFor(draft);
+    const neighbors = await resolveNeighbors(
+      { store: this.store, retriever: this.retriever, neighborLimit: this.neighborLimit },
+      draft,
+    );
     // 可选语义兜底: 一次批量嵌入 (候选 + 邻居) → 余弦表。没有 Embedder 时完全不产生开销。
     const semantic = this.embedder ? await semanticScores(this.embedder, draft, neighbors) : null;
     // 冲突裁决是异步的 (LLM 实现要调模型), 而 decideEvolution 是纯同步逻辑。
     // 因此在这里**预计算**: 只对"同类且硬冲突"的邻居跑裁决 (其余邻居不需要裁决)。
-    const adjudications = await this.adjudicateNeighbors(draft, neighbors);
+    const adjudications = await adjudicateNeighbors(
+      this.adjudicator,
+      this.autoEvolve(),
+      draft,
+      neighbors,
+    );
     const decision = decideEvolution(draft, neighbors, {
       ...(adjudications.size
         ? { adjudication: (targetId: string) => adjudications.get(targetId) }
@@ -477,112 +365,13 @@ export class MemoryFacade {
     return report;
   }
 
-  /** 可观测面 (面板/CLI)。 */
+  /** 可观测面 (面板/CLI); 分类口径在 stats.ts (纯函数, 可单独测)。 */
   async stats(): Promise<MemoryStats> {
-    const all = await this.store.all();
-    const byKind: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
-    const projects = new Set<string>();
-    let rules = 0;
-    for (const e of all) {
-      byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
-      const status: MemoryStatus = e.status ?? "active";
-      byStatus[status] = (byStatus[status] ?? 0) + 1;
-      if (e.project) projects.add(e.project);
-      if (e.kind === "rule" && e.confirmedBy && e.confirmedAt) rules++;
-    }
+    const aggregated = aggregateStats(await this.store.all());
     return {
-      total: all.length,
-      byKind,
-      byStatus,
-      projects: [...projects].sort(),
-      rules,
+      ...aggregated,
       ...(this.indexStatus ? { index: this.indexStatus() } : {}),
     };
-  }
-
-  /**
-   * 内部: 对候选与近邻做冲突预裁决 (只处理"同 kind 且硬冲突"的那些)。
-   * 为什么只挑硬冲突: 裁决器是为"矛盾但没有显式更新信号"准备的; 其余情形由
-   * duplicate/link/supersede 的既有规则直接决定, 多跑一次裁决纯属浪费 (还可能引入噪声)。
-   * 失败时静默返回空表 —— 裁决是增强, 不该让一次写入失败。
-   */
-  private async adjudicateNeighbors(
-    candidate: MemoryEntry,
-    neighbors: readonly MemoryEntry[],
-  ): Promise<Map<string, Adjudication>> {
-    const out = new Map<string, Adjudication>();
-    if (!this.autoEvolve()) return out;
-    for (const target of neighbors) {
-      if ((target.status ?? "active") !== "active") continue;
-      if (target.kind !== candidate.kind) continue;
-      if (!hardConflict(candidate.content, target.content)) continue;
-      try {
-        out.set(
-          target.id,
-          await this.adjudicator.adjudicate({
-            candidate: {
-              kind: candidate.kind,
-              content: candidate.content,
-              ...(candidate.importance === undefined ? {} : { importance: candidate.importance }),
-              ...(candidate.confidence === undefined ? {} : { confidence: candidate.confidence }),
-              ts: candidate.ts,
-            },
-            target: {
-              id: target.id,
-              kind: target.kind,
-              content: target.content,
-              ...(target.importance === undefined ? {} : { importance: target.importance }),
-              ...(target.confidence === undefined ? {} : { confidence: target.confidence }),
-              ts: target.ts,
-            },
-          }),
-        );
-      } catch {
-        // 裁决失败 → 该邻居不预裁决, decideEvolution 会退回"标记冲突" (安全默认)。
-      }
-    }
-    return out;
-  }
-
-  /**
-   * 内部: 近邻候选 (裁决输入)。三路合并, 因为三种裁决需要不同的候选面:
-   *   1. 文本检索 → 近义重述 / 冲突 (同种类);
-   *   2. 标签共现 → 结构关联 (共享标签但不一定字面相似);
-   *   3. 全局规则 → 与规则冲突必须能被发现 (规则本身绝不被机器改)。
-   * 内容太短时不查 (避免和一堆短条目误判重复)。
-   */
-  private async neighborsFor(draft: MemoryEntry): Promise<MemoryEntry[]> {
-    if (this.neighborLimit <= 0) return [];
-    if (normalizeFingerprint(draft.content).length < 4) return [];
-    const found = new Map<string, MemoryEntry>();
-    const collect = (entries: readonly MemoryEntry[]): void => {
-      for (const entry of entries) {
-        if (entry.id === draft.id) continue;
-        if (!found.has(entry.id)) found.set(entry.id, entry);
-      }
-    };
-    // 裁决用的检索: 关掉图扩展、向量通道与去冗余 —— 近邻裁决只要"字面最像的几条",
-    // 语义相似度由下面的 embedding 余弦单独提供 (semanticScores), 不需要走向量召回通道。
-    // 这样每次写入就不会触发"向量索引全量对账"(实测这是写入路径的主要开销)。
-    collect(
-      this.retriever
-        .retrieveSync({
-          text: draft.content,
-          limit: this.neighborLimit,
-          kinds: [draft.kind],
-          expand: { graph: 0 },
-          channels: { vector: { enabled: false }, graph: { enabled: false } },
-          ...(draft.project ? { scope: { project: draft.project } } : {}),
-        })
-        .hits.map((h) => h.entry),
-    );
-    for (const tag of draft.tags ?? []) {
-      collect(await this.store.query({ tag, limit: this.neighborLimit }));
-    }
-    collect(await this.store.query({ kind: "rule", scope: "global", limit: 5 }));
-    // 上限: 裁决是 O(邻居) 的, 不能让候选面无限膨胀。
-    return [...found.values()].slice(0, Math.max(12, this.neighborLimit * 3));
   }
 
   /** 可选: 审计钩子 (撤回理由等)。缺省静默 —— 审计不该拖垮调用方。 */
@@ -597,16 +386,4 @@ export class MemoryFacade {
 
   private audit?: (event: string, payload: Record<string, unknown>) => void;
   private indexStatus?: () => unknown;
-}
-
-/** 注入块格式化 (与 v1 的注入风格一致, 便于人读与 diff)。 */
-export function formatRetrieval(hits: readonly RetrievalHit[], title: string): string {
-  if (!hits.length) return "";
-  const lines = ["【" + title + "】"];
-  for (const hit of hits) {
-    const e = hit.entry;
-    const prefix = e.kind === "rule" ? "[规则] " : "";
-    lines.push("- " + prefix + "[" + e.id + "] " + e.content);
-  }
-  return lines.join("\n");
 }
