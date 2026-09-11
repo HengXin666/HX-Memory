@@ -30,6 +30,7 @@ const DDL = `
         expires_at TEXT,
         derived_from TEXT,
         merged_from TEXT,
+        feedback TEXT,
         file TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS relations (
@@ -64,6 +65,7 @@ const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ["expires_at", "ALTER TABLE memories ADD COLUMN expires_at TEXT"],
   ["derived_from", "ALTER TABLE memories ADD COLUMN derived_from TEXT"],
   ["merged_from", "ALTER TABLE memories ADD COLUMN merged_from TEXT"],
+  ["feedback", "ALTER TABLE memories ADD COLUMN feedback TEXT"],
 ];
 
 export function initSchema(db: DatabaseSync): void {

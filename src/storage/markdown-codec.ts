@@ -83,6 +83,7 @@ export function entryToMarkdown(e: MemoryEntry, unknown: readonly string[] = [])
   if (e.expiresAt) lines.push("expires_at: " + e.expiresAt);
   if (e.derivedFrom?.length) lines.push("derived_from: " + JSON.stringify(e.derivedFrom));
   if (e.mergedFrom?.length) lines.push("merged_from: " + JSON.stringify(e.mergedFrom));
+  if (e.feedback) lines.push("feedback: " + JSON.stringify(e.feedback));
   // relations 也放 frontmatter (JSON): 正文保持纯净, 避免"正文以 ## relations 开头"被误解析。
   if (e.relations?.length) lines.push("relations: " + JSON.stringify(e.relations));
   // 陌生键原样附在末尾: 位置变了但内容与语义不变 (键级 frontmatter 无顺序语义)。

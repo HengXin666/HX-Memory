@@ -4,6 +4,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 // 端口缺口已补 (MemoryOperations.recent): 不再需要 Pick<FileBackend> 这种"借具体类要能力"的写法。
+import { badCount, qualityFactor } from "../../kernel/feedback.ts";
 import type { MemoryOperations } from "../../kernel/ports.ts";
 import type { MemoryFacade } from "../../app/facade.ts";
 import type { BindingStore } from "../../bindings/store.ts";
@@ -53,6 +54,19 @@ export interface HxMemoryGatewayDeps {
   currentProject?: () => string | undefined;
 }
 
+/** 一条被 agent 标注过 (负面) 的记忆 —— 面板展示 "bad / 曝光", 让拖后腿的条目可查。 */
+export interface FlaggedMemoryView {
+  id: string;
+  kind: string;
+  content: string;
+  irrelevant: number;
+  wrong: number;
+  /** 曝光次数 (reinforcement): 阈值的分母。 */
+  exposure: number;
+  /** 当前质量因子 0..1 (排序实际用的值)。 */
+  quality: number;
+}
+
 export interface ReviewQueueView {
   id: string;
   status: ProposalStatus;
@@ -82,6 +96,31 @@ export class HxMemoryGateway extends TypertRemoteService {
   @Remote("reviewQueue")
   reviewQueue(status: ProposalStatus): ReviewQueueView[] {
     return this.deps.generalizer.listQueue(status).map(toView);
+  }
+
+  /**
+   * 被 agent 负面标注过的记忆 (按坏评数倒序)。
+   * 为什么需要: 标注会**降权排序**并可能产出人审提议 —— 这两件事都必须可解释,
+   * 否则"这条为什么排到后面了"无从回答 (治理动作不能是黑箱)。
+   */
+  @Remote("flaggedMemories")
+  async flaggedMemories(limit?: number): Promise<FlaggedMemoryView[]> {
+    // 走 facade.recent 而不是 store.all: 可见性 (shadow/merged/expired 默认隐藏)
+    // 与排序口径只有一处 —— 面板不该看到已撤回的条目出现在"被标注"列表里。
+    const rows = this.deps.facade ? await this.deps.facade.recent(500) : [];
+    return rows
+      .filter((e) => e.feedback && badCount(e.feedback) > 0)
+      .map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        content: e.content.slice(0, 200),
+        irrelevant: e.feedback?.irrelevant ?? 0,
+        wrong: e.feedback?.wrong ?? 0,
+        exposure: e.reinforcement ?? 0,
+        quality: qualityFactor(e.feedback, e.reinforcement ?? 0),
+      }))
+      .sort((a, b) => b.irrelevant + b.wrong - (a.irrelevant + a.wrong))
+      .slice(0, Math.min(100, Math.max(1, limit ?? 50)));
   }
 
   /**

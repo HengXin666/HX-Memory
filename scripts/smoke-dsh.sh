@@ -12,7 +12,8 @@
 #   7. 设置命名空间真的注册到宿主 (installSection/register 双路径 + 双传输形态);
 #   8. 绑定真的落盘到 bindings.json (truth-in-files);
 #   9. 客户端 bundle 注册的模块 id == boot manifest 行 id == 包名;
-#  10. normalizeMemory 返回**干跑报告**且真的挂上了 (主动整理入口), contradictions 可列矛盾。
+#  10. normalizeMemory 返回**干跑报告**且真的挂上了 (主动整理入口), contradictions 可列矛盾;
+#  11. flaggedMemories 返回数组 (agent 负面标注面: 空数组是正常且期望的)。
 #
 # 版本兼容: 0.1.1 的 /api 无认证; 0.1.2+ 要求浏览器会话 cookie (URL 带 ?token=,
 # 先访问一次 / 换取 authority 绑定的签名 cookie)。全部 HTTP 断言在 Node 侧

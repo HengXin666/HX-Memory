@@ -84,6 +84,7 @@ const SHAPE_KEYS = [
   "expiresAt",
   "derivedFrom",
   "mergedFrom",
+  "feedback",
   "confirmedBy",
   "confirmedAt",
   "structured",

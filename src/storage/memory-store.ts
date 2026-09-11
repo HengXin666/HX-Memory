@@ -104,6 +104,7 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
       ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
       ...(input.derivedFrom?.length ? { derivedFrom: [...input.derivedFrom] } : {}),
       ...(input.mergedFrom?.length ? { mergedFrom: [...input.mergedFrom] } : {}),
+      ...(input.feedback ? { feedback: { ...input.feedback } } : {}),
     };
     if (entry.kind === "rule" && !(entry.confirmedBy && entry.confirmedAt)) {
       throw new Error("rule entries must carry a confirmation record (confirmedBy/confirmedAt)");

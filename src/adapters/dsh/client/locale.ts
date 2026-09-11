@@ -79,6 +79,13 @@ export const reviewEn = {
   tabProposals: "Proposals",
   tabRecent: "Recently captured",
   tabInvocations: "AI invocations",
+  tabFlagged: "Flagged",
+  flaggedEmpty: "No memories flagged by the agent yet. Empty here is the good case - the agent only flags memories that were clearly irrelevant or factually wrong.",
+  flaggedTitle: "Memories the agent flagged as bad (flags lower ranking weight; content problems enter the human review queue)",
+  flaggedBad: "bad",
+  flaggedExposure: "exposure",
+  flaggedQuality: "quality",
+
   recentEmpty:
     "Nothing captured yet. It fills automatically as you talk (pitfalls, decisions, preferences).",
   recentKeep: "Keep",
@@ -198,6 +205,13 @@ export const reviewZh: Locale = {
   tabProposals: "推广提议",
   tabRecent: "新沉淀",
   tabInvocations: "调用记录",
+  tabFlagged: "标注记录",
+  flaggedEmpty: "还没有被 agent 标坏的记忆。这里**空着是好事** —— agent 只在记忆明显不相关或与事实不符时才会标注。",
+  flaggedTitle: "被 agent 标注为有问题的记忆 (标注会降低排序权重, 内容问题会进入人审队列)",
+  flaggedBad: "坏评",
+  flaggedExposure: "曝光",
+  flaggedQuality: "质量因子",
+
   recentEmpty: "还没有自动沉淀。正常对话 (踩坑/决策/偏好) 会自动填到这里。",
   recentKeep: "保留",
   recentDelete: "删除",

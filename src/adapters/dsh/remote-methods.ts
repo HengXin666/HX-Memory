@@ -22,6 +22,8 @@ export const HXMEM_REMOTE_METHODS = [
   "normalizeMemory",
   // 待裁决的矛盾集合: 此前 keep-both 只写边、没有任何入口能列出来。
   "contradictions",
+  // 被 agent 负面标注过的记忆 (标注会降权排序, 必须可解释)。
+  "flaggedMemories",
 ] as const;
 
 export type HxMemoryRemoteMethod = (typeof HXMEM_REMOTE_METHODS)[number];

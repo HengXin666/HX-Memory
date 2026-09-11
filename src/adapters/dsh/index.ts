@@ -102,6 +102,9 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       ? new ProjectedVectorIndex({ embedder: httpEmbedder })
       : new LinearVectorIndex({ embedder: localEmbedder }),
   });
+  // 推广服务实例在下方构造 (依赖 reviewDir 与模型); Facade 需要它的"人审提议"出口，
+  // 但不需要在构造时就有 —— 用一个持有器打破"组装顺序"这个隐式契约 (const, 只填空一次)。
+  const generalizerHolder: { current?: GeneralizerService } = {};
   // 使用层唯一 API: DSH 的工具/召回都经由它, 与 MCP/CLI 共用同一套语义 (ADR-021)。
   const facade = new MemoryFacade(
     { store, retriever },
@@ -110,6 +113,15 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     { embedder: localEmbedder, autoEvolve: () => settings().autoEvolve },
   );
   facade.withIndexStatus(() => store.ftsStatus());
+  // 治理出口延后接线 (generalizer 建在下方, 依赖 reviewDir 与模型) ——
+  // 坏评超标的记忆据此产出人审提议; 不接线则标注照常落盘, 只是不产生提议。
+  facade.withGeneralizer({
+    enqueueProposal: (input) => {
+      const g = generalizerHolder.current;
+      if (!g) throw new Error("hx-memory: generalizer not mounted yet");
+      return g.enqueueProposal(input);
+    },
+  });
 
   // 触发通道缓存 (always-on 保底 + 意图召回叠加); 失效策略见 trigger-cache.ts。
   const triggerCache = createTriggerCache({
@@ -208,6 +220,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       },
     },
   );
+  generalizerHolder.current = generalizer;
   const recall = new RecallService((q) => store.query(q), retriever);
 
   // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载。

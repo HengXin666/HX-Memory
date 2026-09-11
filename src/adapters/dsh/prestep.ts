@@ -13,7 +13,11 @@
 // (session-events.ts: 版本无关 + 按 surface 过滤) 里本插件 source 的注入。
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Binder } from "../../kernel/binder.ts";
-import { MEMORY_BLOCK_HEADING, memoryFrameNote } from "../../kernel/format-frame.ts";
+import {
+  MEMORY_BLOCK_HEADING,
+  memoryEntryHint,
+  memoryFrameNote,
+} from "../../kernel/format-frame.ts";
 import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { parseInjectedIds } from "../../kernel/injection-format.ts";
 import { sessionEvents } from "./session-events.js";
@@ -160,8 +164,16 @@ export function makePreStepHandler(
     if (!bound) return decision;
     // 框架句在最前: 让模型知道这是"检索出来的证据", 并声明不覆盖当前指令 (对齐 DSH 的
     // workspace-instruction 做法)。硬约束: 框架句必须与记忆内容同块, 否则"证据"语义会丢。
+    // 末尾追加可操作入口: "不适用就换词再查"。它必须与记忆内容同块 ——
+    // 模型在收到检索结果时才最可能想到检索工具 (实测没有它时 memory_search 调用率 0/7440)。
     const injectedText =
-      MEMORY_BLOCK_HEADING + "\n" + memoryFrameNote(language()) + "\n" + bound;
+      MEMORY_BLOCK_HEADING +
+      "\n" +
+      memoryFrameNote(language()) +
+      "\n" +
+      bound +
+      "\n" +
+      memoryEntryHint(language());
     // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
     const msgs = decision.messages as unknown[];
     if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;

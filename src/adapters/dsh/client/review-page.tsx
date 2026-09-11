@@ -39,6 +39,17 @@ interface RecentView {
   tags?: string[];
 }
 
+/** 被 agent 负面标注过的记忆 (bad/exposure/quality 三件都要可见, 降权才可解释)。 */
+interface FlaggedView {
+  id: string;
+  kind: string;
+  content: string;
+  irrelevant: number;
+  wrong: number;
+  exposure: number;
+  quality: number;
+}
+
 interface InvocationView {
   task: string;
   prompt: string;
@@ -128,8 +139,9 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<HitView[]>([]);
   const [searched, setSearched] = useState(false);
-  const [tab, setTab] = useState<"props" | "recent" | "inv">("props");
+  const [tab, setTab] = useState<"props" | "recent" | "inv" | "flagged">("props");
   const [inv, setInv] = useState<InvocationView[]>([]);
+  const [flagged, setFlagged] = useState<FlaggedView[]>([]);
   const [recent, setRecent] = useState<RecentView[]>([]);
   const [recentMsg, setRecentMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -296,6 +308,19 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     if (tab === "recent") void refreshRecent();
   }, [tab, refreshRecent]);
 
+  const refreshFlagged = useCallback(async () => {
+    try {
+      const list = await callHxMemory<FlaggedView[]>(rpc, "flaggedMemories", { limit: 50 });
+      setFlagged(list ?? []);
+    } catch {
+      setFlagged([]);
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    if (tab === "flagged") void refreshFlagged();
+  }, [tab, refreshFlagged]);
+
   const delRecent = async (id: string) => {
     setRecentMsg("");
     try {
@@ -342,7 +367,38 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
         >
           {t("tabInvocations")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "flagged"}
+          className={tab === "flagged" ? "tab on" : "tab"}
+          onClick={() => setTab("flagged")}
+        >
+          {t("tabFlagged")}
+        </button>
       </div>
+
+      {tab === "flagged" ? (
+        <section className="pane">
+          <h3>{t("flaggedTitle")}</h3>
+          {flagged.length === 0 ? (
+            <div className="empty">{t("flaggedEmpty")}</div>
+          ) : (
+            <div className="list">
+              {flagged.map((v) => (
+                <div className="row" key={v.id}>
+                  <span className="badge rejected">{t("flaggedBad")} {v.irrelevant + v.wrong}</span>
+                  <span className="content">{v.content}</span>
+                  <span className="meta">
+                    [{v.kind}] {v.id} · {t("flaggedExposure")} {v.exposure} ·{" "}
+                    {t("flaggedQuality")} {v.quality.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {tab === "inv" ? (
         <section className="pane">

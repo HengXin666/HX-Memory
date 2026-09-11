@@ -63,10 +63,12 @@ describe("MCP HTTP 传输", () => {
     });
   });
 
-  it("tools/list 暴露六个工具, 且每个都有 schema", async () => {
+  it("tools/list 暴露 MCP_TOOLS 声明的全部工具, 且每个都有 schema", async () => {
     const res = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     const tools = res.result.tools as Array<{ name: string; inputSchema: unknown }>;
-    expect(tools.length).toBe(6);
+    // 断言与单一事实源一致, 而不是写死数字 —— 加工具时这条断言不该失败
+    // (它要证明的是"服务端暴露的就是 MCP_TOOLS 声明的那一集")。
+    expect(tools.length).toBe(MCP_TOOLS.length);
     expect(tools.map((t) => t.name).sort()).toEqual(MCP_TOOLS.map((t) => t.name).sort());
     for (const tool of tools) expect(tool.inputSchema).toBeTruthy();
   });

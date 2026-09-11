@@ -36,8 +36,8 @@ export class IndexWriter {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO memories (id, kind, content, source, scope, valid_at, asserted_at, status, confirmed_by, confirmed_at, project, structured,
-         entities, importance, confidence, reinforcement, last_hit_at, expires_at, derived_from, merged_from, file)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         entities, importance, confidence, reinforcement, last_hit_at, expires_at, derived_from, merged_from, feedback, file)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         e.id,
@@ -60,6 +60,7 @@ export class IndexWriter {
         e.expiresAt ?? null,
         e.derivedFrom?.length ? JSON.stringify(e.derivedFrom) : null,
         e.mergedFrom?.length ? JSON.stringify(e.mergedFrom) : null,
+        e.feedback ? JSON.stringify(e.feedback) : null,
         file,
       );
     for (const rel of e.relations ?? []) {

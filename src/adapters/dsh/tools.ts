@@ -141,6 +141,62 @@ export function registerMemoryTools(ctx: ToolRegistryContext, deps: MemoryToolDe
     ),
   );
 
+  // agent 对召回质量的**负面**标注。刻意做成独立工具而不是折进 memory_save:
+  // 只有独立描述才能完整承载"可选、只标坏的、绝大多数情况不需要调用"这条原则 ——
+  // 而这条原则是防"义务感噪声"的关键 (逼模型逐条表态会换来编造的评价)。
+  disposers.push(
+    ctx.tools.register(
+      defineTool({
+        name: "memory_flag",
+        description: [
+          "OPTIONAL, and rarely needed: flag a memory you just saw as BAD.",
+          "Use it ONLY when a result was clearly irrelevant, or its content is wrong/outdated.",
+          "There is no need to flag memories that were useful, and most searches need no flagging at all -",
+          "silence is the normal, expected outcome. If a memory was merely incomplete, refine the query instead.",
+        ].join(" "),
+        parameters: {
+          id: {
+            type: "string",
+            required: true,
+            description: "Memory id to flag (the [id] shown in search/injection results).",
+          },
+          reason: {
+            type: "string",
+            required: true,
+            description: "irrelevant = not related to the task; wrong = content is incorrect or outdated.",
+          },
+          note: { type: "string", description: "Optional short explanation." },
+        },
+        async execute(args) {
+          const id = String(args.id || "").trim();
+          if (!id) return "Error: id is required.";
+          const reason = String(args.reason || "").trim();
+          if (reason !== "irrelevant" && reason !== "wrong") {
+            return "Error: reason must be irrelevant or wrong.";
+          }
+          if (!deps.facade) return "Error: memory facade unavailable.";
+          const note = String(args.note || "").trim();
+          const result = await deps.facade.flagRecall(id, reason, note || undefined);
+          if (!result.ok) return "Error: " + (result.error ?? "flag failed") + " (" + id + ")";
+          return (
+            "Flagged " +
+            id +
+            " as " +
+            reason +
+            ". Thanks - it will be de-prioritized, and content problems enter the human review queue."
+          );
+        },
+        output: { schema: { type: "string" }, render: (_a, v) => [{ type: "text", text: v }] },
+        presentCall: (args) => ({
+          card: "generic",
+          kind: "other",
+          title: "memory_flag: " + args.reason + " " + args.id,
+          rawInput: args,
+        }),
+      }),
+    ),
+  );
+
   disposers.push(
     ctx.tools.register(
       defineTool({

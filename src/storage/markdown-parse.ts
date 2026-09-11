@@ -18,6 +18,7 @@ import { readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import type { MemoryEntry, MemoryKind, MemoryScope, MemoryStatus, Relation } from "../kernel/types.ts";
 import { ID_PATTERN, KINDS, SCOPES, STATUSES, isIso, isRelation } from "./entry-normalize.ts";
+import { normalizeFeedback } from "../kernel/feedback.ts";
 import { frontmatterFields } from "./frontmatter.ts";
 import { readFileParts, unescapeBody } from "./markdown-codec.ts";
 
@@ -145,6 +146,7 @@ export function parseSingleBlock(
   const expiresRaw = field("expires_at");
   const derivedFromRaw = field("derived_from");
   const mergedFromRaw = field("merged_from");
+  const feedbackRaw = field("feedback");
   // format 标记: 新文件一定带 format → 正文永远不被当作元数据扫描;
   // 旧文件 (无标记) 才允许走 "## relations" 兼容分支。
   const format = field("format") === undefined ? undefined : Number(field("format"));
@@ -219,6 +221,7 @@ export function parseSingleBlock(
   const reinforcement = parseOptionalNumber(reinforcementRaw, "reinforcement", id, skipped);
   const lastHitAt = parseOptionalIso(lastHitRaw, "last_hit_at", id, skipped);
   const expiresAt = parseOptionalIso(expiresRaw, "expires_at", id, skipped);
+  const feedback = parseRecallFeedback(feedbackRaw, id, skipped);
 
   return {
     id,
@@ -241,8 +244,29 @@ export function parseSingleBlock(
     ...(expiresAt === undefined ? {} : { expiresAt }),
     ...(derivedFrom === undefined ? {} : { derivedFrom }),
     ...(mergedFrom === undefined ? {} : { mergedFrom }),
+    ...(feedback === undefined ? {} : { feedback }),
     tags: parseTags(tagsRaw),
   };
+}
+
+
+/** 解析 feedback frontmatter: 坏值只丢该字段并记 warning (不让整条记忆消失)。 */
+function parseRecallFeedback(
+  raw: string | undefined,
+  id: string,
+  skipped?: string[],
+): MemoryEntry["feedback"] {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    skipped?.push("invalid feedback JSON for " + id);
+    return undefined;
+  }
+  const normalized = normalizeFeedback(parsed);
+  if (normalized === undefined) skipped?.push("empty feedback for " + id);
+  return normalized;
 }
 
 /** 从目录递归收集 .md 文件 (路径拼接与遍历都在这里, 调用方不必自己拼)。 */

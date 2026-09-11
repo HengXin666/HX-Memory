@@ -7,6 +7,7 @@
 // 拆出来的直接收益: file-store.ts 从 1373 行降到可控规模, 而"什么合法"这条规则只有一处。
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { normalizeFeedback } from "../kernel/feedback.ts";
 import type {
   MemoryEntry,
   MemoryEntryInput,
@@ -223,6 +224,8 @@ export function normalizeEntry(input: MemoryEntryInput & { id: string }): Memory
   if (derivedFrom) entry.derivedFrom = derivedFrom;
   const mergedFrom = stringList(input.mergedFrom);
   if (mergedFrom) entry.mergedFrom = mergedFrom;
+  const feedback = normalizeFeedback(input.feedback);
+  if (feedback !== undefined) entry.feedback = feedback;
   if (input.relations?.length) {
     // fail-closed: 非法关系不能静默丢弃 (否则索引与真相都少一条链, 且无人知道)。
     entry.relations = input.relations.map((r) => {

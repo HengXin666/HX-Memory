@@ -22,6 +22,14 @@ import { planStructuralLinks } from "../evolution/link.ts";
 import { semanticScores } from "../retrieval/embedding.ts";
 import { selectAlwaysOn } from "../trigger/policy.ts";
 import { estimateTokens } from "../kernel/ranking.ts";
+import {
+  applyFlag,
+  applyForget,
+  applyLink,
+  applyReinforce,
+  applyRevise,
+  type GovernanceDeps,
+} from "./governance.ts";
 import type { Embedder } from "../kernel/ports.ts";
 
 // 公开类型面在 facade-types.ts (契约与实现分开: 适配层只依赖类型文件)。
@@ -38,6 +46,7 @@ export type {
   MemoryStats,
 } from "./facade-types.ts";
 // re-export 不会把类型引入本文件作用域: 实现内部用到的那几个必须单独 import。
+import type { GeneralizerBridge, FlagResult, RecallReason } from "./facade-types.ts";
 import type {
   FacadeOptions,
   FacadeStore,
@@ -64,6 +73,8 @@ export class MemoryFacade {
   private readonly maxStructuralLinks: number;
   private readonly adjudicator: Adjudicator;
   private readonly digestBuilder: DigestBuilder;
+  /** 治理出口: 坏评超标 → 人审提议。缺省时纯标注 (不产生提议)。 */
+  private generalizer?: GeneralizerBridge;
 
   constructor(deps: { store: FacadeStore; retriever: SyncRetriever }, opts: FacadeOptions = {}) {
     this.store = deps.store;
@@ -80,6 +91,7 @@ export class MemoryFacade {
     // 默认确定性启发式: 说不清就 keep-both (交给人), 不引入不可预测性。
     this.adjudicator = opts.adjudicator ?? heuristicAdjudicator();
     this.digestBuilder = opts.digestBuilder ?? heuristicDigestBuilder();
+    if (opts.generalizer) this.generalizer = opts.generalizer;
   }
 
   /**
@@ -297,17 +309,11 @@ export class MemoryFacade {
     return expandEvolutionChain(all, id);
   }
 
+  // ---- 治理动作: 实现抽到 app/governance.ts (facade 只做门面与编排) ----
+
   /** 人工修正 (写审计字段: 改动本身留痕在真相文件的 frontmatter 里)。 */
   async revise(id: string, patch: Partial<MemoryEntry>): Promise<MemoryEntry> {
-    const existing = await this.store.get(id);
-    if (!existing) throw new Error("revise: not found: " + id);
-    if (patch.content !== undefined && !patch.content.trim()) {
-      throw new Error("revise: content cannot be emptied (用 forget 撤回)");
-    }
-    await this.store.update(id, patch);
-    const updated = await this.store.get(id);
-    if (!updated) throw new Error("revise: entry disappeared after update: " + id);
-    return updated;
+    return await applyRevise(this.governance(), id, patch);
   }
 
   /**
@@ -315,58 +321,43 @@ export class MemoryFacade {
    * why 交给 onAudit 记录 (撤回理由是可审计性的一部分, 不属于记忆内容本身)。
    */
   async forget(id: string, why: string): Promise<void> {
-    const existing = await this.store.get(id);
-    if (!existing) return;
-    await this.store.remove(id);
-    this.audit?.("forget", { id, why, at: this.now() });
+    return await applyForget(this.governance(), id, why);
   }
 
   /** 建边 (显式关联)。重复边由存储层主键去重。 */
   async link(a: string, b: string, type: RelationType, weight?: number): Promise<void> {
-    const from = await this.store.get(a);
-    if (!from) throw new Error("link: not found: " + a);
-    const relation: Relation = { type, toId: b, ...(weight === undefined ? {} : { weight }) };
-    const relations = [
-      ...(from.relations ?? []).filter((r) => !(r.type === type && r.toId === b)),
-      relation,
-    ];
-    await this.store.update(a, { relations });
+    return await applyLink(this.governance(), a, b, type, weight);
   }
 
   /**
    * 命中即强化 (记忆的"用进废退"): 被检索并注入的记忆延后衰减。
-   * 为什么要节流 (coalesceMs): 预步注入每个 step 都跑, 高频写盘会让真相文件产生无意义的 diff;
-   * 同一个窗口内重复命中只算一次。只对 active 生效 (shadow/expired 不因命中复活)。
+   * 节流理由见 governance.applyReinforce (预步每 step 都跑, 高频写盘会产生无意义 diff)。
    */
   async reinforce(
     ids: readonly string[],
     opts: { now?: string; coalesceMs?: number } = {},
   ): Promise<ReinforceReport> {
-    const at = opts.now ?? this.now();
-    const coalesceMs = opts.coalesceMs ?? 60_000;
-    const report: ReinforceReport = { reinforced: [], skipped: [] };
-    const seen = new Set<string>();
-    for (const id of ids) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const entry = await this.store.get(id);
-      if (!entry || (entry.status ?? "active") !== "active") {
-        report.skipped.push({ id, reason: "not-active" });
-        continue;
-      }
-      const last = entry.lastHitAt ? Date.parse(entry.lastHitAt) : Number.NaN;
-      if (Number.isFinite(last) && Date.parse(at) - last < coalesceMs) {
-        report.skipped.push({ id, reason: "coalesced" });
-        continue;
-      }
-      await this.store.update(id, {
-        reinforcement: (entry.reinforcement ?? 0) + 1,
-        lastHitAt: at,
-      });
-      report.reinforced.push(id);
-    }
-    return report;
+    return await applyReinforce(this.governance(), ids, opts);
   }
+
+  /**
+   * agent 对召回质量的**负面**标注 (只记坏的 —— 好的不记, 沉默是默认状态)。
+   * 完整理由 (为何只收负面、为何两类分开) 见 app/governance.ts 的 applyFlag。
+   */
+  async flagRecall(id: string, reason: RecallReason, note?: string): Promise<FlagResult> {
+    return await applyFlag(this.governance(), id, reason, note);
+  }
+
+  /** 治理动作的公共依赖 (审计出口 + 人审提议出口)。 */
+  private governance(): GovernanceDeps {
+    return {
+      store: this.store,
+      now: this.now,
+      ...(this.audit ? { audit: this.audit } : {}),
+      generalizer: () => this.generalizer,
+    };
+  }
+
 
   /** 可观测面 (面板/CLI); 分类口径在 stats.ts (纯函数, 可单独测)。 */
   async stats(): Promise<MemoryStats> {
@@ -380,6 +371,15 @@ export class MemoryFacade {
   /** 可选: 审计钩子 (撤回理由等)。缺省静默 —— 审计不该拖垮调用方。 */
   onAudit(handler: (event: string, payload: Record<string, unknown>) => void): void {
     this.audit = handler;
+  }
+
+  /**
+   * 可选: 治理出口注入 (坏评超标 → 人审提议)。
+   * 用 setter 而不是构造参数: DSH 里 generalizer 的构造依赖 reviewDir 与模型，
+   * 排在 Facade 之后；硬塞进构造参数会把"组装顺序"变成隐式契约。
+   */
+  withGeneralizer(generalizer: GeneralizerBridge): void {
+    this.generalizer = generalizer;
   }
 
   /** 可选: 引擎状态注入 (面板展示索引可用性/降级原因)。 */

@@ -22,6 +22,26 @@ const FRAME_EN: readonly string[] = [
   "Entries marked as rule are user-confirmed cross-project constraints - if one applies, say that you are relying on it.",
 ];
 
+/**
+ * 注入块末尾的**可操作下一步** (纯函数, 无 IO)。
+ *
+ * 为什么需要它 (2026-09 实测): `memory_search` 在本项目的调用率是 **0/7440** ——
+ * 指引里"建议主动查"完全没生效。原因是模型在**没有收到检索结果时**根本想不到这个工具存在,
+ * 而注入块恰恰是它唯一一定会读到、且与记忆直接相关的位置。
+ * 因此把"还能继续查"做成模型每轮都能看到的**选项**。
+ *
+ * 措辞刻意保持**可选**: 不是"你必须确认这些记忆", 而是"不适用就换词再查" ——
+ * 前者会把可选项变成义务 (见 .agents/notes/proposed/feature/2026-09-11-memory-feedback-channel.md)。
+ */
+export function memoryEntryHint(language: FrameLanguage = "zh"): string {
+  return language === "zh" ? ENTRY_HINT_ZH : ENTRY_HINT_EN;
+}
+
+const ENTRY_HINT_ZH =
+  "以上若与当前任务不相关或不够具体, 可调用 memory_search 换关键词再查 (可选, 不适用就忽略)。";
+const ENTRY_HINT_EN =
+  "If the above is irrelevant or too thin for the task, call memory_search with different keywords (optional - ignore if not applicable).";
+
 /** 注入块顶部的框架句 (纯函数, 无 IO)。 */
 export function memoryFrameNote(language: FrameLanguage = "zh"): string {
   return (language === "zh" ? FRAME_ZH : FRAME_EN).join(" ");

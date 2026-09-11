@@ -87,6 +87,21 @@ export interface MemoryEntry {
   derivedFrom?: string[];
   /** 合并来源: 被合并进本条目的旧条目 id (可回溯, 可撤销合并)。 */
   mergedFrom?: string[];
+  /**
+   * 负面召回标注 (agent 自评)。**只记坏的**: 好的不记 —— 沉默是默认且期望的状态。
+   * 逼 agent 对每条召回都表态会造成义务感, 它会为交差而编造评价 (噪声比无信号更糟)。
+   * 两类分开计数是因为它们导向不同修法: irrelevant → 调检索/排序权重; wrong → 内容要改写。
+   * 质量公式用 bad/reinforcement (后者是曝光分母)。见 kernel/feedback.ts。
+   */
+  feedback?: RecallFeedback;
+}
+
+/** agent 对召回质量的**负面**标注计数。 */
+export interface RecallFeedback {
+  /** 召回了但不相关 (检索/排序问题)。 */
+  irrelevant: number;
+  /** 内容与事实不符或已过时 (内容问题, 需人审改写)。 */
+  wrong: number;
 }
 
 /**

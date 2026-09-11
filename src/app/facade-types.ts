@@ -5,7 +5,7 @@
 // 适配层也能只依赖类型文件 (不把实现拖进编译单元)。
 //
 // 本文件的类型必须与实现**逐字一致**: 它们是宿主 (DSH 工具 / MCP / CLI) 编译期的唯一契约。
-import type { MemoryEntry, MemoryEntryInput, MemoryKind, MemoryScope, Query, Relation } from '../kernel/types.ts';
+import type { MemoryEntry, MemoryEntryInput, MemoryKind, MemoryScope, Query, RecallFeedback, Relation } from '../kernel/types.ts';
 import type { Awaitable, Embedder, RetrievalHit } from '../kernel/ports.ts';
 import type { Adjudicator } from '../evolution/adjudicator.ts';
 import type { DigestBuilder } from './digest.ts';
@@ -88,6 +88,19 @@ export interface RecallResponse {
   degraded: string[];
 }
 
+/** agent 对召回的**负面**标注原因 (没有"有用"这一类 —— 好的不记)。 */
+export type RecallReason = "irrelevant" | "wrong";
+
+export interface FlagResult {
+  ok: boolean;
+  /** ok:false 时给原因 (如 not-found)。 */
+  error?: string;
+  /** 累加后的标注计数。 */
+  feedback?: RecallFeedback;
+  /** 达阈值时产出的 review 提议 id (只提议, 不自动改记忆)。 */
+  proposed?: string | null;
+}
+
 export interface ReinforceReport {
   reinforced: string[];
   skipped: Array<{ id: string; reason: "not-active" | "coalesced" }>;
@@ -125,5 +138,20 @@ export interface FacadeOptions {
   adjudicator?: Adjudicator;
   /** 摘要构建器 (可选): 默认确定性启发式; 宿主有模型时可换成 LLM 润色版。 */
   digestBuilder?: DigestBuilder;
+  /**
+   * 推广服务 (可选): 唯一用途是"坏评超标的记忆"产出人审提议。
+   * 缺省时标注照常落盘, 只是不产生提议 (治理能力可降级, 数据不丢)。
+   */
+  generalizer?: GeneralizerBridge;
+}
+
+/** 只依赖 Facade 需要的那一个方法 (避免 app 层硬依赖 generalize 的实现细节)。 */
+export interface GeneralizerBridge {
+  enqueueProposal(input: {
+    rule: string;
+    covers?: string[];
+    confidence?: number;
+    sourceRun?: string;
+  }): { id: string } | Promise<{ id: string }>;
 }
 

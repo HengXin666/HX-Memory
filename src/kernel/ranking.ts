@@ -7,6 +7,7 @@
 //   2. 时间衰减 + 强化 (Ebbinghaus 式: 命中即延长半衰期);
 //   3. 预算裁剪 (token 预算 > 条数上限, 因为"注入多少字"才是真实约束)。
 import type { MemoryEntry, MemoryKind } from "./types.ts";
+import { qualityFactor } from "./feedback.ts";
 import { tokenSet } from "./cjk.ts";
 
 /** 一路召回结果 (已按该通道自己的分数降序)。 */
@@ -91,12 +92,15 @@ export function compositeScore(input: ScoreInput): number {
   const importance = clamp01(((entry.importance ?? 5) - 1) / 9);
   const importanceFactor = 0.6 + 0.4 * importance;
   const confidenceFactor = 0.7 + 0.3 * clamp01(entry.confidence ?? 0.7);
+  // 质量因子: 只降权不消失 (下限 0.2)。样本少时向中性收缩, 零坏评时恒为 1 (老数据行为不变)。
+  const quality = qualityFactor(entry.feedback, entry.reinforcement ?? 0);
   return (
     input.base *
       decay *
       importanceFactor *
       confidenceFactor *
-      reinforcementFactor(entry.reinforcement) +
+      reinforcementFactor(entry.reinforcement) *
+      quality +
     (input.boost ?? 0)
   );
 }

@@ -18,6 +18,7 @@ import type {
   Query,
   RelationType,
 } from "../kernel/types.ts";
+import { normalizeFeedback } from "../kernel/feedback.ts";
 import type { IndexDoc } from "../kernel/ports.ts";
 import type { FtsIndex } from "./fts-index.ts";
 import { finiteOrUndefined, jsonStrings } from "./entry-normalize.ts";
@@ -45,6 +46,7 @@ export interface RowLike {
   expires_at: string | null;
   derived_from: string | null;
   merged_from: string | null;
+  feedback: string | null;
   file: string;
 }
 
@@ -65,6 +67,14 @@ export function rowToEntry(row: RowLike): MemoryEntry {
   const importance = finiteOrUndefined(row.importance);
   const confidence = finiteOrUndefined(row.confidence);
   const reinforcement = finiteOrUndefined(row.reinforcement);
+  let feedback: MemoryEntry["feedback"];
+  if (row.feedback) {
+    try {
+      feedback = normalizeFeedback(JSON.parse(row.feedback));
+    } catch {
+      feedback = undefined;
+    }
+  }
   return {
     id: row.id,
     kind: row.kind,
@@ -85,6 +95,7 @@ export function rowToEntry(row: RowLike): MemoryEntry {
     ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
     ...(derivedFrom === undefined ? {} : { derivedFrom }),
     ...(mergedFrom === undefined ? {} : { mergedFrom }),
+    ...(feedback === undefined ? {} : { feedback }),
   };
 }
 

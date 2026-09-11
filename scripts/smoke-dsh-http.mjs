@@ -104,6 +104,11 @@ for (const field of ["scanned", "changed", "unchanged", "dryRun", "toFormat", "c
 if (normReport.dryRun !== true) fail("normalizeMemory 默认必须是干跑 (不得默认写盘)");
 ok("normalizeMemory 返回干跑报告 (主动整理入口可用)");
 await check("hxMemory/contradictions", { limit: 20 }, "contradictions 可用 (待裁决矛盾可列)");
+// agent 标注面: 必须是**数组**且元素形状完整 —— 标注会降权排序, 面板据此解释"为什么排到后面了"。
+const flagged = await callApi("hxMemory/flaggedMemories", { limit: 50 });
+if (flagged?.result?.ok !== true) fail("flaggedMemories: envelope not ok");
+if (!Array.isArray(flagged.result.value)) fail("flaggedMemories 必须返回数组 (空数组 = 没有坏评, 是好事)");
+ok("flaggedMemories 可用 (agent 标注面)");
 await check("hxMemory/listBindings", {}, "listBindings 可用 (bindingStore 已挂载)");
 await check(
   "hxMemory/saveBindings",

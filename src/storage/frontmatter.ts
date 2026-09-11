@@ -48,6 +48,7 @@ export const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
   "expires_at",
   "derived_from",
   "merged_from",
+  "feedback",
   "relations",
 ]);
 

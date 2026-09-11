@@ -128,6 +128,26 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
     },
   },
   {
+    name: "memory_flag",
+    description:
+      "OPTIONAL and rarely needed: flag a memory you just saw as BAD (irrelevant, or wrong/outdated). " +
+      "There is no need to flag memories that were useful; silence is the normal outcome. " +
+      "Flagged entries get de-prioritized, and content problems enter the human review queue.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Memory id." },
+        reason: {
+          type: "string",
+          enum: ["irrelevant", "wrong"],
+          description: "irrelevant = not related to the task; wrong = content is incorrect or outdated.",
+        },
+        note: { type: "string", description: "Optional short explanation." },
+      },
+      required: ["id", "reason"],
+    },
+  },
+  {
     name: "memory_stats",
     description: "Show memory counts by kind/status, known projects, and index health.",
     inputSchema: { type: "object", properties: {} },
@@ -278,6 +298,17 @@ export async function callTool(
       if (!id) return textResult("Error: id is required.", true);
       await facade.forget(id, str(args.why) || "forgotten via MCP");
       return textResult("Retracted " + id + " (shadow: hidden from search, kept for audit).");
+    }
+    case "memory_flag": {
+      const id = str(args.id);
+      if (!id) return textResult("Error: id is required.", true);
+      const raw = str(args.reason);
+      if (raw !== "irrelevant" && raw !== "wrong") {
+        return textResult("Error: reason must be irrelevant or wrong.", true);
+      }
+      const result = await facade.flagRecall(id, raw, str(args.note) || undefined);
+      if (!result.ok) return textResult("Error: " + (result.error ?? "flag failed"), true);
+      return textResult("Flagged " + id + " as " + raw + ".");
     }
     case "memory_stats": {
       const stats = await facade.stats();
