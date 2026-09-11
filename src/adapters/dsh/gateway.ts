@@ -17,6 +17,7 @@ import type {
   GeneralizationRunReport,
   GeneralizationStatus,
 } from "../../kernel/types.ts";
+import type { MemoryNormalizer, NormalizeReport } from "../../app/normalize.ts";
 import type { InvocationLog } from "./invocations.js";
 import type { LlmInvocationRecord } from "./llm-agent.js";
 
@@ -32,6 +33,11 @@ export interface HxMemoryGatewayDeps {
   bindingStore?: BindingStore;
   /** AI 调用记录 (可选: 不注入则「调用记录」tab 不可用)。 */
   invocations?: InvocationLog;
+  /**
+   * 主动整理 / 无损迁移 (可选: 不注入则「整理」tab 不可用)。
+   * 面板只做"看清单 + 点确认", 真正的写回在 MemoryNormalizer (与 CLI 同一条实现)。
+   */
+  normalizer?: Pick<MemoryNormalizer, "run">;
   /**
    * 使用层 Facade (可选但推荐): 面板的"最近沉淀/搜索/删除"与工具、MCP、CLI 共用同一套语义
    * (检索排序 + 治理闸门 + 可见性 + 审计)。不注入时退回直连存储的旧行为 (兼容测试/旧宿主)。
@@ -184,6 +190,42 @@ export class HxMemoryGateway extends TypertRemoteService {
       assertedAt: e.ts.assertedAt,
       tags: e.tags,
     }));
+  }
+
+  /**
+   * 主动整理: 把老形态的块补成当前形态 (字段补全 + 版本标记)。
+   * **默认干跑**: 面板先展示"会改什么", 由人点确认才落盘 —— 真相文件是人的资产, 不是缓存。
+   */
+  @Remote("normalizeMemory")
+  normalizeMemory(dryRun?: boolean): NormalizeReport | { error: string } {
+    if (!this.deps.normalizer) return { error: "normalizer not mounted" };
+    const run = dryRun !== false;
+    try {
+      return this.deps.normalizer.run({ dryRun: run });
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }
+
+  /**
+   * 待裁决的矛盾集合 (双向 contradicts 边)。
+   *
+   * 为什么需要它: 写入期裁决为 keep-both 时只落了一条边并注释"需人工处理",
+   * 但此前**没有任何入口能列出这些矛盾** —— 数据在库里, 却没人看得见, 等于永久悬空。
+   */
+  @Remote("contradictions")
+  contradictions(limit?: number): Array<{ id: string; kind: string; content: string; withId: string }> {
+    const max = Math.min(200, Math.max(1, limit ?? 50));
+    const all = this.deps.store.query({ limit: Number.MAX_SAFE_INTEGER });
+    const out: Array<{ id: string; kind: string; content: string; withId: string }> = [];
+    for (const e of all) {
+      for (const r of e.relations ?? []) {
+        if (r.type !== "contradicts") continue;
+        out.push({ id: e.id, kind: e.kind, content: e.content, withId: r.toId });
+        if (out.length >= max) return out;
+      }
+    }
+    return out;
   }
 
   @Remote("deleteEntry")

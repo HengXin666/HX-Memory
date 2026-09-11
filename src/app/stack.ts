@@ -13,6 +13,7 @@ import { asSyncEmbedder, type Embedder } from "../kernel/ports.ts";
 import { MemoryFacade } from "./facade.ts";
 import { RebuildService } from "./rebuild.ts";
 import { ConsolidationService } from "./consolidate.ts";
+import { MemoryNormalizer } from "./normalize.ts";
 
 export interface MemoryStack {
   store: FileBackend;
@@ -21,6 +22,8 @@ export interface MemoryStack {
   facade: MemoryFacade;
   rebuild: RebuildService;
   consolidate: ConsolidationService;
+  /** 主动整理 / 无损迁移 (形态规范化; dryRun 可先看清单)。 */
+  normalize: MemoryNormalizer;
   close(): void;
 }
 
@@ -72,6 +75,7 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
   facade.withIndexStatus(() => store.ftsStatus());
   const rebuild = new RebuildService({ store, episodes });
   const consolidate = new ConsolidationService({ store, ...(opts.now ? { now: opts.now } : {}) });
+  const normalize = new MemoryNormalizer(store, root);
   return {
     store,
     episodes,
@@ -79,6 +83,7 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
     facade,
     rebuild,
     consolidate,
+    normalize,
     close: () => store.close(),
   };
 }

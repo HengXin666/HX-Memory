@@ -6,6 +6,7 @@
 //   node dist/adapters/codex/cli.js verify  --root <memRoot>
 //   node dist/adapters/codex/cli.js rebuild --root <memRoot> [--episodes] [--since <iso>]
 //   node dist/adapters/codex/cli.js consolidate --root <memRoot> [--dry-run]  # 衰减扫描 (可逆)
+//   node dist/adapters/codex/cli.js normalize  --root <memRoot> [--dry-run]  # 主动整理 (形态规范化, 无损)
 //   node dist/adapters/codex/cli.js digest  --root <memRoot> [--project <p>]  # 当前知识摘要 (派生视图, 不落盘)
 //   node dist/adapters/codex/cli.js export  --root <memRoot> [--format jsonl|markdown] > backup.jsonl
 //   node dist/adapters/codex/cli.js import  --root <memRoot> [--format jsonl|markdown] < backup.jsonl
@@ -30,6 +31,11 @@ import { exportMemory, importMemory } from "../../app/transfer.ts";
  * 注意: 末尾的 --flag 没有后继值时必须是 "true" 而不是 "" ——
  * 后者在 `if (flags["flag"])` 里是假值, 会把"打开开关"静默解释成"没打开" (真实踩过)。
  */
+/** 报告里"是否真的写入了"的可读判定 (dryRun 与 applied 组合, 避免两处措辞漂移)。 */
+function flagApplied(report: { dryRun: boolean; applied: boolean }): boolean {
+  return !report.dryRun && report.applied;
+}
+
 function parseArgv(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -52,7 +58,7 @@ export async function main(argv: string[]): Promise<number> {
   const root = flags["root"];
   if (!root) {
     console.error(
-      "usage: hx-memory <sync|rules|stats|digest|export|import|verify|rebuild|consolidate|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
+      "usage: hx-memory <sync|rules|stats|digest|export|import|verify|rebuild|consolidate|normalize|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
     );
     return 1;
   }
@@ -167,6 +173,27 @@ export async function main(argv: string[]): Promise<number> {
         ", 过期 " +
         report.expiring.length +
         (report.applied ? " (已写入)" : " (干跑, 未写入)"),
+    );
+    stack.close();
+    return 0;
+  }
+
+  if (cmd === "normalize") {
+    // 主动整理: 把老形态的块补成当前形态 (字段补全 + 版本标记)。
+    // 默认干跑 —— 先看"会改什么", 再决定是否落盘 (真相文件是人的资产, 不是缓存)。
+    const stack = openMemoryStack(root);
+    const dryRun = flags["dry-run"] !== "false"; // 默认 true: 必须显式 --dry-run=false 才写入
+    const report = stack.normalize.run({ dryRun });
+    console.log(JSON.stringify(report, null, 2));
+    console.log(
+      "整理: 扫描 " +
+        report.scanned +
+        ", 需改 " +
+        report.changed +
+        ", 未变 " +
+        report.unchanged +
+        (report.missing ? ", 真相缺失 " + report.missing : "") +
+        (flagApplied(report) ? " (已写入)" : " (干跑, 未写入)"),
     );
     stack.close();
     return 0;

@@ -18,6 +18,10 @@ export const HXMEM_REMOTE_METHODS = [
   "recentCaptures",
   "deleteEntry",
   "memoryQuery",
+  // 主动整理 (无损迁移): 面板先 dryRun 看清单, 再点确认写回。
+  "normalizeMemory",
+  // 待裁决的矛盾集合: 此前 keep-both 只写边、没有任何入口能列出来。
+  "contradictions",
 ] as const;
 
 export type HxMemoryRemoteMethod = (typeof HXMEM_REMOTE_METHODS)[number];

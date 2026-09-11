@@ -1,26 +1,9 @@
 // src/storage/file-store.ts — FileBackend: 真相在文件, 索引在 SQLite (可重建).
 //
-// 布局:
-//   <root>/daily/YYYY-MM-DD.md      每日捕获 (原始, 人可读, git 可 diff)
-//   <root>/digest/YYYY-MM-DD.md     整理后知识 (lesson/pattern/context)
-//   <root>/rules/<id>.md            推广后的跨项目规则 (人工确认后才落盘, 一文件一条)
-//   <root>/index.sqlite             派生索引 (memories/relations/tags 三表), 删除可重建
-//
-// 职责边界 (为什么拆成多个文件): 本文件只做"真相 ↔ 索引"的**编排**与 SQL。
-//   - 什么算合法的一条记忆 → entry-normalize.ts (写入与重建共用, 只有一处)
-//   - Markdown 的编解码 (转义/前言保留/O(1) 追加) → markdown-codec.ts
-//   - 从可被外部编辑的文件里安全解析 → markdown-parse.ts
-//   - 全文检索索引 → fts-index.ts
-// 拆分的直接原因是单文件行数闸门 (verify-structure), 但收益是职责可见:
-// 想改"什么合法"不必通读 SQL, 想改 SQL 不必担心碰坏解析。
-//
-// 不变量:
-//   1. 真相在文件, 索引可重建且**无损**: relations/tags/structured 全部写进文件并可读回。
-//   2. 双时态 validAt/assertedAt 每条必带, 且必须是 ISO 时间戳 (防换行注入伪造字段)。
-//   3. kind:"rule" 必须带确认记录才允许入库 —— add() 与 rebuildFromFiles() 同一套闸门。
-//   4. 正文不能伪造块边界 (写入转义), 所有 frontmatter 值都不能含换行。
-//   5. 撤回 (remove) 在真相文件里写 status: shadow —— 只改索引的话, 重建会让它复活。
-//   6. 并发打开同一个 index.sqlite 不能直接炸: 打开后立刻设 busy_timeout。
+// 本文件只做"真相 ↔ 索引"的**编排**与 SQL。布局、各文件职责边界、写入语义与全部不变量
+// 见 src/storage/README.md (单一事实源) —— 拆成多文件的理由也记在那里。
+// 最关键的一条不变量 (改任何写路径前先读): **陌生 frontmatter 键必须原样保留**,
+// 否则"更新一条记忆"就等于静默丢掉当前代码不认识的字段, 迁移/整理都会变成破坏性操作。
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";

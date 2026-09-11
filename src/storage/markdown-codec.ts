@@ -10,6 +10,8 @@
 //      (歧义), 这是格式的已知边界, 已在 file-store 顶部注释里写明。
 //   5. **追加是 O(1)**: 新条目只 truncate 掉文件终止换行再 append, 不重写整个文件
 //      (批量导入 10k 条从分钟级降到秒级); 但这要求内容与 readFileParts 的产物逐字节等价。
+//   6. **未知 frontmatter 键原样带回**: 写回是"整块重组", 若不显式搬运, 更新一条记忆就会
+//      把它身上当前代码不认识的键 (更新版本写的 / 手写的) 静默吃掉 —— 见 frontmatter.ts。
 import {
   appendFileSync,
   closeSync,
@@ -27,6 +29,7 @@ import {
 import { dirname } from "node:path";
 import type { MemoryEntry } from "../kernel/types.ts";
 import { FORMAT_VERSION } from "./entry-normalize.ts";
+import { frontmatterHeadOf, unknownFrontmatterLines } from "./frontmatter.ts";
 
 /** 一个真相文件的解析结果: 块序列 + 第一个块之前的手写前言。 */
 export interface FileParts {
@@ -49,8 +52,12 @@ export function unescapeBody(body: string): string {
   return body.replace(/(^|\n)\\---\n(?=id: )/g, "$1---\n").replace(/\\\\/g, "\\");
 }
 
-/** 一条记忆 → 一个 Markdown 块 (frontmatter + 空行 + 正文)。 */
-export function entryToMarkdown(e: MemoryEntry): string {
+/**
+ * 一条记忆 → 一个 Markdown 块 (frontmatter + 空行 + 正文)。
+ *
+ * @param unknown 该条目**原有块**里当前代码不认识的 frontmatter 行 (原样带回, 保证无损)。
+ */
+export function entryToMarkdown(e: MemoryEntry, unknown: readonly string[] = []): string {
   const lines = [
     "---",
     "id: " + e.id,
@@ -78,6 +85,8 @@ export function entryToMarkdown(e: MemoryEntry): string {
   if (e.mergedFrom?.length) lines.push("merged_from: " + JSON.stringify(e.mergedFrom));
   // relations 也放 frontmatter (JSON): 正文保持纯净, 避免"正文以 ## relations 开头"被误解析。
   if (e.relations?.length) lines.push("relations: " + JSON.stringify(e.relations));
+  // 陌生键原样附在末尾: 位置变了但内容与语义不变 (键级 frontmatter 无顺序语义)。
+  for (const line of unknown) lines.push(line);
   lines.push("---");
   lines.push("");
   lines.push(escapeBody(e.content));
@@ -129,14 +138,23 @@ export function writeFileParts(file: string, parts: FileParts): void {
   writeFileSync(file, segments.join("\n\n") + "\n", "utf8");
 }
 
-/** 新增或替换某 id 的块 (按块数组重写, 不碰其它块与前言的字节)。 */
+/**
+ * 新增或替换某 id 的块 (按块数组重写, 不碰其它块与前言的字节)。
+ *
+ * 替换时会先把**旧块里的陌生 frontmatter 键**搬运到新块 (见 frontmatter.ts) ——
+ * 这是"无损"的落点: 升级/整理/普通更新都走这条路径, 必须先保证不丢字段。
+ */
 export function upsertBlockInFile(file: string, e: MemoryEntry): void {
-  const block = entryToMarkdown(e);
   const parts = readFileParts(file);
   const header = blockHeader(e.id);
   const index = parts.blocks.findIndex((b) => b.startsWith(header));
-  if (index >= 0) parts.blocks[index] = block;
-  else parts.blocks.push(block);
+  if (index >= 0) {
+    const head = frontmatterHeadOf(parts.blocks[index]!);
+    const unknown = head === null ? [] : unknownFrontmatterLines(head);
+    parts.blocks[index] = entryToMarkdown(e, unknown);
+  } else {
+    parts.blocks.push(entryToMarkdown(e));
+  }
   writeFileParts(file, parts);
 }
 

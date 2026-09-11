@@ -15,6 +15,7 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type { Binder } from "../../kernel/binder.ts";
 import { MEMORY_BLOCK_HEADING, memoryFrameNote } from "../../kernel/format-frame.ts";
 import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
+import { parseInjectedIds } from "../../kernel/injection-format.ts";
 import { sessionEvents } from "./session-events.js";
 
 /** 从会话消息里提取最新一条**直接用户**文本 (content 可为 string 或 parts 数组)。 */
@@ -53,12 +54,26 @@ function messageTextOf(m: unknown): string {
   return "";
 }
 
+/** 本插件在本次会话里已经注入过的内容 (文本 + 条目 id)。 */
+export interface PriorInjections {
+  /** 注入块的完整文本 (整块去重: 完全相同的块不重发)。 */
+  texts: Set<string>;
+  /** 注入块里出现过的条目 id (差量注入的基线 —— 这才是主力判据)。 */
+  ids: Set<string>;
+}
+
 /**
- * 本插件在本次会话里已经注入过的文本 (跨 step/跨轮去重)。
+ * 本插件在本次会话里已经注入过什么 (跨 step/跨轮去重)。
  * 读的是 surface 可见事件 (sessionEvents), 因此 compaction 遮蔽后不会再误判"已注入"。
+ *
+ * 为什么必须双轨 (2026-09 修正): 只比"整块文本"时, 会话开始的注入块 (无标题/无框架句)
+ * 与预步的注入块 (有标题+框架句) 永不相等 → 首次预步必然重复一份;
+ * 且预步每步重新拼块, 条目集合一变整块文本就变 → 已注入的条目被整份重发。
+ * 因此主判据是**条目 id 集合**, 文本相等只作为兜底。
  */
-export function priorInjections(agent: unknown): Set<string> {
-  const out = new Set<string>();
+export function scanPriorInjections(agent: unknown): PriorInjections {
+  const texts = new Set<string>();
+  const ids = new Set<string>();
   const session = (agent as { session?: unknown } | undefined)?.session;
   for (const ev of sessionEvents(session)) {
     const e = ev as {
@@ -70,9 +85,21 @@ export function priorInjections(agent: unknown): Set<string> {
       continue;
     }
     const text = messageTextOf({ content: e.data.content });
-    if (text) out.add(text);
+    if (!text) continue;
+    texts.add(text);
+    for (const id of parseInjectedIds(text)) ids.add(id);
   }
-  return out;
+  return { texts, ids };
+}
+
+/** 兼容保留: 只取"已注入的文本块"(旧接口, 测试与外部可继续用)。 */
+export function priorInjections(agent: unknown): Set<string> {
+  return scanPriorInjections(agent).texts;
+}
+
+/** 已注入过的条目 id 集合 (差量注入的基线)。 */
+export function priorInjectedIds(agent: unknown): Set<string> {
+  return scanPriorInjections(agent).ids;
 }
 
 export interface PreStepEnterDecision {
@@ -126,7 +153,10 @@ export function makePreStepHandler(
     if (!text) return decision;
     // 注入前热身异步向量投影 (硬时限): 首次预热可能补不齐, 后续轮次就有真语义召回了。
     await binder.warm(options.warmupMs?.() ?? 50, text);
-    const bound = binder.injectFor(project, text);
+    const prior = scanPriorInjections(agent);
+    // 差量注入: 把"本会话已注入过的条目 id"交给 Binder 排除。
+    // 于是常驻记忆 (规则/关键事实) 只会在会话开始时进一次, 之后的轮次只补真正的新条目。
+    const bound = binder.injectFor(project, text, [...prior.ids]);
     if (!bound) return decision;
     // 框架句在最前: 让模型知道这是"检索出来的证据", 并声明不覆盖当前指令 (对齐 DSH 的
     // workspace-instruction 做法)。硬约束: 框架句必须与记忆内容同块, 否则"证据"语义会丢。
@@ -135,7 +165,7 @@ export function makePreStepHandler(
     // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
     const msgs = decision.messages as unknown[];
     if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;
-    if (priorInjections(agent).has(injectedText)) return decision;
+    if (prior.texts.has(injectedText)) return decision;
     const injected = createUserMessage({
       content: [{ type: "text", text: injectedText }],
       source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },

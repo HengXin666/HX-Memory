@@ -9,10 +9,16 @@
 //   1. 块级: 缺 frontmatter / id 非法 / kind/scope/status 越界 / 时间戳非 ISO → 整块跳过并记 warning;
 //   2. 字段级: v2 可选字段 (importance/entities/时间戳) 坏值只丢该字段, 不让整条记忆消失;
 //   3. 兼容级: 无 format 标记的旧文件允许 "## relations" 区段 (新格式一律走 frontmatter JSON)。
+//
+// **未知 frontmatter 键必须可被无损保留** (2026-09 补):
+// 解析只认识当前代码里的键, 但文件可能由**更新版本**写过 (降级运行)、或被人手写。
+// 此前写回是"整块重组", 于是更新一条记忆就把它身上所有陌生键静默吃掉 —— 任何迁移/整理
+// 在那之前都是破坏性的。键级工具在 storage/frontmatter.ts (parse 与 codec 共用的单一事实源)。
 import { readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import type { MemoryEntry, MemoryKind, MemoryScope, MemoryStatus, Relation } from "../kernel/types.ts";
 import { ID_PATTERN, KINDS, SCOPES, STATUSES, isIso, isRelation } from "./entry-normalize.ts";
+import { frontmatterFields } from "./frontmatter.ts";
 import { readFileParts, unescapeBody } from "./markdown-codec.ts";
 
 /** Parse every frontmatter block in a file into entries (multi-entry files). */
@@ -116,8 +122,8 @@ export function parseSingleBlock(
     return null;
   }
   const head = fm[1] ?? "";
-  const field = (name: string): string | undefined =>
-    head.match(new RegExp("^" + name + ": (.*)$", "m"))?.[1];
+  const fields = frontmatterFields(head);
+  const field = (name: string): string | undefined => fields.get(name)?.[0];
   const id = field("id");
   const kind = field("kind") as MemoryKind | undefined;
   const source = field("source");
@@ -141,7 +147,8 @@ export function parseSingleBlock(
   const mergedFromRaw = field("merged_from");
   // format 标记: 新文件一定带 format → 正文永远不被当作元数据扫描;
   // 旧文件 (无标记) 才允许走 "## relations" 兼容分支。
-  const legacyFormat = field("format") === undefined;
+  const format = field("format") === undefined ? undefined : Number(field("format"));
+  const legacyFormat = format === undefined || !Number.isFinite(format) || format < 1;
   if (!id || !ID_PATTERN.test(id)) {
     skipped?.push("invalid or missing id in " + path + ": " + JSON.stringify(id));
     return null;

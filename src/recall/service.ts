@@ -7,6 +7,7 @@
 // 诚实边界: 无语义向量, 用关键词命中评分; 后续可换 VectorBackend (可插拔存储)。
 import type { MemoryEntry, Query } from "../kernel/types.ts";
 import type { SyncMemoryStore, SyncRetriever } from "../kernel/ports.ts";
+import { formatEntryLine } from "../kernel/injection-format.ts";
 
 export interface RecallInput {
   /** 当前任务文本 (如用户问题/会话首条)。 */
@@ -131,11 +132,11 @@ function formatSections(rules: readonly MemoryEntry[], local: readonly MemoryEnt
   const lines: string[] = [];
   if (rules.length) {
     lines.push("【跨项目规则 (已确认)】");
-    for (const r of rules) lines.push("- [" + r.id + "] " + r.content);
+    for (const r of rules) lines.push(formatEntryLine(r.id, r.content));
   }
   if (local.length) {
     lines.push("【本项目相关经验】");
-    for (const e of local) lines.push("- [" + e.kind + "] " + e.content);
+    for (const e of local) lines.push(formatEntryLine(e.id, "[" + e.kind + "] " + e.content));
   }
   return lines.join("\n");
 }

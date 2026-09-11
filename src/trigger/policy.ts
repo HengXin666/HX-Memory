@@ -19,6 +19,8 @@ import type { MemoryEntry } from "../kernel/types.ts";
 // 词集统一走 kernel/cjk 的权威实现: 此前这里另写了一份"只取 bigram"的版本,
 // 与检索/去重的口径不一致 —— 同一对文本会在"话题漂移"与"去重裁决"里得出不同相似度。
 import { tokenSet } from "../kernel/cjk.ts";
+// 语音输入的错别字会让字面判定整体失效 (意图漏命中 / 同话题被误判成换话题), 因此先归一再判定。
+import { normalizeVoice } from "../kernel/voice.ts";
 
 /** 一种"回忆意图": 命中任意模式即认为本轮需要历史。 */
 export interface TriggerIntent {
@@ -147,7 +149,10 @@ export interface TriggerPolicyOptions {
 const ANAPHORIC_FOLLOWUP =
   /^(那|这|它|他|她|上面|刚才|还有|再|然后|所以|因此)|(这个|那个|上面说的|刚才说的|它的|他们的)/;
 
-export function topicDriftOf(text: string, previous?: string): number {
+export function topicDriftOf(rawText: string, rawPrevious?: string): number {
+  // 归一只用于**判定**: 漂移是"同一话题吗"的问题, 不该被一个语音错字推翻。
+  const text = normalizeVoice(rawText);
+  const previous = rawPrevious === undefined ? undefined : normalizeVoice(rawPrevious);
   const current = text.trim();
   if (!previous?.trim() || !current) return 1;
   // 短 + 指代 → 判定为延续上一话题 (保守: 只对很短的追问生效, 避免吞掉真正的新话题)。
@@ -163,9 +168,10 @@ export function topicDriftOf(text: string, previous?: string): number {
 
 /** 识别本轮文本命中的意图。返回命中数最多的那个 (可审计), 并给出归一化置信度。 */
 export function detectIntent(
-  text: string,
+  rawText: string,
   intents: readonly TriggerIntent[] = DEFAULT_INTENTS,
 ): { intent: TriggerIntent; confidence: number; hits: number } | null {
+  const text = normalizeVoice(rawText);
   if (!text.trim()) return null;
   let best: { intent: TriggerIntent; hits: number } | null = null;
   for (const intent of intents) {

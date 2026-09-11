@@ -19,7 +19,7 @@ import {
   type SessionEventLike,
   type SessionLike,
 } from "./runtime.js";
-import { makePreStepHandler } from "./prestep.js";
+import { makePreStepHandler, priorInjections } from "./prestep.js";
 import { registerMemoryTools } from "./tools.js";
 import { EpisodeStore } from "../../storage/episode-store.js";
 import { GeneralizerService } from "../../generalize/service.ts";
@@ -28,6 +28,7 @@ import { makeLlmStructurer } from "./llm-structurer.js";
 import { RecallService } from "../../recall/service.ts";
 import { HybridRetriever } from "../../retrieval/hybrid.js";
 import { MemoryFacade } from "../../app/facade.js";
+import { MemoryNormalizer } from "../../app/normalize.ts";
 import { LexicalEmbedder } from "../../retrieval/embedding-lexical.js";
 import { LinearVectorIndex } from "../../retrieval/vector.js";
 import { ProjectedVectorIndex } from "../../retrieval/vector-projected.js";
@@ -218,6 +219,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       bindingStore,
       invocations: invocationLog,
       facade,
+      // 主动整理 (面板 dryRun → 确认 → 写回) 与 CLI 共用同一实现。
+      normalizer: { run: (opts) => new MemoryNormalizer(store, root).run(opts) },
       // 面板"当前项目"预填: 与捕获/绑定/召回同一派生口径 (仓库级键)。
       currentProject: () => runtime.project(),
     });
@@ -332,9 +335,14 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       if (recallOut.rules.length) parts.push(recallOut.injected);
     }
     if (!parts.length) return;
+    // 会话历史里已经有本插件的注入块 → 不再灌第二遍。
+    // 实测同一会话会出现两份完全相同的指引 (session-start 被触发两次), 而它与预步的注入
+    // 此前也无法互相判重 (标题/框架句不同) —— 同一批记忆因此会在一轮里出现两三次。
+    const text = parts.join("\n\n");
+    if (priorInjections(agent).has(text)) return;
     agent.inject(
       createUserMessage({
-        content: [{ type: "text", text: parts.join("\n\n") }],
+        content: [{ type: "text", text }],
         source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
       }),
     );

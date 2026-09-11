@@ -13,6 +13,7 @@
 import type { Channel, RetrievalCapabilities, RetrievalRequest, VectorIndex } from "../kernel/ports.ts";
 import type { MemoryEntry, RelationType } from "../kernel/types.ts";
 import { termStreams } from "../kernel/cjk.ts";
+import { voiceVariants } from "../kernel/voice.ts";
 import type { RankedList } from "../kernel/ranking.ts";
 
 /** 图扩展的边类型权重 (高的先扩展; 语义上更"同类"的关系排前面)。 */
@@ -38,16 +39,24 @@ export interface QueryTerms {
 }
 
 export function queryTerms(text: string): QueryTerms {
-  const streams = termStreams(text);
+  // 语音容错: 原形与归一形**都**进检索词 —— 记忆里存的可能是错写, 也可能是规范写法,
+  // 只取一边就会漏召回 (实测语料里有 "绘话"/"密等" 这类词)。
   const all: string[] = [];
   const seen = new Set<string>();
-  for (const t of [...streams.words, ...streams.bigrams]) {
+  const words: string[] = [];
+  const bigrams: string[] = [];
+  for (const variant of voiceVariants(text)) {
+    const streams = termStreams(variant);
+    words.push(...streams.words);
+    bigrams.push(...streams.bigrams);
+  }
+  for (const t of [...words, ...bigrams]) {
     if (seen.has(t)) continue;
     seen.add(t);
     all.push(t);
   }
   // 词流是"真正的词", 覆盖率以它为主; 没有词流 (纯 CJK 被切碎) 时退回 bigram。
-  const weighted = streams.words.length ? streams.words : all;
+  const weighted = words.length ? words : all;
   return { terms: all.slice(0, 64), weighted: weighted.slice(0, 32) };
 }
 

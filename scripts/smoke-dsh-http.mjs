@@ -93,6 +93,17 @@ if (typeof report.proposed !== "number") fail("runGeneralization.proposed 不是
 ok("runGeneralization 返回漏斗报告 (considered/clusters/proposed/usedLlm/tookMs)");
 await check("hxMemory/listInvocations", { limit: 10 }, "listInvocations 可用");
 await check("hxMemory/recentCaptures", { limit: 10 }, "recentCaptures 可用");
+// 主动整理 (无损迁移): 面板必须能拿到**干跑报告**, 且报告里不能有 error 字段
+// (normalizer 未挂载时返回 {error}, check 只会看到"对象"—— 这里显式断言它真挂上了)。
+const norm = await callApi("hxMemory/normalizeMemory", { dryRun: true });
+const normReport = norm?.result?.value ?? {};
+if (normReport.error) fail("normalizeMemory: " + normReport.error);
+for (const field of ["scanned", "changed", "unchanged", "dryRun", "toFormat", "changes"]) {
+  if (!(field in normReport)) fail("normalizeMemory 报告缺字段 " + field);
+}
+if (normReport.dryRun !== true) fail("normalizeMemory 默认必须是干跑 (不得默认写盘)");
+ok("normalizeMemory 返回干跑报告 (主动整理入口可用)");
+await check("hxMemory/contradictions", { limit: 20 }, "contradictions 可用 (待裁决矛盾可列)");
 await check("hxMemory/listBindings", {}, "listBindings 可用 (bindingStore 已挂载)");
 await check(
   "hxMemory/saveBindings",
