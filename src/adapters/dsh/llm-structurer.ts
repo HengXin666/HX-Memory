@@ -14,20 +14,24 @@ export function makeLlmStructurer(
   const prompt = () => settings?.().structurerPrompt?.trim() || DEFAULT_STRUCTURER_PROMPT;
   return {
     async structure(input) {
+      // 提示词把 {{input}} 指到"问答对"; 只有问题时就退化成问题本身 (结论闸门已先挡过)。
+      const turn = input.answer ? "用户: " + input.text + "\n\n助手: " + input.answer : input.text;
       const out = await agentSummarize(ctx, {
         task: "structurer",
-        system: fillTemplate(prompt(), {}),
-        input: input.text,
+        system: fillTemplate(prompt(), { input: turn }),
+        input: turn,
         timeoutMs: 10000,
         maxTokens: 1024,
       });
       const json = /\{[\s\S]*\}/.exec(out)?.[0];
       if (!json) throw new Error("structurer: no JSON in agent output");
       const parsed = JSON.parse(json) as Partial<StructuredTurn>;
+      const conclusion = typeof parsed.conclusion === "string" ? parsed.conclusion.trim() : "";
       return {
         summary: parsed.summary ?? input.text,
         tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 8) : [],
         points: Array.isArray(parsed.points) ? parsed.points.slice(0, 6) : [],
+        ...(conclusion ? { conclusion } : {}),
       };
     },
   };

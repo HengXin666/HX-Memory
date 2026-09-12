@@ -11,11 +11,18 @@ import type { MemoryEntry, MemoryKind, MemoryScope } from "../kernel/types.ts";
 
 export interface TurnInput {
   text: string;
+  /**
+   * 同一轮**助手的回答**。
+   *
+   * 为什么必须一起给: 结论、理由与"为什么这么问"都长在回答里, 只喂用户那句等于
+   * 让抽取器看着问题猜答案 (实测: 旧路径下 15% 的记忆是疑问句本身, 助手侧一条都没进)。
+   */
+  answer?: string;
   project?: string;
   session: string;
   occurredAt?: string;
   /** 该轮对话对应的 episode id (有则写进 derivedFrom —— 支撑抽取级重建与溯源)。 */
-  episodeId?: string;
+  episodeIds?: string[];
 }
 
 export interface CaptureOptions {
@@ -61,6 +68,37 @@ function inferKind(text: string): MemoryKind {
   return "context";
 }
 
+/**
+ * 疑问句形态判定。
+ *
+ * 为什么需要: 捕获器原先"命中信号词就落盘", 而"你觉得选 A 还是 B?"这类句子同样含
+ * 决策词 —— 实测 79 条记忆里 12 条 (15%) 是问句本身, 一条结论都没有。
+ * 这个函数只判形态, 不判内容: 它挡的是"没有结论的问话", 不是"所有问句"
+ * (用户自问自答"那就用 A 吧"仍要被捕获, 见 hasConclusionSignal)。
+ */
+export function isInterrogative(text: string): boolean {
+  const head = text.slice(0, 160);
+  if (/[?？]/.test(head)) return true;
+  return /(吗|呢|怎么|为什么|为何|如何|是不是|能不能|可不可以|要不要|对不对|行不行)[。！!？?\s]?$/.test(
+    head.trim(),
+  );
+}
+
+/** 用户在提问之后**自己敲定**了的信号 (采纳/确认/落地)。 */
+const CONCLUSION_SIGNALS: RegExp[] = [
+  /就这样|就这么|就按这个|按你(说|推荐)的|采用|采纳|确认|敲定|定了|成交/,
+  // 确认词必须**成词出现** (行首或标点之后), 否则 "你好," 里的 "好," 会被误判成确认 ——
+  // 实测这条误判会让闲聊 "你好, 今天天气不错" 变成一条 decision。
+  /(?:^|[，,。；;！!？?\s])(?:可以|没问题|好的?|行|okay|ok)(?=[，,。；;！!？?\s]|$)/i,
+  /(修好|修复|跑通|通过|生效|完成|落地|提交)了?(?=[。！!\s]|$)/,
+  /以后再|下次(都)?要|从现在起/,
+];
+
+/** 该轮是否产出结论 (用户认可 / 事情落地)。 */
+export function hasConclusionSignal(text: string): boolean {
+  return CONCLUSION_SIGNALS.some((p) => p.test(text));
+}
+
 function contentHash(text: string): string {
   return createHash("sha256").update(text.trim()).digest("hex").slice(0, 16);
 }
@@ -100,8 +138,25 @@ export function captureTurn(
   if (mode === "off") return { entries: [], deduped: 0, signal: "off" };
 
   const explicit = extractExplicit(text);
-  const kind = opts.forceKind ?? (explicit ? "fact" : inferKind(text));
-  if (!shouldCapture(text, kind, mode))
+  const interrogative = isInterrogative(text);
+  const concluded = !explicit && hasConclusionSignal(text);
+  const hasAnswer = Boolean(input.answer?.trim());
+
+  // 结论闸门 (必须排在 context 过滤**之前**): 只有问题、后面什么都没有的轮次没有可沉淀的
+  // 结论, 存下来就是转录 —— 实测这类占了 15%。
+  if (!explicit && interrogative && !concluded && !hasAnswer) {
+    return { entries: [], deduped: 0, signal: "no-conclusion:question" };
+  }
+
+  // kind 推断: "用户自己敲定了" (结论信号) 但没命中其它信号时, 它至少是一条 decision,
+  // 不该被当成闲聊 context 丢掉 (自问自答 "那就用 A 吧" 就属于这种)。
+  const inferred = explicit ? "fact" : inferKind(text);
+  const kind = opts.forceKind ?? (concluded && inferred === "context" ? "decision" : inferred);
+
+  // 带回答的疑问句允许越过 context 过滤: 结论长在回答里, 由结构化器判定有没有;
+  // 结构化器读不出结论时由 pipeline 丢弃 (见 pipeline.run), 因此不会退回转录。
+  const bypassContext = !explicit && interrogative && hasAnswer;
+  if (!bypassContext && !shouldCapture(text, kind, mode))
     return { entries: [], deduped: 0, signal: "no-signal:" + kind };
 
   const content = explicit ?? text;
@@ -118,8 +173,8 @@ export function captureTurn(
     scope,
     ...(input.project ? { project: input.project } : {}),
     ts: { validAt: occurredAt, assertedAt: nowIso() },
-    // 血缘: 这条记忆是从哪一轮原文抽出来的 (换抽取器时按 episode 重放)。
-    ...(input.episodeId ? { derivedFrom: [input.episodeId] } : {}),
+    // 血缘: 这条记忆是从哪一轮原文抽出来的 (用户问 + 助手答, 换抽取器时按 episode 重放)。
+    ...(input.episodeIds?.length ? { derivedFrom: input.episodeIds } : {}),
   };
   return { entries: [entry], deduped: 0, signal: kind + ":" + hash };
 }

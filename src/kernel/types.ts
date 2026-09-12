@@ -67,8 +67,12 @@ export interface MemoryEntry {
   confirmedAt?: string;
   /** AI 结构化标签 (进入 SQLite tags 索引, 支持按 tag 召回)。可选: 启发式/未结构化时缺省。 */
   tags?: string[];
-  /** AI 结构化摘要 (可选增强, 不替代原文; truth-in-files 仍以 content 为准)。 */
-  structured?: { summary: string; points: string[] };
+  /**
+   * AI 结构化摘要 (可选增强)。
+   * conclusion 是**提炼后的结论** (决策/教训本身); 有它时 content 就是它,
+   * 原始问答仍在 episode 日志里 (derivedFrom 指回), 因此 truth-in-files 不受影响。
+   */
+  structured?: { summary: string; points: string[]; conclusion?: string };
 
   // ---- v2: 关联性与演化 (全部可选; 缺省时行为与 v1 完全一致) ----
   /** 抽取出的实体 (规范化名), 用于建边 (mentions) 与图扩展召回。 */

@@ -38,6 +38,14 @@ export interface RebuildReport {
 /** 抽取端口: episode → 候选记忆 (规则版 / LLM 版都要能实现)。 */
 export interface EpisodeExtractor {
   extract(episode: Episode): Awaitable<MemoryEntryInput[]>;
+  /**
+   * 成对抽取: 一轮问答 → 候选记忆。
+   *
+   * 为什么必须有: 记忆的结论与理由长在**助手回答**里。重放若只喂用户那一条,
+   * 恢复出来的就是旧行为 (问句转录), 全量重建会静默产出与线上不一致的结果。
+   * 缺省时退回逐条 extract (自定义抽取器仍然可用, 只是拿不到回答)。
+   */
+  extractTurn?(turn: { question: Episode; answer?: Episode }): Awaitable<MemoryEntryInput[]>;
 }
 
 /**
@@ -45,19 +53,29 @@ export interface EpisodeExtractor {
  * 因为产出 id 由内容指纹决定, 所以"用同一个抽取器重放"天然幂等 —— 这是重建可反复执行的前提。
  */
 export function captureExtractor(opts: CaptureOptions = {}): EpisodeExtractor {
+  const run = (
+    episode: Episode,
+    answer: string | undefined,
+    episodeIds: string[],
+  ): MemoryEntryInput[] =>
+    captureTurn(
+      {
+        text: episode.text,
+        ...(answer ? { answer } : {}),
+        session: episode.session,
+        ...(episode.project ? { project: episode.project } : {}),
+        occurredAt: episode.at,
+        episodeIds,
+      },
+      opts,
+    ).entries;
+
   return {
     extract(episode) {
-      const result = captureTurn(
-        {
-          text: episode.text,
-          session: episode.session,
-          ...(episode.project ? { project: episode.project } : {}),
-          occurredAt: episode.at,
-          episodeId: episode.id,
-        },
-        opts,
-      );
-      return result.entries;
+      return run(episode, undefined, [episode.id]);
+    },
+    extractTurn({ question, answer }) {
+      return run(question, answer?.text, [question.id, ...(answer ? [answer.id] : [])]);
     },
   };
 }
@@ -110,11 +128,34 @@ export class RebuildService {
       }
     }
 
+    // 按 (session, turn) 把 episode 还原成"一轮问答": 用户那条是问题, 助手那条是回答。
+    // 顺序依赖: 同一 turn 必须先看到 user 才能配到 answer。
+    const turns = new Map<string, { question?: Episode; answer?: Episode; ids: string[] }>();
+    const order: string[] = [];
     for (const episode of episodes) {
+      const key = episode.session + "#" + episode.turn;
+      const slot = turns.get(key) ?? { ids: [] };
+      if (!turns.has(key)) order.push(key);
+      if (episode.role === "assistant") slot.answer = episode;
+      else slot.question = episode;
+      slot.ids.push(episode.id);
+      turns.set(key, slot);
+    }
+
+    for (const key of order) {
+      const slot = turns.get(key)!;
+      const episode = slot.question ?? slot.answer;
+      if (!episode) continue;
       report.scanned++;
       let fresh: MemoryEntryInput[];
       try {
-        fresh = await this.extractor.extract(episode);
+        fresh =
+          slot.question && this.extractor.extractTurn
+            ? await this.extractor.extractTurn({
+                question: slot.question,
+                ...(slot.answer ? { answer: slot.answer } : {}),
+              })
+            : await this.extractor.extract(episode);
       } catch (error) {
         report.errors.push(`extract failed for ${episode.id}: ${String(error)}`);
         continue;
@@ -127,7 +168,7 @@ export class RebuildService {
           producedIds.add(id);
           continue;
         }
-        const derivedFrom = [...new Set([...(input.derivedFrom ?? []), episode.id])];
+        const derivedFrom = [...new Set([...(input.derivedFrom ?? []), ...slot.ids])];
         const entry = await this.store.add({ ...input, derivedFrom, ...(id ? { id } : {}) });
         known.add(entry.id);
         producedIds.add(entry.id);
@@ -135,7 +176,7 @@ export class RebuildService {
       }
       if (opts.supersedeStale === false) continue;
       const successor = [...producedIds][0];
-      for (const old of byEpisode.get(episode.id) ?? []) {
+      for (const old of slot.ids.flatMap((id) => byEpisode.get(id) ?? [])) {
         if (producedIds.has(old.id)) continue;
         if ((old.status ?? "active") !== "active") continue;
         const relations = [...(old.relations ?? [])];

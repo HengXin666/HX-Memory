@@ -31,10 +31,19 @@ export interface RuntimeSettings {
   rootAgentsOnly?: boolean;
 }
 
+/** 一轮问答 (捕获单元)。 */
+interface TurnPair {
+  question: string;
+  answer: string;
+}
+
 interface TurnState {
+  /** 本轮已收到的用户文本 (可能有多次 user/message)。 */
   messages: string[];
-  /** 已完成但尚未落盘的 turn 文本 (按 interval 批量冲刷)。 */
-  pending: string[];
+  /** 本轮助手的回答。 */
+  answers: string[];
+  /** 已完成但尚未落盘的 turn (按 interval 批量冲刷)。 */
+  pending: TurnPair[];
   project?: string;
   /** 该会话已落盘的轮次数 (episode.turn 用它保持单调递增, 跨冲刷批次不断档)。 */
   turnBase: number;
@@ -160,6 +169,7 @@ export class HxMemoryRuntime {
     if (project) this.lastProject = project;
     this.turns.set(session.id, {
       messages: [],
+      answers: [],
       pending: [],
       ...(project ? { project } : {}),
       turnBase: 0,
@@ -199,39 +209,49 @@ export class HxMemoryRuntime {
     return Number.isFinite(raw) && raw > 1 ? Math.floor(raw) : 1;
   }
 
-  /** 把缓冲的 turn 逐条落盘 (每条 turn 一条记忆, 保留粒度)。 */
+  /**
+   * 把缓冲的 turn 逐条落盘。
+   *
+   * 捕获单元是**一轮问答**, 不是一句用户输入:
+   *   - 原文用**真实 role** 写进 episode (此前助手侧根本没有入口, 日志里 107 条全是 user);
+   *   - 记忆吃 {question, answer} 对, 结论/理由都长在回答里。
+   * 顺序仍是"先原文后记忆" —— 反了会出现"有记忆无原文"的孤儿条目。
+   */
   private async flush(session: SessionLike, state: TurnState): Promise<void> {
     const pending = state.pending.splice(0);
     let turn = state.turnBase;
-    for (const text of pending) {
+    // 每次落盘时**重新求值** (面板能在会话中途开关 episode 记录)。
+    const episodeStore = this.options.episodes?.() ?? null;
+    for (const pair of pending) {
       turn += 1;
-      // 先写原文 (真相), 再抽取记忆并带上血缘: 顺序反了会出现"有记忆无原文"的孤儿条目。
-      let episodeId: string | undefined;
-      // 每次落盘时**重新求值** (面板能在会话中途开关 episode 记录)。
-      const episodeStore = this.options.episodes?.() ?? null;
-      if (episodeStore) {
+      const episodeIds: string[] = [];
+      const writeEpisode = async (role: "user" | "assistant", text: string): Promise<void> => {
+        if (!episodeStore || !text) return;
         try {
           // 端口允许异步实现 (远端日志/批量刷盘), 这里是 await 点。
           const episode = await episodeStore.append({
             session: session.id,
             turn,
-            role: "user",
+            role,
             text,
             at: new Date().toISOString(),
             ...(state.project ? { project: state.project } : {}),
             ...(this.options.surface ? { surface: this.options.surface } : {}),
           });
-          episodeId = episode.id;
+          episodeIds.push(episode.id);
         } catch (error) {
           // 原文写失败不能拖垮记忆捕获 (记忆仍可落盘, 只是少了血缘)。
           this.options.onError?.(error);
         }
-      }
+      };
+      await writeEpisode("user", pair.question);
+      await writeEpisode("assistant", pair.answer);
       await this.pipe.run({
-        text,
+        text: pair.question,
+        ...(pair.answer ? { answer: pair.answer } : {}),
         session: session.id,
         ...(state.project ? { project: state.project } : {}),
-        ...(episodeId ? { episodeId } : {}),
+        ...(episodeIds.length ? { episodeIds } : {}),
       });
     }
     state.turnBase = turn;
@@ -249,6 +269,7 @@ export class HxMemoryRuntime {
       } else {
         this.turns.set(session.id, {
           messages: [],
+          answers: [],
           pending: [],
           project: projectOfSession(session),
           turnBase: 0,
@@ -267,15 +288,26 @@ export class HxMemoryRuntime {
       if (text && state) state.messages.push(text);
       return;
     }
+    if (event.type === "assistant/message") {
+      // 助手输出必须一起收: 结论/理由/"为什么这么问"都在这里。
+      // 缺了它, 抽取器只能看着问题猜答案 (这就是"沉淀的全是用户原话"的根因)。
+      const text = textOf(event.data);
+      if (text && state) state.answers.push(text);
+      return;
+    }
     if (event.type !== "turn/end" || !state) return;
     const reason =
       isRecord(event.data) && isRecord(event.data.reason) ? event.data.reason : undefined;
     const kind = typeof reason?.kind === "string" ? reason.kind : undefined;
     const completed = kind === "completed" || kind === "max-tokens";
     if (completed && state.messages.length > 0) {
-      state.pending.push(state.messages.join("\n"));
+      state.pending.push({
+        question: state.messages.join("\n"),
+        answer: state.answers.join("\n"),
+      });
     }
     state.messages = [];
+    state.answers = [];
     if (state.pending.length >= this.interval()) await this.flush(session, state);
   }
 }
