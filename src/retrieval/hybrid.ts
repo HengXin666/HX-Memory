@@ -11,14 +11,8 @@
 import type { MemoryEntry } from "../kernel/types.ts";
 import { searchableText, termStreams } from "../kernel/cjk.ts";
 import { coverage, gatherChannels, queryTerms } from "./channels.ts";
-import {
-  applyTokenBudget,
-  compositeScore,
-  estimateTokens,
-  jaccardOfSets,
-  mmrSelect,
-  rrfFuse,
-} from "../kernel/ranking.ts";
+import { compositeScore, rrfFuse } from "../kernel/ranking.ts";
+import { assembleHits } from "./assemble.ts";
 import type {
   Channel,
   IndexableSource,
@@ -309,71 +303,26 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       const why = (reasons.get(id) ?? ["fused"]).join(", ");
       resolved.push({ entry: current, score, channels: hit.channels as Channel[], why });
     }
-    resolved.sort((a, b) => b.score - a.score);
-
-    // ---- MMR 去冗余 (没有 embedding 时用词集 Jaccard) ----
-    const diverse = mmrSelect(
+    // 收尾 (去冗余 / 预算 / 图候选补位 / 返回顺序) 抽到 retrieval/assemble.ts ——
+    // 它与"取数与融合"的变化原因不同, 混在一个文件里会把两者都撑破。
+    const result = assembleHits(
       resolved,
-      (h) => h.score,
-      (a, b) => jaccardOfSets(tokensOf(a.entry), tokensOf(b.entry)),
-      { limit: Math.max(limit * 4, limit + 8), lambda: this.mmrLambda },
+      {
+        limit,
+        tokenBudget,
+        mmrLambda: this.mmrLambda,
+        graphTierQuota: this.graphTierQuota,
+        tier2Ids: gathered.tier2.flatMap((l) => l.ids),
+        tokensOf,
+        resolve: (id) => {
+          const e = byId.get(id);
+          return e ? this.resolveCurrent(e) : null;
+        },
+        whyOf: (id) => (reasons.get(id) ?? ["graph"]).join(", "),
+      },
     );
-
-    // ---- 预算裁剪 (规则保底) ----
-    const budgeted = applyTokenBudget(
-      diverse.map((h) => ({
-        item: h,
-        tokens: estimateTokens(h.entry.content) + 8,
-        reserved: h.channels.includes("rules") || h.entry.kind === "rule",
-      })),
-      tokenBudget,
-    );
-    // 返回顺序必须按综合分降序 —— MMR 的产出是**挑选顺序** (相关性 × 差异度的折中),
-    // 不是相关度顺序。直接把它当排名用会让分数最高的条目排在第 2 名之后 (实测: gold
-    // 分数 0.0229 全场最高, 却因为与已选项相似被排到第 2; 接入向量通道后更严重)。
-    // 预算的 reserved 语义保护的是"是否入选", 不是"排在第几", 因此这里重排不破坏规则保底。
-    const primary = budgeted.kept.slice().sort((a, b) => b.score - a.score);
-
-    // ---- 图候选作为尾巴追加 (第二梯队) ----
-    // 只在主榜单没填满时才补位, 且不参与上面的打分竞争。丢弃重复项 (主榜单已有的不要)。
-    const tier2Ids = gathered.tier2.flatMap((l) => l.ids).slice(0, this.graphTierQuota);
-    const extras: RetrievalHit[] = [];
-    for (const id of tier2Ids) {
-      if (primary.length + extras.length >= limit) break;
-      if (primary.some((h) => h.entry.id === id)) continue;
-      if (extras.some((h) => h.entry.id === id)) continue;
-      const e = byId.get(id);
-      if (!e) continue;
-      const current = this.resolveCurrent(e);
-      if (!current || primary.some((h) => h.entry.id === current.id)) continue;
-      extras.push({
-        entry: current,
-        // 分数排在主榜单之下: 它不在同一条相关性尺度上, 不应被误读为"同等相关"。
-        score: 0,
-        channels: ["graph"],
-        why: (reasons.get(id) ?? ["graph"]).join(", "),
-      });
-    }
-    const finalHits: RetrievalHit[] = [...primary.slice(0, limit), ...extras].slice(
-      0,
-      Math.max(limit, this.graphTierQuota > 0 ? limit : limit),
-    );
-    const dropped: RetrievalResult["dropped"] = budgeted.dropped.map((d) => ({
-      id: d.item.entry.id,
-      reason: "budget",
-    }));
-    for (const h of diverse) {
-      if (finalHits.some((f) => f.entry.id === h.entry.id)) continue;
-      if (dropped.some((d) => d.id === h.entry.id)) continue;
-      dropped.push({ id: h.entry.id, reason: "filtered" });
-    }
-
-    return {
-      hits: finalHits,
-      tokens: finalHits.reduce((n, h) => n + estimateTokens(h.entry.content) + 8, 0),
-      dropped,
-      degraded,
-    };
+    result.degraded = degraded;
+    return result;
   }
 
   /**
