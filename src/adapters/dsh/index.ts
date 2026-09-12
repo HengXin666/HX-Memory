@@ -371,6 +371,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       enabled: () => settings().injectBindings,
       warmupMs: () => settings().semanticWarmupMs,
       language: () => settings().language,
+      injectMode: () => settings().injectMode,
       projectOf: (payload) => projectOfSession(payload.agent.session) ?? payload.agent.session.id,
     }) as never,
   );

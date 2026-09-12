@@ -47,6 +47,13 @@ ctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {
 - **为什么是主通道**: 它在每一步的模型请求之前、拿得到"最新一轮用户文本", 且能改变实际发送的消息。
 - **约束**: 同步判定点上要做异步检索必须自带投影/缓存 (本项目用 `Binder.warm()` 带硬时限预热)。
 - **去重**: 注入出去的消息会进入会话日志, 下一个 step 的 claimed batch 里看不到它 —— 必须扫**模型可见的**历史事件 (`surface.nodes`) 去重, 否则每步重复注入 (本项目 `prestep.ts` 已处理)。
+  两个必须一起做的细节: ①`agent/session-start` 的注入经 `agent.inject()` 进 inbox, 它的事件
+  要等这一步的 claim 批次落日志才可见, 而 pre-step 在**那之前**运行 —— 基线还得并入本轮
+  claimed 批次, 否则首轮必然重发一份; ②判重按**条目 id 集合**, 不是整块文本
+  (标题/框架句不同就会漏判)。
+- **注入时机可配置**: 设置 `injectMode` = `every-turn` (默认, 逐轮补新条目) 或 `first`
+  (只在本会话首次注入一次, 之后不再自动进注入通道); 两种模式下 `memory_search` 工具都常开。
+  判据是"本会话有没有出现过带 id 的条目块", 不是"本插件注入过任何东西" (指引块无 id)。
 - **来源标记**: 注入消息用 `source.kind = "plugin"` 并带 plugin 名, 便于 (a) 去重, (b) 避免把自家注入当成用户输入再捕获。
 
 ### 2.2 `system-prompt/assemble` (系统提示词级)

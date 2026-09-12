@@ -29,7 +29,13 @@ Status: implemented
 - 召回结果按 **always-on 组 / 新召回组** 切分 (`splitTriggerGroups`): 前者是常驻不变量,
   只该在会话开始时进一次; 后者按话题变化, 是逐轮补的主体。
 - `prestep.scanPriorInjections` 同时返回"已注入文本"与"已注入 id": 前者兜底, 后者是主判据。
+  调用方也可以直接传 Session (不只是 Agent) —— 两种形状都常被拿到。
 - 会话开始 (session-start) 也做同一份判重, 不再灌第二份相同指引。
+  修正 (2026-09-12): 只比"整块文本"**不足以**盖住这一条 —— 会话开始的块走 `agent.inject()`
+  进 inbox, 它的 `user/message` 事件要等这一步的 claim 批次写进会话日志才可见, 而 pre-step
+  在那之前就跑了 (实测: 首轮 8 个 id 里 6 个重复)。基线因此还要并入本轮 claimed 批次;
+  同一次改动新增了 `injectMode` 设置 (`first` = 只在首轮注入)。
+  见 [注入时机可配置](2026-09-12-injection-timing-first-turn.md)。
 - 声明式绑定注入 (有 bindings 的项目) 走同一条差量逻辑 —— 它此前是"每轮全量重发"。
 - 命中强化回调只对**实际发出**的条目生效: 被差量过滤掉的这轮并没有被"用到"。
 
@@ -51,10 +57,12 @@ Status: implemented
 付出的: 注入行多了一段注释标记 (约 30 字符/条);
 基线依赖"会话历史里能找到自己的注入" —— compaction 遮蔽后该基线会退化,
 此时行为是**重新注入** (保守但正确, 不会永久沉默);
-「一次调用里绑定注入 + 触发注入可能给同一条目」这个较小的问题仍然存在。
+「一次调用里绑定注入 + 触发注入可能给同一条目」这个较小的问题仍然存在;
+"会话开始的块尚未进日志"这个时序缺口由调用方并入 claimed 批次补上 (2026-09-12, 同上)。
 
 ## Testing
 
 - `tests/s2/injection-dedupe.test.ts`: 标记可解析、组切分、差量注入、整轮已注入返回空串。
-- `tests/s2/prestep-dedupe.test.ts`: 跨 step 去重 + 0.1.2 形状的 session (eventKey/surface) 去重。
+- `tests/s2/prestep-dedupe.test.ts`: 跨 step 去重 + 0.1.2 形状的 session (eventKey/surface) 去重,
+  加上 2026-09-12 的首轮判重 (claimed 批次并入基线) 与 `injectMode` 关闸用例。
 - `tests/s2/dual-line.test.ts`: 新线 (确定性注入) 不受影响 —— 10/10 仍然注入。

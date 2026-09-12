@@ -14,6 +14,11 @@ export interface HxMemorySettings {
   injectGuidance: boolean;
   /** pre-step 确定性绑定注入开关 (与指引分开, 关掉指引不影响绑定注入)。 */
   injectBindings: boolean;
+  /**
+   * 注入时机: `first` = 只在会话首轮注入一次; `every-turn` = 逐轮注入 (差量, 只补新条目)。
+   * 默认 every-turn: 会话中途出现的回忆型提问仍能拿到具体历史 (差额只是新增条目)。
+   */
+  injectMode: "first" | "every-turn";
   /** 写入期自动演化 (显式更新信号 → 取代链; 矛盾 → 标记)。关掉只保留字面去重与建边。 */
   autoEvolve: boolean;
   /**
@@ -38,6 +43,7 @@ export const DEFAULT_SETTINGS: HxMemorySettings = {
   language: "zh",
   injectGuidance: true,
   injectBindings: true,
+  injectMode: "every-turn",
   autoEvolve: true,
   semanticWarmupMs: 50,
   captureEpisodes: true,

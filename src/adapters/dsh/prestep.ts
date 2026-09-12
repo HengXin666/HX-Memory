@@ -58,6 +58,14 @@ function messageTextOf(m: unknown): string {
   return "";
 }
 
+/**
+ * 记忆**条目块**的注入形态 (session-start 与 pre-step 都是它)。
+ *
+ * 为什么按 form 过滤: 同一个插件还有另一条无 id 的注入通道 (记忆指引块)。指引进不了
+ * 去, "已注入条目"的判据才不会被它污染 —— 否则"库里没有不变量"的会话在首轮反而不注入。
+ */
+export const INJECTION_FORM = "instructions";
+
 /** 本插件在本次会话里已经注入过的内容 (文本 + 条目 id)。 */
 export interface PriorInjections {
   /** 注入块的完整文本 (整块去重: 完全相同的块不重发)。 */
@@ -75,25 +83,39 @@ export interface PriorInjections {
  * 且预步每步重新拼块, 条目集合一变整块文本就变 → 已注入的条目被整份重发。
  * 因此主判据是**条目 id 集合**, 文本相等只作为兜底。
  */
-export function scanPriorInjections(agent: unknown): PriorInjections {
+export function scanPriorInjections(agentOrSession: unknown): PriorInjections {
   const texts = new Set<string>();
   const ids = new Set<string>();
-  const session = (agent as { session?: unknown } | undefined)?.session;
+  const session = sessionOf(agentOrSession);
   for (const ev of sessionEvents(session)) {
     const e = ev as {
       type?: string;
-      data?: { source?: { kind?: string; plugin?: string }; content?: unknown };
+      data?: { source?: { kind?: string; plugin?: string; form?: string }; content?: unknown };
     };
     if (e?.type !== "user/message") continue;
     if (e.data?.source?.kind !== "plugin" || e.data.source.plugin !== MEMORY_PLUGIN_SOURCE) {
       continue;
     }
+    if (e.data.source.form !== INJECTION_FORM) continue;
     const text = messageTextOf({ content: e.data.content });
     if (!text) continue;
     texts.add(text);
     for (const id of parseInjectedIds(text)) ids.add(id);
   }
   return { texts, ids };
+}
+
+/**
+ * 接受 Session 或 Agent (两者都常被调用方拿到)。
+ *
+ * 为什么不强制一种形状: session-start 的 payload 给的是 agent, 预步的 payload 也是 agent,
+ * 但调用方 (例如需要"从"是否已注入源集合"里判断的 runtime) 手上常常只有 session。
+ * 归一化放在这里, 好过让每个调用方各自决定传哪一种。
+ */
+function sessionOf(agentOrSession: unknown): unknown {
+  const asAgent = agentOrSession as { session?: unknown } | null | undefined;
+  if (asAgent && typeof asAgent === "object" && asAgent.session) return asAgent.session;
+  return agentOrSession;
 }
 
 /** 兼容保留: 只取"已注入的文本块"(旧接口, 测试与外部可继续用)。 */
@@ -104,6 +126,45 @@ export function priorInjections(agent: unknown): Set<string> {
 /** 已注入过的条目 id 集合 (差量注入的基线)。 */
 export function priorInjectedIds(agent: unknown): Set<string> {
   return scanPriorInjections(agent).ids;
+}
+
+/** 注入时机 (设置 memoryInjectMode): first = 只在会话首轮注入一次; every-turn = 逐轮差量。 */
+export type InjectMode = "first" | "every-turn";
+
+/**
+ * 本会话是否已经有**记忆条目块** (带 id 标记的块) 进过上下文 —— `first` 模式的判据。
+ *
+ * 为什么按"会话事件"而不是内存计数: 预步可能被并发调用 (subagent/并行步), 内存计数
+ * 会在并发下漏判; 而会话日志本身就是去重基线的权威来源 (与差量注入同一份判据)。
+ * 只认**用户可见**的注入事件 (surface), compaction 遮蔽后重新注入 —— 保守且正确。
+ *
+ * 为什么判据是"有 id"而不是"有本插件的注入": 会话开始同时注入**指引块** (工具用法说明,
+ * 无 id) 与条目块。用"注入过"当开关时, 只注入了指引的会话 (库里没有不变量、绑定也没命中)
+ * 会被误判成"记忆已给过", 于是首轮预步不再注入 —— 恰恰丢掉了"模型没意识时唯一的保底"
+ * (r00155cdb954e41c7)。只有真正带 id 的条目块才算"记忆已经进过上下文"。
+ */
+export function hasInjectedEntries(agentOrSession: unknown): boolean {
+  return scanPriorInjections(agentOrSession).ids.size > 0;
+}
+
+/**
+ * 把一批**待发消息**里的本插件注入块并进判重基线 (原地修改)。
+ *
+ * 为什么必须做这一步: 会话开始用 agent.inject() 把块投进 inbox, 该块要等这一步的 claim
+ * 批次被写进会话日志后才在 sessionEvents 里可见 —— 而 pre-step 在**那之前**运行。于是
+ * 首轮必然重发一遍同样的常驻记忆 (实测 session-54bf3f3b: seq 10 与 seq 12, 6/8 个 id 重复)。
+ * claimed 批次与 decision.messages 都是模型**即将**看见的内容, 口径与"已注入"完全一致。
+ */
+function collectInjectionEntries(messages: unknown[], into: PriorInjections): void {
+  for (const m of messages) {
+    const src = (m as { source?: { kind?: string; plugin?: string; form?: string } } | undefined)
+      ?.source;
+    if (src?.kind !== "plugin" || src.plugin !== MEMORY_PLUGIN_SOURCE) continue;
+    const text = messageTextOf(m);
+    if (!text) continue;
+    into.texts.add(text);
+    for (const id of parseInjectedIds(text)) into.ids.add(id);
+  }
 }
 
 export interface PreStepEnterDecision {
@@ -134,11 +195,14 @@ export function makePreStepHandler(
     warmupMs?: () => number;
     /** 框架句语言 (设置里的 language; 默认 zh)。 */
     language?: () => "zh" | "en";
+    /** 注入时机 (默认 every-turn = 逐轮差量; first = 只在会话首轮注入一次)。 */
+    injectMode?: () => InjectMode;
   },
 ) {
   const projectOf = options.projectOf ?? ((p: PreStepPayload) => p.agent.session.id);
   // 每次求值 (面板里改语言当轮生效) —— 参数属性/构造期固化在 strip-only 下同样不可用。
   const language = (): "zh" | "en" => options.language?.() ?? "zh";
+  const injectMode = (): InjectMode => options.injectMode?.() ?? "every-turn";
   return async (
     payload: PreStepPayload,
     next: () => Promise<PreStepDecision>,
@@ -157,7 +221,19 @@ export function makePreStepHandler(
     if (!text) return decision;
     // 注入前热身异步向量投影 (硬时限): 首次预热可能补不齐, 后续轮次就有真语义召回了。
     await binder.warm(options.warmupMs?.() ?? 50, text);
+    const msgs = decision.messages as unknown[];
     const prior = scanPriorInjections(agent);
+    // 关键: 把**本轮 claimed 批次**里已有的注入也并进判重基线。
+    //
+    // 为什么必须并 (2026-09 实测): session-start 走的是 agent.inject() → 进 inbox; 它的
+    // user/message 事件要等这一步的 claim 批次被写进会话日志才出现, 而 pre-step 在**那之前**
+    // 就跑了。于是同一个会话开始的注入块 (以及它的 id 标记) 对这里的 scan 完全不可见 ——
+    // 首轮必然再发一份 (session-54bf3f3b: seq 10 与 seq 12 两块, 8 个 id 里 6 个重复)。
+    collectInjectionEntries(payload.messages, prior);
+    collectInjectionEntries(msgs, prior);
+    // first 模式: 本会话已经有过**记忆条目块** → 不再进入注入通道 (连检索都不做)。
+    // 判据在 warm 之后取 (warm 会跨 await), 否则并发的首步会各注入一份。
+    if (injectMode() === "first" && prior.ids.size > 0) return decision;
     // 差量注入: 把"本会话已注入过的条目 id"交给 Binder 排除。
     // 于是常驻记忆 (规则/关键事实) 只会在会话开始时进一次, 之后的轮次只补真正的新条目。
     const bound = binder.injectFor(project, text, [...prior.ids]);
@@ -175,7 +251,6 @@ export function makePreStepHandler(
       "\n" +
       memoryEntryHint(language());
     // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
-    const msgs = decision.messages as unknown[];
     if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;
     if (prior.texts.has(injectedText)) return decision;
     const injected = createUserMessage({

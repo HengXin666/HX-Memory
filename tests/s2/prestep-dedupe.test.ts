@@ -37,7 +37,7 @@ const configs: BindingConfig[] = [
 ];
 const binder = new Binder(mem([rule]), () => configs);
 
-function userMsg(text: string, source?: { kind: string; plugin?: string }) {
+function userMsg(text: string, source?: { kind: string; plugin?: string; form?: string }) {
   return { role: "user", content: [{ type: "text", text }], ...(source ? { source } : {}) };
 }
 
@@ -132,18 +132,152 @@ describe("跨 step 去重", () => {
       {
         type: "user/message",
         data: {
-          source: { kind: "plugin", plugin: "time-context" },
+          source: { kind: "plugin", plugin: "time-context", form: "context" },
           content: [{ type: "text", text: "时间" }],
         },
       },
       {
         type: "user/message",
         data: {
-          source: { kind: "plugin", plugin: "hx-memory" },
+          source: { kind: "plugin", plugin: "hx-memory", form: "instructions" },
           content: [{ type: "text", text: "记忆块" }],
         },
       },
     ];
     expect([...priorInjections({ session: { events } })]).toEqual(["记忆块"]);
+  });
+
+  it("接受 Session 或 Agent (调用方手上常只有其中一个)", () => {
+    const events = [
+      {
+        type: "user/message",
+        data: {
+          source: { kind: "plugin", plugin: "hx-memory", form: "instructions" },
+          content: [{ type: "text", text: "记忆块 <!--hx-memory:id=r1-->" }],
+        },
+      },
+    ];
+    const session = { id: "s1", events };
+    expect([...priorInjections({ session })]).toEqual(["记忆块 <!--hx-memory:id=r1-->"]);
+    expect([...priorInjections(session)]).toEqual(["记忆块 <!--hx-memory:id=r1-->"]);
+  });
+});
+
+describe("首轮就得去重 (session-start 的块还没进会话日志)", () => {
+  // 真实缺陷 (session-54bf3f3b): session-start 走 agent.inject() → 进 inbox, 它的
+  // user/message 事件要等这一步的 claim 批次写进日志才出现, 而 pre-step 在**那之前**
+  // 就跑了。于是首轮必然再发一份同样的常驻记忆 (seq 10 与 seq 12, 8 个 id 里 6 个重复)。
+  const firstTurnPayload = (messages: unknown[]): PreStepPayload => ({
+    agent: { session: { id: "s1", header: { cwd: "/code/api" }, events: [] } },
+    messages,
+    step: 1,
+  });
+
+  const startBlock =
+    "【相关记忆 (always-on)】\n- [rA] 所有容器都要显式设计并发上限 <!--hx-memory:id=rA-->";
+
+  it("claimed 批次里已有 session-start 的块 → 首轮不再重复注入同一条目", async () => {
+    const decided = await handler(
+      firstTurnPayload([
+        userMsg("帮我部署一个容器, 注意并发"),
+        userMsg(startBlock, { kind: "plugin", plugin: "hx-memory", form: "instructions" }),
+      ]),
+      async () => ({
+        kind: "enter",
+        messages: [
+          userMsg(startBlock, { kind: "plugin", plugin: "hx-memory", form: "instructions" }),
+          userMsg("帮我部署一个容器, 注意并发"),
+        ],
+      }),
+    );
+    expect(texts(decided).filter((t) => t.includes("并发上限"))).toHaveLength(1);
+  });
+
+  it("对照: 没有那个块时首轮照常注入 (不误伤保底通道)", async () => {
+    const decided = await handler(firstTurnPayload([userMsg("帮我部署一个容器, 注意并发")]), async () => ({
+      kind: "enter",
+      messages: [userMsg("帮我部署一个容器, 注意并发")],
+    }));
+    expect(texts(decided).some((t) => t.includes("并发上限"))).toBe(true);
+  });
+});
+
+describe("injectMode: first (只在首轮注入一次)", () => {
+  const firstOnly = makePreStepHandler(binder, {
+    rootAgentsOnly: () => false,
+    enabled: () => true,
+    injectMode: () => "first",
+    projectOf: (p) => (p.agent.session.header?.cwd ?? "").split("/").pop() ?? p.agent.session.id,
+  });
+
+  it("会话里已有带 id 的记忆块 → 后续轮次不注入 (连检索都不做)", async () => {
+    const events = [
+      {
+        type: "user/message",
+        data: {
+          source: { kind: "plugin", plugin: "hx-memory", form: "instructions" },
+          content: [{ type: "text", text: "- [rA] 规则 <!--hx-memory:id=rA-->" }],
+        },
+      },
+    ];
+    const decision = await firstOnly(
+      {
+        agent: { session: { id: "s1", header: { cwd: "/code/api" }, events } },
+        messages: [userMsg("继续: 容器并发")],
+        step: 3,
+      },
+      async () => ({ kind: "enter", messages: [userMsg("继续: 容器并发")] }),
+    );
+    expect(texts(decision).some((t) => t.includes("并发上限"))).toBe(false);
+  });
+
+  it("只有指引 (无 id 标记) 时首轮仍然注入 —— 判据是条目块, 不是'注入过任何东西'", async () => {
+    const events = [
+      {
+        type: "user/message",
+        data: {
+          source: { kind: "plugin", plugin: "hx-memory", form: "instructions" },
+          content: [{ type: "text", text: "你有一套长期记忆 (HX-Memory), 可以调 memory_search。" }],
+        },
+      },
+    ];
+    const decision = await firstOnly(
+      {
+        agent: { session: { id: "s1", header: { cwd: "/code/api" }, events } },
+        messages: [userMsg("帮我部署一个容器, 注意并发")],
+        step: 1,
+      },
+      async () => ({ kind: "enter", messages: [userMsg("帮我部署一个容器, 注意并发")] }),
+    );
+    expect(texts(decision).some((t) => t.includes("并发上限"))).toBe(true);
+  });
+
+  it("首轮把 claimed 批次里的会话开始块算进去后也不再重复", async () => {
+    const decision = await firstOnly(
+      {
+        agent: { session: { id: "s1", header: { cwd: "/code/api" }, events: [] } },
+        messages: [
+          userMsg("- [rA] 规则 <!--hx-memory:id=rA-->", {
+            kind: "plugin",
+            plugin: "hx-memory",
+            form: "instructions",
+          }),
+          userMsg("帮我部署一个容器, 注意并发"),
+        ],
+        step: 1,
+      },
+      async () => ({
+        kind: "enter",
+        messages: [
+          userMsg("- [rA] 规则 <!--hx-memory:id=rA-->", {
+            kind: "plugin",
+            plugin: "hx-memory",
+            form: "instructions",
+          }),
+          userMsg("帮我部署一个容器, 注意并发"),
+        ],
+      }),
+    );
+    expect(texts(decision).filter((t) => t.includes("并发上限"))).toHaveLength(0);
   });
 });

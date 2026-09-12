@@ -6,6 +6,21 @@
 
 export type Locale = typeof reviewEn;
 export type BindingLocale = typeof bindingEn;
+/** 设置卡字典与主字典分开: 卡片的文案只在宿主「插件」页里用, 不该混进审阅页的键空间。 */
+export type CardLocale = typeof cardEn;
+
+export const cardEn = {
+  title: "Memory injection",
+  desc: "When the standing memory entries (cross-project rules, key facts) enter the conversation. Once injected, the block stays in context — re-sending it every turn only repeats the same entries and spends budget.",
+  modeFirst: "First turn only",
+  modeEveryTurn: "Every turn (delta)",
+  modeFirstHint:
+    "Injects once at the start of the session, then stays silent. Later turns can still call memory_search on demand — the tool is always available.",
+  modeEveryTurnHint:
+    "Injects on every turn, but only entries not already in this session's context (a delta). Recalled history for a mid-session question still arrives automatically.",
+  saved: "Saved",
+  saveFailed: "Save failed:",
+};
 
 export const bindingEn = {
   nav: "Memory Bindings",
@@ -257,4 +272,17 @@ export const reviewZh: Locale = {
   searchBtn: "搜索",
   proposalsCount: "待审 {n} 条",
   loading: "读取中…",
+};
+
+export const cardZh: CardLocale = {
+  title: "记忆注入",
+  desc: "常驻记忆条目 (跨项目规则/关键事实) 什么时候进上下文。注入过的块会一直留在上下文里 —— 每轮再发一遍只是把同几条重复一遍, 还白烧预算。",
+  modeFirst: "只在首轮注入",
+  modeEveryTurn: "每轮注入 (差量)",
+  modeFirstHint:
+    "会话开始时注入一次, 之后不再自动注入。后续轮次仍可随时调用 memory_search 按需检索 —— 工具一直在。",
+  modeEveryTurnHint:
+    "每轮都注入, 但只补「本会话上下文里还没有的」条目 (差量)。会话中途的回忆型提问仍能自动拿到具体历史。",
+  saved: "已保存",
+  saveFailed: "保存失败:",
 };

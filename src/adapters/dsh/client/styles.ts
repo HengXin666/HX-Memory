@@ -1,7 +1,8 @@
 // src/adapters/dsh/client/styles.ts — HX-Memory 面板样式 (零依赖, 一段字符串)。
 //
 // 规则:
-//  1) 所有选择器都以 .hxmem-review / .hxmem-bindings 起头, 不会漏进宿主界面 (CSS 没有作用域);
+//  1) 所有选择器都以 .hxmem-review / .hxmem-bindings / .hxmem-settings-card 起头,
+//     不会漏进宿主界面 (CSS 没有作用域); 设置卡同时挂 .hxmem-bindings 复用整套设置样式;
 //  2) 颜色全部优先取宿主主题变量 (--dsw-alias-*), 缺失时退回中性命色, 明暗两套主题都不至于糊;
 //  3) 间距走 --hxmem-s1..s4 一档比例, 行/卡片分离靠 background + radius, 不用 <hr>;
 //  4) 徽章按 kind / scope / status 分色; status-* 是原生 badge (见 review-page 的 p.status)。
@@ -201,6 +202,20 @@ body[data-ds-dark-theme] .hxmem-review .badge.s-agent,
   color: var(--hxmem-muted);
   background: transparent;
   border: var(--hxmem-line);
+}
+
+/* 记忆注入设置卡 (宿主「设置 → 插件」页): 只加卡片自身的留白与标题行, 其余复用上面这套。 */
+.hxmem-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hxmem-s2);
+  padding: var(--hxmem-s3) 0;
+}
+
+.hxmem-settings-card .head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hxmem-s2);
 }
 
 /* 按钮: 默认中性, .primary/.confirm/.reject/.danger/.ghost 各自着色。 */

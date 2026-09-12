@@ -11,6 +11,9 @@ export const Config = z.object({
   language: z.union(["zh", "en"]).default("zh"),
   injectGuidance: z.boolean().default(true),
   injectBindings: z.boolean().default(true),
+  // 注入时机: first = 只在会话首轮注入一次 (常驻记忆本来就不变); every-turn = 逐轮差量补新。
+  // 为什么是枚举而不是布尔: 它与"注入哪些内容"正交, 将来要加 "on-demand" 时不必再加开关。
+  injectMode: z.union(["first", "every-turn"]).default("every-turn"),
   autoEvolve: z.boolean().default(true),
   semanticWarmupMs: z.natural().min(0).max(2000).default(50),
   captureEpisodes: z.boolean().default(true),
