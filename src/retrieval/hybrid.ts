@@ -49,6 +49,14 @@ export interface HybridRetrieverOptions {
   coverageFloor?: number;
   /** 图扩展的默认跳数。 */
   graphHops?: 0 | 1 | 2;
+  /**
+   * 图候选的独立配额 (第二梯队条数; 默认 3, 0 = 不追加)。
+   *
+   * 为什么是配额而不是权重: 图候选是"主题邻居"不是"答案" (实测 gold 精确率 8.5%),
+   * 按权重参与 RRF 会挤掉词面命中; 但它在字面不可达时确实有用。配额让它"只能补位,
+   * 不能抢占" —— 实测同时保住 R@1 (0.684) 与图专属召回 (0.25 -> 0.75)。
+   */
+  graphTierQuota?: number;
   rrfK?: number;
   mmrLambda?: number;
   /** 时钟 (测试可注入)。 */
@@ -77,6 +85,7 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
   private readonly channelWeights: Partial<Record<Channel, number>>;
   private readonly coverageFloor: number;
   private readonly graphHops: 0 | 1 | 2;
+  private readonly graphTierQuota: number;
   private readonly rrfK: number;
   private readonly mmrLambda: number;
   private readonly now: () => string;
@@ -94,6 +103,7 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     this.channelWeights = opts.channelWeights ?? {};
     this.coverageFloor = opts.coverageFloor ?? 0.5;
     this.graphHops = opts.graphHops ?? 1;
+    this.graphTierQuota = Math.max(0, opts.graphTierQuota ?? 3);
     this.rrfK = opts.rrfK ?? 60;
     this.mmrLambda = opts.mmrLambda ?? 0.7;
     this.now = opts.now ?? (() => new Date().toISOString());
@@ -322,10 +332,32 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     // 不是相关度顺序。直接把它当排名用会让分数最高的条目排在第 2 名之后 (实测: gold
     // 分数 0.0229 全场最高, 却因为与已选项相似被排到第 2; 接入向量通道后更严重)。
     // 预算的 reserved 语义保护的是"是否入选", 不是"排在第几", 因此这里重排不破坏规则保底。
-    const finalHits: RetrievalHit[] = budgeted.kept
-      .slice()
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    const primary = budgeted.kept.slice().sort((a, b) => b.score - a.score);
+
+    // ---- 图候选作为尾巴追加 (第二梯队) ----
+    // 只在主榜单没填满时才补位, 且不参与上面的打分竞争。丢弃重复项 (主榜单已有的不要)。
+    const tier2Ids = gathered.tier2.flatMap((l) => l.ids).slice(0, this.graphTierQuota);
+    const extras: RetrievalHit[] = [];
+    for (const id of tier2Ids) {
+      if (primary.length + extras.length >= limit) break;
+      if (primary.some((h) => h.entry.id === id)) continue;
+      if (extras.some((h) => h.entry.id === id)) continue;
+      const e = byId.get(id);
+      if (!e) continue;
+      const current = this.resolveCurrent(e);
+      if (!current || primary.some((h) => h.entry.id === current.id)) continue;
+      extras.push({
+        entry: current,
+        // 分数排在主榜单之下: 它不在同一条相关性尺度上, 不应被误读为"同等相关"。
+        score: 0,
+        channels: ["graph"],
+        why: (reasons.get(id) ?? ["graph"]).join(", "),
+      });
+    }
+    const finalHits: RetrievalHit[] = [...primary.slice(0, limit), ...extras].slice(
+      0,
+      Math.max(limit, this.graphTierQuota > 0 ? limit : limit),
+    );
     const dropped: RetrievalResult["dropped"] = budgeted.dropped.map((d) => ({
       id: d.item.entry.id,
       reason: "budget",

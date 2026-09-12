@@ -151,6 +151,41 @@ describe("检索: 返回顺序必须按综合分降序", () => {
   });
 });
 
+describe("检索: 图候选是第二梯队 (不抢占词面命中)", () => {
+  /**
+   * 为什么钉这条: 图扩展带来的是"主题邻居"而非"答案" (实测图候选 gold 精确率仅 8.5%)。
+   * 让它以同等 RRF 权重参与竞争时, 会给主榜单条目二次计分, 把词面-only 的高分条目挤下去
+   * (实测全体 R@1 从 0.684 掉到 0.630)。但它确实能召回字面不可达的目标 (图专属 case 0.25 -> 0.75)。
+   * 折中: 主榜单先排好, 图候选作为尾巴追加。
+   */
+  const seed = make({
+    id: "seed",
+    content: "容器并发策略缺失",
+    relations: [{ type: "relates", toId: "neighbor", weight: 0.9 }],
+  });
+  const neighbor = make({ id: "neighbor", content: "部署流水线上的其它注意点" });
+  const strong = make({ id: "strong", content: "容器并发策略缺失 显式设上限" });
+
+  it("字面命中永远排在图候选之前", () => {
+    const r = retriever([seed, neighbor, strong]);
+    const out = r.retrieveSync({ text: "容器并发策略", limit: 3, tokenBudget: 1_000_000 });
+    const strongIdx = out.hits.findIndex((h) => h.entry.id === "strong");
+    const neighborIdx = out.hits.findIndex((h) => h.entry.id === "neighbor");
+    expect(strongIdx).toBeGreaterThanOrEqual(0);
+    // 若邻居也被召回, 它必须在词面命中之后
+    if (neighborIdx >= 0) expect(neighborIdx).toBeGreaterThan(strongIdx);
+  });
+
+  it("图候选仍然能被召回 (conformance 要求的设计能力不被削弱)", () => {
+    const r = retriever([seed, neighbor]);
+    const out = r.retrieveSync({ text: "容器并发策略", limit: 5 });
+    const hit = out.hits.find((h) => h.entry.id === "neighbor");
+    expect(hit, "字面不可达的邻居应仍由图通道召回").toBeDefined();
+    expect(hit?.channels).toContain("graph");
+    expect(hit?.why).toContain("graph:relates:seed");
+  });
+});
+
 describe("检索: 治理铁律 (规则通道)", () => {
   const rule = (over: Partial<MemoryEntry> = {}) =>
     make({

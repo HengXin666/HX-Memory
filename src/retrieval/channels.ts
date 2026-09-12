@@ -98,8 +98,10 @@ export function gatherChannels(
   text: string,
   terms: QueryTerms,
   candidateWindow: number,
-): { ranked: RankedList[]; degraded: string[] } {
+): { ranked: RankedList[]; degraded: string[]; tier2: RankedList[] } {
   const ranked: RankedList[] = [];
+  // 第二梯队: 不与主榜单竞争分数的通道 (目前只有图扩展)。见文件末尾的说明。
+  const tier2: RankedList[] = [];
   const degraded: string[] = [];
 
   // ---- 通道 1: 已确认的跨项目规则 (保底通道; 不受覆盖率过滤影响) ----
@@ -221,9 +223,17 @@ export function gatherChannels(
       }
     }
     if (graphIds.length) {
-      ranked.push({ channel: "graph", ids: graphIds, weight: deps.weightOf("graph") });
+      // 图扩展进**第二梯队**而不是主榜单。
+      //
+      // 为什么 (实测): 实体/标签共现建出的边是"主题邻居"而非"答案", 图候选的 gold 精确率
+      // 只有 8.5% (50/588)。按 RRF 同权重参与竞争时, 它给主榜单里的条目二次计分,
+      // 把词面-only 的高分条目挤下去: 全体 R@1 从 0.684 掉到 0.630。
+      // 但它确实能拿到字面不可达的目标 (图专属 case 上 0.250 -> 0.750)。
+      // 两个读数方向相反, 因此不是"开/关"的取舍, 而是**分层**:
+      // 主榜单先按相关性排好, 图候选作为尾巴追加, 占独立配额 (见 hybrid.ts 的 graphTierQuota)。
+      tier2.push({ channel: "graph", ids: graphIds, weight: deps.weightOf("graph") });
     }
   }
 
-  return { ranked, degraded };
+  return { ranked, degraded, tier2 };
 }
