@@ -62,7 +62,12 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
     : syncEmbedder
       ? new LinearVectorIndex({ embedder: syncEmbedder })
       : new ProjectedVectorIndex({ embedder });
-  const retriever = new HybridRetriever(store, vectorIndex ? { vectorIndex } : {});
+  // 词面通道权重 2: 实测 (166 case) 词面在精度上稳定强于向量, 而向量在同义改写上补召回;
+  // 让词面主导的配比在 R@1/R@10 上同时优于等权。见 docs/memory-benchmark-report.md。
+  const retriever = new HybridRetriever(store, {
+    channelWeights: { bm25: 2 },
+    ...(vectorIndex ? { vectorIndex } : {}),
+  });
   const facade = new MemoryFacade(
     { store, retriever },
     {

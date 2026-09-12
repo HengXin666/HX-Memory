@@ -113,6 +113,14 @@ function clamp01(v: number): number {
 /**
  * 最大边际相关 (MMR) 去冗余: 在"相关性"与"和已选项的差异度"之间折中。
  * diversity 由调用方给出 (有 embedding 用余弦, 没有就用词集 Jaccard), 因此本函数不依赖向量能力。
+ *
+ * 关键: 两项必须**先归一到同一量纲**再组合。
+ * 原始公式 `lambda*rel - (1-lambda)*sim` 假定 rel 与 sim 都在 0..1 —— 但调用方给的 rel
+ * 是 RRF 融合分 (实测量级 0.015~0.023), 而 sim 是 Jaccard/余弦 (0..1)。直接相减会让
+ * 多样性项以约 19 倍的量纲压过相关性项 (实测 0.7*0.023 = 0.016 vs 0.3*1.0 = 0.30),
+ * 于是 MMR 实际变成"按不相似度排序", 相关性完全失效。
+ *
+ * 因此这里把 rel 按本批最大值归一 (线性缩放不改变相对顺序, 只统一量纲)。
  */
 export function mmrSelect<T>(
   items: readonly T[],
@@ -123,13 +131,20 @@ export function mmrSelect<T>(
   const lambda = opts.lambda ?? 0.7;
   const pool = [...items];
   const picked: T[] = [];
+  // 归一化分母: 取本批最大相关性 (0 或全非正时退化为 1, 避免除零)。
+  let relMax = 0;
+  for (const item of pool) {
+    const v = relevance(item);
+    if (Number.isFinite(v) && v > relMax) relMax = v;
+  }
+  const norm = relMax > 0 ? relMax : 1;
   while (pool.length && picked.length < opts.limit) {
     let bestIndex = 0;
     let bestScore = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < pool.length; i++) {
       const candidate = pool[i];
       if (candidate === undefined) continue;
-      const rel = relevance(candidate);
+      const rel = relevance(candidate) / norm;
       let maxSim = 0;
       for (const chosen of picked) {
         const sim = similarity(candidate, chosen);

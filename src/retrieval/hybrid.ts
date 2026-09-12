@@ -36,6 +36,15 @@ import type {
 export interface HybridRetrieverOptions {
   /** 每个通道的候选数 (再融合)。 */
   channelLimit?: number;
+  /**
+   * 各通道的 RRF 权重默认值 (缺省 1)。
+   *
+   * 为什么需要: RRF 只吃排名, 通道之间"谁更该说了算"只能靠权重表达。
+   * 实测 (166 个 case, 见 docs/memory-benchmark-report.md): bm25 权重 2 时词面精度最好,
+   * 而向量通道的候选没有覆盖率门槛、又常常在同义改写上补召回 ——
+   * 让词面占主导、向量做补充的配比明显优于等权。
+   */
+  channelWeights?: Partial<Record<Channel, number>>;
   /** 覆盖率下限 (0..1): 低于它且命中词数不足的候选被丢弃 (压 bigram 噪声)。 */
   coverageFloor?: number;
   /** 图扩展的默认跳数。 */
@@ -65,6 +74,7 @@ const DEFAULT_CAPS: RetrievalCapabilities = {
  */
 export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmup {
   private readonly channelLimit: number;
+  private readonly channelWeights: Partial<Record<Channel, number>>;
   private readonly coverageFloor: number;
   private readonly graphHops: 0 | 1 | 2;
   private readonly rrfK: number;
@@ -81,6 +91,7 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     // 参数属性 (constructor(private x)) 在 Node strip-only TS 模式下不被支持, 这里显式赋值。
     this.source = source;
     this.channelLimit = opts.channelLimit ?? 30;
+    this.channelWeights = opts.channelWeights ?? {};
     this.coverageFloor = opts.coverageFloor ?? 0.5;
     this.graphHops = opts.graphHops ?? 1;
     this.rrfK = opts.rrfK ?? 60;
@@ -161,7 +172,9 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     const recall = req.purpose === "recall";
     const enabled = (c: Channel): boolean =>
       req.channels?.[c]?.enabled ?? (recall && c === "rules" ? false : true);
-    const weightOf = (c: Channel): number => req.channels?.[c]?.weight ?? 1;
+    // 权重优先取调用方显式值, 其次取构造时的默认表, 最后 1。
+    const weightOf = (c: Channel): number =>
+      req.channels?.[c]?.weight ?? this.channelWeights[c] ?? 1;
 
     const byId = new Map<string, MemoryEntry>();
     const remember = (e: MemoryEntry): MemoryEntry => {
