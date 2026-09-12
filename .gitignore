@@ -19,3 +19,7 @@ coverage/
 
 # Local logs (hooks write here, never committed)
 .agents/logs/
+
+# Bench 运行产物 (含真实记忆原文, 永不提交)
+bench/**/__pycache__/
+*.pyc
