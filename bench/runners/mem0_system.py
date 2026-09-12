@@ -1,9 +1,12 @@
-# bench/runners/mem0.py — 被测系统: mem0 (OSS, Apache-2.0), raw 与 infer 两种模式。
+# bench/runners/mem0_system.py — 被测系统: mem0 (OSS, Apache-2.0), raw 与 infer 两种模式。
+#
+# 文件名不叫 mem0.py: 否则它会**遮蔽 mem0 包** (Python 把脚本所在目录放进 sys.path),
+# `from mem0 import Memory` 会导入自己。这是实测踩到的坑。
 #
 # 两条模式必须都跑: infer=True 是它的卖点 (LLM 抽取), infer=False 是"原样存"。
 # 只跑一条会得出片面结论 —— 本项目的第一次比较就栽在这里 (把 infer 的评测伪影当成了真实差距)。
 #
-# 用法: python3 bench/runners/mem0.py [--infer] [--cases FILE] [--k N] [--out FILE]
+# 用法: python3 bench/runners/mem0_system.py [--infer] [--cases FILE] [--k N] [--out FILE]
 # 依赖: pip install mem0ai ; 本地嵌入服务 (bge-small-zh) + LLM 代理
 import argparse, json, os, pathlib, sys, time
 
