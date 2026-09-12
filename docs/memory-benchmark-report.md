@@ -13,6 +13,7 @@
 | HX-Memory (本仓库) | 0.1.0 | Apache-2.0 | `bench/runners/hxmem.ts`, 5 个通道变体 |
 | mem0 | mem0ai 2.0.20 | Apache-2.0 | `bench/runners/mem0_system.py`, raw 与 infer 两种模式 |
 | Basic Memory | 0.22.1 | **AGPL-3.0** | `bench/runners/basic_memory.py`, 逐条 markdown note + FTS |
+| Graphiti | graphiti-core 0.30.2 | Apache-2.0 (图库 FalkorDB Lite 嵌入式) | `bench/runners/graphiti_system.py`, **未完成, 见下** |
 
 同义改写 case 由 `bench/lib/paraphrase.py` 用真实 LLM 生成, 并要求与原文的字符 bigram
 重合度低于 0.35 (实测平均 0.11) —— 这是唯一能体现"语义 vs 词面"差距的一层。
@@ -66,6 +67,31 @@ case 是**机器生成且可验证**的: 词面探针用"在全库中唯一"判�
    长文本里的细粒度匹配不占优。
 5. **所有系统在弃权上都失败**, 没有系统会说"我不知道"。这是共同短板, 不是某一家的问题。
 
+## 四之二、Graphiti: 接了但没跑完 (这本身是结论)
+
+Graphiti 的适配器已完成并**部分**跑通, 但**没有**进入上表 —— 因为它在合理时间内跑不完:
+
+- 单条写入约 **20 秒** (每条要一次 LLM 抽取 + 建实体/边 + 社区处理)。80 条语料仅写入就要 ~27 分钟,
+  之后 171 个 case 的检索还要逐个走 **cross-encoder 重排 (又是一次 LLM 调用)**。
+- 整个流程跑了约 **50 分钟仍未结束**, 已终止。终止时数据库已 2.3 MB, 说明它确实在抽取, 不是卡死。
+- 作为对照, 同一份语料: 本仓库 (确定性抽取) 秒级完成, mem0 raw 2 秒, basic-memory 一次性 reindex。
+
+已确认可用的接入要点 (写进适配器注释, 供后续复用):
+
+| 坑 | 现象 | 解法 |
+| --- | --- | --- |
+| 上游挡 UA | 403 Cloudflare 1010 | 走本地注入 UA 的代理 |
+| 需要真 key | 401 INVALID_API_KEY | 代理会透传 Authorization, 必须给真实 key |
+| 构造时自动建 reranker | 缺 key 直接抛 `OpenAIError` | 显式传 `OpenAIRerankerClient` |
+| 结构化输出 | 400 "response_format type is unavailable" | `OpenAIGenericClient(structured_output_mode="json_object")` |
+| `reference_time` 类型 | `'str' object has no attribute 'isoformat'` | 传 `datetime`, 不是 ISO 字符串 |
+| 检索返回**边**不是原文 | 事实是改写过的文本, 无法直接对回源条目 | 用 `edge.episodes` 里的 episode uuid 反查源 id |
+
+**抽取质量的非正式观察** (样本小, 仅作方向): 英文实体丰富的事实 (Alice works at Acme Corp...)
+抽出 2 节点 1 边; 中文**实体型**事实 (张伟在北京的 Acme 公司担任软件工程师) 抽出 3 节点 3 边;
+而中文**抽象陈述型** (如"派生索引必须可全量重建") 抽出 1 节点 0 边 —— 抽象经验类记忆
+在知识图谱形态下会退化成孤立节点。这正好是本仓库 `entities` 填充率 0% 的镜像问题。
+
 ## 五、必须声明的边界
 
 - **样本量不足**: >1000 题才有统计效力 (Miller 2024, arXiv:2411.00640); 131 题只能算内部消融。
@@ -74,6 +100,10 @@ case 是**机器生成且可验证**的: 词面探针用"在全库中唯一"判�
 - **case 类型失衡**: 唯一子串占 39%, 而它是最容易的一层 (所有系统都在 0.95 以上),
   会把各系统之间的真实差距稀释掉 —— 分层数字比总分更可信。
 - **同义改写的 gold 单一**: 每条只有一个目标条目, 无法区分"召回了相关但非唯一答案"。
+- **Graphiti 缺席**: 它没跑完, 因此上表**不能**被读成"Graphiti 效果差" —— 它只是成本高到
+  不适合这个规模的批量评测。结论只覆盖表内三个系统。
+- **写入成本未列为指标**: 本轮只在 Graphiti 上暴露出来; 后续应把"建立索引的墙钟时间"
+  作为一等指标记录 (它决定了系统能否用于日常沉淀)。
 
 ## 六、复现
 
