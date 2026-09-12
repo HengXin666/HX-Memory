@@ -305,7 +305,14 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       })),
       tokenBudget,
     );
-    const finalHits: RetrievalHit[] = budgeted.kept.slice(0, limit);
+    // 返回顺序必须按综合分降序 —— MMR 的产出是**挑选顺序** (相关性 × 差异度的折中),
+    // 不是相关度顺序。直接把它当排名用会让分数最高的条目排在第 2 名之后 (实测: gold
+    // 分数 0.0229 全场最高, 却因为与已选项相似被排到第 2; 接入向量通道后更严重)。
+    // 预算的 reserved 语义保护的是"是否入选", 不是"排在第几", 因此这里重排不破坏规则保底。
+    const finalHits: RetrievalHit[] = budgeted.kept
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
     const dropped: RetrievalResult["dropped"] = budgeted.dropped.map((d) => ({
       id: d.item.entry.id,
       reason: "budget",

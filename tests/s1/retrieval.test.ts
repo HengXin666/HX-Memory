@@ -115,6 +115,42 @@ describe("检索: 相关性 (中文 2 字 + 覆盖率过滤)", () => {
   });
 });
 
+describe("检索: 返回顺序必须按综合分降序", () => {
+  /**
+   * 这条不变量曾经被破坏, 代价很大。
+   *
+   * MMR 的产出是**挑选顺序** (相关性 × 差异度的折中), 不是相关度顺序; 旧实现把
+   * mmrSelect 的输出直接当排名返回, 于是分数最高的条目会因为"与已选项相似"被排到后面。
+   * 实测后果: 接入真语义通道后 (向量候选多、相似度普遍高) R@1 从 0.726 掉到 0.099,
+   * 而 gold 的分数其实全场最高 —— 是**排序**错了, 不是召回错了。
+   */
+  const many = (): MemoryEntry[] => {
+    // 一批高度相似的条目: MMR 会把它们彼此视为冗余, 从而打乱"分数降序"。
+    const out: MemoryEntry[] = [];
+    for (let i = 0; i < 6; i++) {
+      out.push(make({ id: "sim-" + i, content: "并发上限设置 显式声明 容器并发策略 " + i }));
+    }
+    out.push(make({ id: "target", content: "并发上限设置 显式声明" }));
+    return out;
+  };
+
+  it("hits 按 score 单调不增", () => {
+    const r = retriever(many());
+    const out = r.retrieveSync({ text: "并发上限设置 显式声明", limit: 7, tokenBudget: 1_000_000 });
+    expect(out.hits.length).toBeGreaterThan(1);
+    for (let i = 1; i < out.hits.length; i++) {
+      expect(out.hits[i]!.score).toBeLessThanOrEqual(out.hits[i - 1]!.score + 1e-9);
+    }
+  });
+
+  it("token 预算给足时, 分数最高的条目就是 hits[0]", () => {
+    const r = retriever(many());
+    const out = r.retrieveSync({ text: "并发上限设置 显式声明", limit: 7, tokenBudget: 1_000_000 });
+    const best = Math.max(...out.hits.map((h) => h.score));
+    expect(out.hits[0]!.score).toBeCloseTo(best, 9);
+  });
+});
+
 describe("检索: 治理铁律 (规则通道)", () => {
   const rule = (over: Partial<MemoryEntry> = {}) =>
     make({

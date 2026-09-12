@@ -33,12 +33,21 @@ const VARIANTS: Variant[] = [
   { label: "E 真语义 + 图扩展", embedder: "real", graph: 1 },
 ];
 
-function parseFlags(argv: string[]): { cases: string; k: number; out: string; corpus: string } {
+function parseFlags(argv: string[]): {
+  cases: string;
+  k: number;
+  out: string;
+  corpus: string;
+  budget: number;
+} {
   const flags = {
     cases: join(".tmp", "bench", "cases.json"),
     corpus: join(".tmp", "bench", "corpus.json"),
     k: 10,
     out: join(".tmp", "bench", "hxmem-result.json"),
+    // 默认给足预算: 评测要的是"排序能力", 不是"注入预算下的裁剪结果"。
+    // 用默认 1200 会让返回条数被预算截断 (实测平均只回 9.0/10 条), 把裁剪噪声混进指标。
+    budget: 1_000_000,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? "";
@@ -46,6 +55,7 @@ function parseFlags(argv: string[]): { cases: string; k: number; out: string; co
     else if (a === "--corpus") flags.corpus = argv[++i] ?? flags.corpus;
     else if (a === "--k") flags.k = Number(argv[++i] ?? flags.k);
     else if (a === "--out") flags.out = argv[++i] ?? flags.out;
+    else if (a === "--budget") flags.budget = Number(argv[++i] ?? flags.budget);
   }
   return flags;
 }
@@ -112,6 +122,7 @@ async function main(): Promise<number> {
       const out = stack.retriever.retrieveSync({
         text: c.query,
         limit: flags.k,
+        tokenBudget: flags.budget,
         purpose: "recall",
         expand: { graph: v.graph },
         ...(v.embedder === "none" ? { channels: { vector: { enabled: false } } } : {}),
