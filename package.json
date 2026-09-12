@@ -46,6 +46,7 @@
     "verify-agent-note-format": "node --experimental-strip-types scripts/verify-agent-note-format.ts",
     "verify-agent-note-coverage": "node --experimental-strip-types scripts/verify-agent-note-coverage.ts",
     "notes:new": "node --experimental-strip-types scripts/new-agent-note.ts",
+    "graph:preview": "node --experimental-strip-types scripts/graph-preview.ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md,yml,yaml}\"",
     "build:client": "node scripts/build-client.mjs",
     "cli:rules": "node dist/adapters/codex/cli.js rules"

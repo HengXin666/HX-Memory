@@ -46,17 +46,22 @@ def score_runs(runs, cases, k):
         if not gold:
             continue  # 弃权类单独统计
         ranked = dedupe(runs.get(c["id"], []))
+        # recall 在多 gold case 上会被稀释 (3 个 gold 只召回 1 个 = 0.33, 但"答对了"),
+        # 所以同时记 hit@k (top-k 里有没有 gold)。两个指标一起看才不会被单一口径误导。
         per[c["id"]] = {
             "r1": recall_at(ranked, gold, 1), "r5": recall_at(ranked, gold, 5),
             "r10": recall_at(ranked, gold, k), "rr": rr(ranked, gold),
+            "h1": 1.0 if gold & set(ranked[:1]) else 0.0,
+            "h10": 1.0 if gold & set(ranked[:k]) else 0.0,
+            "n_gold": len(gold),
             "ndcg10": ndcg_at(ranked, gold, k), "type": c["type"],
         }
     agg = {m: (sum(v[m] for v in per.values()) / len(per) if per else 0.0)
-           for m in ("r1", "r5", "r10", "rr", "ndcg10")}
+           for m in ("r1", "r5", "r10", "rr", "h1", "h10", "ndcg10")}
     by_type = {}
     for v in per.values():
         by_type.setdefault(v["type"], []).append(v)
-    by_type = {t: {m: sum(x[m] for x in vs) / len(vs) for m in ("r1", "r5", "r10", "rr")}
+    by_type = {t: {m: sum(x[m] for x in vs) / len(vs) for m in ("r1", "r5", "r10", "rr", "h1", "h10")}
                for t, vs in by_type.items()}
     return {"n": len(per), "agg": agg, "by_type": by_type, "per": per}
 
@@ -98,17 +103,22 @@ def main() -> int:
     print(f"=== 统一口径对比 ({len(retrieval)} 检索 case / {len(abstain)} 弃权 case, k={args.k}) ===")
     print("说明: 检索指标只在有 gold 的 case 上算; 同一源条目重复命中去重; 弃权单独统计。")
     print()
-    print(f"{'系统':34s} {'R@1':>7s} {'R@5':>7s} {'R@10':>7s} {'MRR':>7s} {'nDCG@10':>8s}")
+    print(f"{'系统':34s} {'R@1':>7s} {'R@10':>7s} {'H@1':>7s} {'H@10':>7s} {'MRR':>7s} {'nDCG@10':>8s}")
     for r in rows:
         a = r["agg"]
-        print(f"{r['label']:34s} {a['r1']:7.3f} {a['r5']:7.3f} {a['r10']:7.3f} {a['rr']:7.3f} {a['ndcg10']:8.3f}")
+        print(f"{r['label']:34s} {a['r1']:7.3f} {a['r10']:7.3f} {a['h1']:7.3f} {a['h10']:7.3f} "
+              f"{a['rr']:7.3f} {a['ndcg10']:8.3f}")
 
     print()
-    print("按 case 类型分解 (recall@10):")
+    print("按 case 类型分解 (多 gold 的 case 用 hit@10 看'有没有答对', 用 recall@10 看'答全了没'):")
     types = sorted({t for r in rows for t in r["by_type"]})
-    print(f"{'系统':34s} " + " ".join(f"{t:>16s}" for t in types))
+    print(f"{'系统':34s} " + " ".join(f"{t[:7]:>9s}" for t in types))
+    print(f"{'  (hit@10)':34s} " + " ".join(f"{'':>9s}" for _ in types))
     for r in rows:
-        print(f"{r['label']:34s} " + " ".join(f"{r['by_type'].get(t, {}).get('r10', 0):16.3f}" for t in types))
+        print(f"{r['label']:34s} " + " ".join(f"{r['by_type'].get(t, {}).get('h10', 0):9.3f}" for t in types))
+    print(f"{'  (recall@10)':34s} " + " ".join(f"{'':>9s}" for _ in types))
+    for r in rows:
+        print(f"{r['label']:34s} " + " ".join(f"{r['by_type'].get(t, {}).get('r10', 0):9.3f}" for t in types))
 
     if len(rows) >= 2:
         print()

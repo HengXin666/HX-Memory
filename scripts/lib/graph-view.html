@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HX-Memory · 关系图预览</title>
+    <style>
+      :root {
+        --bg: #0b0f14;
+        --panel: rgba(17, 24, 35, 0.92);
+        --line: #1e2937;
+        --fg: #e6edf5;
+        --muted: #8b9bb0;
+        --accent: #ff88ff;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.5 -apple-system, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      }
+      #bar {
+        position: fixed; inset: 0 0 auto 0; z-index: 10;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+        padding: 10px 16px; border-bottom: 1px solid var(--line);
+        background: var(--panel); backdrop-filter: blur(8px);
+      }
+      .brand { font-weight: 600; letter-spacing: .3px; white-space: nowrap; }
+      .brand em { font-style: normal; color: var(--accent); }
+      .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+      #stats { color: var(--muted); font-variant-numeric: tabular-nums; flex: 1; min-width: 220px; }
+      #stats b { color: var(--fg); font-weight: 600; }
+      #stats .warn { color: #f0b429; }
+      .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      input[type="search"], select {
+        background: #0d141d; color: var(--fg); border: 1px solid var(--line);
+        border-radius: 6px; padding: 5px 9px; font: inherit; outline: none;
+      }
+      input[type="search"] { width: 200px; }
+      input[type="search"]:focus, select:focus { border-color: #37506e; }
+      label.chk { color: var(--muted); display: flex; gap: 5px; align-items: center; cursor: pointer; user-select: none; }
+      button {
+        background: #16202c; color: var(--fg); border: 1px solid var(--line);
+        border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer;
+      }
+      button:hover { border-color: #37506e; background: #1b2734; }
+      #cv { position: fixed; inset: 0; display: block; cursor: grab; }
+      #cv.dragging { cursor: grabbing; }
+      #legend {
+        position: fixed; left: 16px; bottom: 16px; z-index: 9;
+        display: flex; flex-direction: column; gap: 10px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+        padding: 10px 12px; max-height: 46vh; overflow: auto; backdrop-filter: blur(8px);
+      }
+      .lg-title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .lg-row {
+        display: flex; align-items: center; gap: 7px; cursor: pointer;
+        padding: 1px 2px; border-radius: 4px; user-select: none; white-space: nowrap;
+      }
+      .lg-row:hover { background: #1b2734; }
+      .lg-row.off { opacity: .32; }
+      .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+      .swatch.dash { width: 14px; height: 0; border-radius: 0; border-top: 2px solid; }
+      .lg-row .n { color: var(--muted); margin-left: auto; padding-left: 10px; font-variant-numeric: tabular-nums; }
+      #detail {
+        position: fixed; top: 0; right: 0; bottom: 0; width: 380px; z-index: 11;
+        background: var(--panel); border-left: 1px solid var(--line); backdrop-filter: blur(8px);
+        transform: translateX(102%); transition: transform .18s ease; overflow: auto; padding: 16px;
+      }
+      #detail.open { transform: none; }
+      #detail h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+      .kicker { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+      .tag {
+        border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+        font-size: 11px; color: var(--muted);
+      }
+      .body-text { white-space: pre-wrap; word-break: break-word; margin: 6px 0 14px; }
+      .kv { display: grid; grid-template-columns: 88px 1fr; gap: 3px 10px; font-size: 12px; margin-bottom: 14px; }
+      .kv dt { color: var(--muted); }
+      .kv dd { margin: 0; word-break: break-all; }
+      .rel { display: block; width: 100%; text-align: left; margin-bottom: 4px; font-size: 12px; }
+      .rel .t { color: var(--accent); }
+      .close { position: absolute; top: 12px; right: 12px; }
+      .sect { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 14px 0 6px; }
+      .hint { color: var(--muted); font-size: 11px; }
+      #tip {
+        position: fixed; z-index: 12; pointer-events: none; max-width: 320px;
+        background: #0d141d; border: 1px solid var(--line); border-radius: 8px;
+        padding: 7px 10px; display: none; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+      }
+      #empty { position: fixed; inset: 0; display: none; place-items: center; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <canvas id="cv"></canvas>
+
+    <header id="bar">
+      <div class="brand"><em>HX-Memory</em> 关系图<small>单文件预览</small></div>
+      <div id="stats"></div>
+      <div class="controls">
+        <input id="q" type="search" placeholder="搜索内容 / id / 标签" />
+        <select id="color">
+          <option value="kind">着色: 类型</option>
+          <option value="scope">着色: 作用域</option>
+          <option value="project">着色: 项目</option>
+          <option value="status">着色: 状态</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="orphans" /> 孤立节点</label>
+        <button id="relayout">重新布局</button>
+      </div>
+    </header>
+
+    <aside id="detail"></aside>
+    <div id="legend"></div>
+    <div id="tip"></div>
+    <div id="empty">没有可显示的记忆</div>
+
+    <script id="graph-data" type="application/json">__HXMEM_DATA__</script>
+    <script>
+      (function () {
+        "use strict";
+
+        var data = JSON.parse(document.getElementById("graph-data").textContent);
+
+        var KIND_COLORS = {
+          fact: "#5b9dff", preference: "#f59e0b", event: "#a78bfa", decision: "#34d399",
+          lesson: "#facc15", rule: "#ff5c8a", pattern: "#22d3ee", context: "#94a3b8"
+        };
+        var EDGE_COLORS = {
+          relates: "#4b5563", supersedes: "#f59e0b", generalizes: "#a855f7", appliesTo: "#38bdf8",
+          source: "#6b7280", mentions: "#14b8a6", contradicts: "#ef4444", sameAs: "#22c55e",
+          derivedFrom: "#8b5cf6", instanceOf: "#c084fc"
+        };
+        var SCOPE_COLORS = { global: "#ff88ff", project: "#4ade80", agent: "#60a5fa" };
+        var STATUS_COLORS = { active: "#4ade80", superseded: "#f59e0b", merged: "#8b5cf6", expired: "#64748b", shadow: "#ef4444" };
+        var PROJECT_PALETTE = ["#ff88ff", "#4ade80", "#38bdf8", "#fbbf24", "#f472b6", "#22d3ee", "#a3e635", "#fb923c", "#818cf8", "#2dd4bf"];
+        var UNDIRECTED = { relates: 1, sameAs: 1, contradicts: 1, mentions: 1, source: 1 };
+
+        var projectColor = {};
+        (data.stats.projects || []).forEach(function (p, i) {
+          projectColor[p] = PROJECT_PALETTE[i % PROJECT_PALETTE.length];
+        });
+
+        var nodes = data.nodes.map(function (d, i) {
+          var deg = d.degree || 0;
+          var imp = typeof d.importance === "number" ? d.importance : 5;
+          var r = 5 + Math.sqrt(deg) * 2.6 + imp * 0.32;
+          return { d: d, i: i, x: 0, y: 0, vx: 0, vy: 0, r: Math.min(20, r), vis: true, dim: false, hit: false, fixed: false };
+        });
+        var byId = {};
+        nodes.forEach(function (n) { byId[n.d.id] = n; });
+
+        var edges = data.edges.map(function (e) {
+          return { d: e, a: byId[e.from], b: byId[e.to], vis: true };
+        }).filter(function (e) { return e.a && e.b; });
+
+        var adj = {};
+        edges.forEach(function (e) {
+          (adj[e.d.from] = adj[e.d.from] || []).push(e.d.to);
+          (adj[e.d.to] = adj[e.d.to] || []).push(e.d.from);
+        });
+
+        var kindCount = {}, edgeCount = {};
+        nodes.forEach(function (n) { kindCount[n.d.kind] = (kindCount[n.d.kind] || 0) + 1; });
+        edges.forEach(function (e) { edgeCount[e.d.type] = (edgeCount[e.d.type] || 0) + 1; });
+
+        var kindOff = {}, edgeOff = {};
+        var showOrphans = false;
+        var colorMode = "kind";
+        var query = "";
+        var selected = null;
+        var hover = null;
+
+        var cv = document.getElementById("cv");
+        var ctx = cv.getContext("2d");
+        var tip = document.getElementById("tip");
+        var detail = document.getElementById("detail");
+        var W = 0, H = 0, DPR = 1;
+        var view = { k: 1, x: 0, y: 0 };
+        var alpha = 1;
+        var dragNode = null, panning = false, last = null, moved = false;
+
+        function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+        function esc(s) {
+          return String(s).replace(/[&<>"]/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+          });
+        }
+
+        function nodeColor(n) {
+          if (colorMode === "scope") return SCOPE_COLORS[n.d.scope] || "#8b9bb0";
+          if (colorMode === "status") return STATUS_COLORS[n.d.status] || "#8b9bb0";
+          if (colorMode === "project") return n.d.project ? (projectColor[n.d.project] || "#8b9bb0") : "#4b5563";
+          return KIND_COLORS[n.d.kind] || "#8b9bb0";
+        }
+
+        function visible(n) {
+          if (!n.vis) return false;
+          if (!showOrphans && (n.d.degree || 0) === 0) return false;
+          if (kindOff[n.d.kind]) return false;
+          return true;
+        }
+
+        function edgeVisible(e) {
+          if (!e.vis || edgeOff[e.d.type]) return false;
+          return visible(e.a) && visible(e.b);
+        }
+
+        function syncVisibility() {
+          nodes.forEach(function (n) { n.vis = true; });
+          if (query) {
+            var q = query.toLowerCase();
+            nodes.forEach(function (n) {
+              var d = n.d;
+              var hay = (d.label + " " + d.id + " " + (d.tags || []).join(" ") + " " + (d.entities || []).join(" ")).toLowerCase();
+              n.vis = hay.indexOf(q) >= 0;
+              n.hit = n.vis;
+            });
+          } else {
+            nodes.forEach(function (n) { n.hit = false; });
+          }
+          nodes.forEach(function (n) { n.dim = !visible(n); });
+        }
+
+        function applyLayout() {
+          var cx = W / 2, cy = H / 2;
+          var seed = 0;
+          nodes.forEach(function (n) {
+            var ang = (seed++ / nodes.length) * Math.PI * 2;
+            var rad = Math.min(W, H) * 0.3 * (0.55 + 0.45 * ((n.i % 7) / 7));
+            n.x = cx + Math.cos(ang) * rad;
+            n.y = cy + Math.sin(ang) * rad;
+            n.vx = 0; n.vy = 0;
+          });
+          alpha = 1;
+        }
+
+        function step() {
+          var vis = nodes.filter(visible);
+          var i, j, a, b, dx, dy, d2, d, f;
+          var REP = 1500, SPRING = 0.035, LEN = 78, GRAV = 0.012;
+
+          for (i = 0; i < vis.length; i++) {
+            a = vis[i];
+            a.fx = 0; a.fy = 0;
+            for (j = i + 1; j < vis.length; j++) {
+              b = vis[j];
+              dx = b.x - a.x; dy = b.y - a.y;
+              d2 = dx * dx + dy * dy + 24;
+              d = Math.sqrt(d2);
+              f = REP / d2;
+              var ux = dx / d, uy = dy / d;
+              a.fx -= ux * f; a.fy -= uy * f;
+              b.fx += ux * f; b.fy += uy * f;
+            }
+          }
+          for (i = 0; i < edges.length; i++) {
+            var e = edges[i];
+            if (!edgeVisible(e)) continue;
+            dx = e.b.x - e.a.x; dy = e.b.y - e.a.y;
+            d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+            f = (d - LEN) * SPRING * alpha;
+            var nx = dx / d, ny = dy / d;
+            e.a.fx += nx * f; e.a.fy += ny * f;
+            e.b.fx -= nx * f; e.b.fy -= ny * f;
+          }
+          var cx = W / 2, cy = H / 2;
+          for (i = 0; i < vis.length; i++) {
+            a = vis[i];
+            a.fx += (cx - a.x) * GRAV; a.fy += (cy - a.y) * GRAV;
+            if (a.fixed) continue;
+            a.vx = (a.vx + a.fx * alpha) * 0.82;
+            a.vy = (a.vy + a.fy * alpha) * 0.82;
+            a.x += clamp(a.vx, -24, 24);
+            a.y += clamp(a.vy, -24, 24);
+          }
+          alpha *= 0.985;
+          if (alpha < 0.004) alpha = 0;
+        }
+
+        function drawArrow(x1, y1, x2, y2, color) {
+          var mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+          var ang = Math.atan2(y2 - y1, x2 - x1);
+          var s = 6 / view.k;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(mx + Math.cos(ang) * s, my + Math.sin(ang) * s);
+          ctx.lineTo(mx + Math.cos(ang + 2.5) * s, my + Math.sin(ang + 2.5) * s);
+          ctx.lineTo(mx + Math.cos(ang - 2.5) * s, my + Math.sin(ang - 2.5) * s);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        function render() {
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+          ctx.clearRect(0, 0, W, H);
+          ctx.save();
+          ctx.translate(view.x, view.y);
+          ctx.scale(view.k, view.k);
+
+          var focusId = selected ? selected.d.id : (hover ? hover.d.id : null);
+          var focusSet = null;
+          if (focusId) {
+            focusSet = {};
+            focusSet[focusId] = 1;
+            (adj[focusId] || []).forEach(function (id) { focusSet[id] = 1; });
+          }
+
+          var i;
+          for (i = 0; i < edges.length; i++) {
+            var e = edges[i];
+            if (!edgeVisible(e)) continue;
+            var near = focusSet && (focusSet[e.d.from] || focusSet[e.d.to]);
+            var col = EDGE_COLORS[e.d.type] || "#64748b";
+            ctx.globalAlpha = focusSet ? (near ? 0.95 : 0.05) : 0.34;
+            ctx.strokeStyle = col;
+            ctx.lineWidth = (0.7 + (e.d.weight || 0) * 1.6) / view.k;
+            ctx.beginPath();
+            ctx.moveTo(e.a.x, e.a.y);
+            ctx.lineTo(e.b.x, e.b.y);
+            ctx.stroke();
+            if (!UNDIRECTED[e.d.type] && (near || !focusSet)) drawArrow(e.a.x, e.a.y, e.b.x, e.b.y, col);
+          }
+          ctx.globalAlpha = 1;
+
+          for (i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            if (!visible(n)) continue;
+            var col = nodeColor(n);
+            var inFocus = !focusSet || focusSet[n.d.id];
+            ctx.globalAlpha = inFocus ? (n.hit ? 1 : 0.92) : 0.12;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = col;
+            ctx.fill();
+            if (n.d.status !== "active") {
+              ctx.strokeStyle = STATUS_COLORS[n.d.status] || "#8b9bb0";
+              ctx.lineWidth = 1.6 / view.k;
+              ctx.setLineDash([3 / view.k, 3 / view.k]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            if (n.d.confirmed) {
+              ctx.strokeStyle = "#ff88ff";
+              ctx.lineWidth = 1.4 / view.k;
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.r + 2.5 / view.k, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            if (n === selected) {
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 1.8 / view.k;
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.r + 4 / view.k, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            if (n.hit && query) {
+              ctx.strokeStyle = "#ff88ff";
+              ctx.lineWidth = 2 / view.k;
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.r + 5 / view.k, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1;
+
+          var showLabels = view.k > 0.55;
+          ctx.font = (11 / view.k) + "px -apple-system, 'Noto Sans CJK SC', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          for (i = 0; i < nodes.length; i++) {
+            var m = nodes[i];
+            if (!visible(m)) continue;
+            var wanted = m === hover || m === selected || (m.d.degree || 0) >= 4 || (m.hit && query);
+            if (!wanted || !showLabels) continue;
+            var label = m.d.label.length > 26 ? m.d.label.slice(0, 26) + "\u2026" : m.d.label;
+            ctx.fillStyle = "rgba(11,15,20,0.72)";
+            var w = ctx.measureText(label).width;
+            ctx.fillRect(m.x - w / 2 - 3 / view.k, m.y + m.r + 3 / view.k, w + 6 / view.k, 14 / view.k);
+            ctx.fillStyle = "#dbe6f3";
+            ctx.fillText(label, m.x, m.y + m.r + 4 / view.k);
+          }
+          ctx.restore();
+        }
+
+        function loop() {
+          if (alpha > 0) step();
+          render();
+          requestAnimationFrame(loop);
+        }
+
+        function screenToWorld(sx, sy) {
+          return { x: (sx - view.x) / view.k, y: (sy - view.y) / view.k };
+        }
+
+        function pick(sx, sy) {
+          var p = screenToWorld(sx, sy);
+          var best = null, bestD = Infinity;
+          for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            if (!visible(n)) continue;
+            var dx = n.x - p.x, dy = n.y - p.y;
+            var d = Math.sqrt(dx * dx + dy * dy);
+            if (d <= n.r + 4 && d < bestD) { best = n; bestD = d; }
+          }
+          return best;
+        }
+
+        function resize() {
+          DPR = window.devicePixelRatio || 1;
+          W = window.innerWidth;
+          H = window.innerHeight;
+          cv.width = Math.floor(W * DPR);
+          cv.height = Math.floor(H * DPR);
+          cv.style.width = W + "px";
+          cv.style.height = H + "px";
+        }
+
+        /* ---------- stats + legend ---------- */
+        function statLine() {
+          var s = data.stats;
+          var visNodes = nodes.filter(visible).length;
+          var visEdges = 0;
+          edges.forEach(function (e) { if (edgeVisible(e)) visEdges++; });
+          var orphans = nodes.filter(function (n) { return (n.d.degree || 0) === 0; }).length;
+          var out = [];
+          out.push("条目 <b>" + s.totalEntries + "</b>");
+          out.push("节点 <b>" + visNodes + "</b>/" + nodes.length);
+          out.push("边 <b>" + visEdges + "</b>/" + edges.length);
+          out.push("孤立 <b>" + orphans + "</b>");
+          if (s.danglingEdges) {
+            out.push("<span class=\"warn\" title=\"" + esc(s.danglingNote || "") + "\">悬空边 " + s.danglingEdges + "</span>");
+          }
+          if (s.truncated) out.push("<span class=\"warn\">已截断 (共 " + s.totalEntries + " 条, 只渲染 " + nodes.length + ")</span>");
+          document.getElementById("stats").innerHTML = out.join(" &middot; ");
+        }
+
+        function legend() {
+          var box = document.getElementById("legend");
+          var html = "<div class=\"lg-title\">记忆类型 (点击过滤)</div>";
+          Object.keys(kindCount).sort().forEach(function (k) {
+            html += "<div class=\"lg-row" + (kindOff[k] ? " off" : "") + "\" data-kind=\"" + esc(k) + "\">" +
+              "<span class=\"swatch\" style=\"background:" + (KIND_COLORS[k] || "#8b9bb0") + "\"></span>" +
+              esc(k) + "<span class=\"n\">" + kindCount[k] + "</span></div>";
+          });
+          if (Object.keys(edgeCount).length) {
+            html += "<div class=\"lg-title\">关系类型 (点击过滤)</div>";
+            Object.keys(edgeCount).sort().forEach(function (t) {
+              html += "<div class=\"lg-row" + (edgeOff[t] ? " off" : "") + "\" data-edge=\"" + esc(t) + "\">" +
+                "<span class=\"swatch dash\" style=\"border-top-color:" + (EDGE_COLORS[t] || "#64748b") + "\"></span>" +
+                esc(t) + "<span class=\"n\">" + edgeCount[t] + "</span></div>";
+            });
+          }
+          box.innerHTML = html;
+          Array.prototype.forEach.call(box.querySelectorAll("[data-kind]"), function (el) {
+            el.onclick = function () {
+              var k = el.getAttribute("data-kind");
+              kindOff[k] = !kindOff[k];
+              legend(); statLine();
+            };
+          });
+          Array.prototype.forEach.call(box.querySelectorAll("[data-edge]"), function (el) {
+            el.onclick = function () {
+              var t = el.getAttribute("data-edge");
+              edgeOff[t] = !edgeOff[t];
+              legend(); statLine();
+            };
+          });
+        }
+
+        /* ---------- detail panel ---------- */
+        function openDetail(n) {
+          selected = n;
+          var d = n.d;
+          var out = "";
+          out += "<button class=\"close\" id=\"close-detail\">关闭</button>";
+          out += "<h2>记忆详情</h2>";
+          out += "<div class=\"kicker\">" +
+            "<span class=\"tag\" style=\"color:" + (KIND_COLORS[d.kind] || "#8b9bb0") + "\">" + esc(d.kind) + "</span>" +
+            "<span class=\"tag\">" + esc(d.scope) + (d.project ? " / " + esc(d.project) : "") + "</span>" +
+            "<span class=\"tag\">" + esc(d.status) + "</span>" +
+            (d.confirmed ? "<span class=\"tag\" style=\"color:#ff88ff\">已确认</span>" : "") +
+            "</div>";
+          out += "<div class=\"body-text\">" + esc(d.content || d.label) + "</div>";
+          out += "<dl class=\"kv\">";
+          out += "<dt>id</dt><dd>" + esc(d.id) + "</dd>";
+          out += "<dt>度数</dt><dd>" + (d.degree || 0) + "</dd>";
+          out += "<dt>重要度</dt><dd>" + (typeof d.importance === "number" ? d.importance : "-") + "</dd>";
+          out += "<dt>强化</dt><dd>" + (typeof d.reinforcement === "number" ? d.reinforcement : "-") + "</dd>";
+          if (d.bad) out += "<dt>坏评</dt><dd>" + d.bad + "</dd>";
+          out += "<dt>写入</dt><dd>" + esc((d.assertedAt || "").slice(0, 19).replace("T", " ")) + "</dd>";
+          out += "<dt>来源</dt><dd>" + esc(d.source || "-") + "</dd>";
+          out += "</dl>";
+          if ((d.tags || []).length) {
+            out += "<div class=\"sect\">标签</div><div class=\"kicker\">";
+            d.tags.forEach(function (t) { out += "<span class=\"tag\">" + esc(t) + "</span>"; });
+            out += "</div>";
+          }
+          if ((d.entities || []).length) {
+            out += "<div class=\"sect\">实体</div><div class=\"kicker\">";
+            d.entities.forEach(function (t) { out += "<span class=\"tag\">" + esc(t) + "</span>"; });
+            out += "</div>";
+          }
+          var rels = d.relations || [];
+          out += "<div class=\"sect\">关系 (" + rels.length + ")</div>";
+          if (!rels.length) out += "<div class=\"hint\">这条记忆没有任何关系边</div>";
+          rels.forEach(function (r) {
+            var t = byId[r.to];
+            out += "<button class=\"rel\" data-jump=\"" + esc(r.to) + "\">" +
+              "<span class=\"t\">" + esc(r.type) + "</span> \u2192 " +
+              (t ? esc(t.d.label.slice(0, 46)) : "<span class=\"hint\">" + esc(r.to) + " (不在图中)</span>") +
+              (r.weight ? " <span class=\"hint\">w=" + r.weight + "</span>" : "") +
+              "</button>";
+          });
+          detail.innerHTML = out;
+          detail.classList.add("open");
+          document.getElementById("close-detail").onclick = function () {
+            selected = null;
+            detail.classList.remove("open");
+          };
+          Array.prototype.forEach.call(detail.querySelectorAll("[data-jump]"), function (el) {
+            el.onclick = function () {
+              var t = byId[el.getAttribute("data-jump")];
+              if (t) { openDetail(t); centerOn(t); }
+            };
+          });
+        }
+
+        function centerOn(n) {
+          view.x = W / 2 - n.x * view.k;
+          view.y = H / 2 - n.y * view.k;
+          alpha = Math.max(alpha, 0.22);
+        }
+
+        /* ---------- interaction ---------- */
+        cv.addEventListener("mousedown", function (ev) {
+          var n = pick(ev.clientX, ev.clientY);
+          moved = false;
+          last = { x: ev.clientX, y: ev.clientY };
+          if (n) { dragNode = n; n.fixed = true; }
+          else { panning = true; cv.classList.add("dragging"); }
+        });
+        window.addEventListener("mousemove", function (ev) {
+          if (dragNode) {
+            var p = screenToWorld(ev.clientX, ev.clientY);
+            dragNode.x = p.x; dragNode.y = p.y;
+            dragNode.vx = 0; dragNode.vy = 0;
+            moved = true;
+            alpha = Math.max(alpha, 0.35);
+            return;
+          }
+          if (panning && last) {
+            view.x += ev.clientX - last.x;
+            view.y += ev.clientY - last.y;
+            last = { x: ev.clientX, y: ev.clientY };
+            moved = true;
+            return;
+          }
+          var hit = pick(ev.clientX, ev.clientY);
+          if (hit !== hover) hover = hit;
+          if (hit) {
+            tip.style.display = "block";
+            tip.style.left = Math.min(ev.clientX + 14, W - 340) + "px";
+            tip.style.top = (ev.clientY + 14) + "px";
+            tip.innerHTML = "<b style=\"color:" + nodeColor(hit) + "\">" + esc(hit.d.kind) + "</b> " +
+              esc(hit.d.label.slice(0, 120)) + "<div class=\"hint\">" + esc(hit.d.id) + " &middot; 度 " + (hit.d.degree || 0) + " &middot; 点击查看</div>";
+          } else if (!panning) {
+            tip.style.display = "none";
+          }
+        });
+        window.addEventListener("mouseup", function () {
+          if (dragNode && !moved) openDetail(dragNode);
+          if (dragNode) { dragNode.fixed = false; dragNode = null; }
+          panning = false;
+          last = null;
+          cv.classList.remove("dragging");
+        });
+        cv.addEventListener("wheel", function (ev) {
+          ev.preventDefault();
+          var factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+          var p = screenToWorld(ev.clientX, ev.clientY);
+          view.k = clamp(view.k * factor, 0.15, 4);
+          view.x = ev.clientX - p.x * view.k;
+          view.y = ev.clientY - p.y * view.k;
+        }, { passive: false });
+        cv.addEventListener("dblclick", function (ev) {
+          ev.preventDefault();
+          var n = pick(ev.clientX, ev.clientY);
+          if (n) centerOn(n);
+        });
+
+        document.getElementById("q").addEventListener("input", function (ev) {
+          query = ev.target.value.trim();
+          syncVisibility();
+          statLine();
+        });
+        document.getElementById("orphans").addEventListener("change", function (ev) {
+          showOrphans = ev.target.checked;
+          syncVisibility();
+          statLine();
+        });
+        document.getElementById("color").addEventListener("change", function (ev) {
+          colorMode = ev.target.value;
+        });
+        document.getElementById("relayout").addEventListener("click", function () {
+          applyLayout();
+        });
+        window.addEventListener("keydown", function (ev) {
+          if (ev.key === "Escape") {
+            selected = null;
+            detail.classList.remove("open");
+          }
+        });
+        window.addEventListener("resize", function () {
+          resize();
+          applyLayout();
+        });
+
+        /* ---------- boot ---------- */
+        resize();
+        applyLayout();
+        syncVisibility();
+        statLine();
+        legend();
+        if (!nodes.length) document.getElementById("empty").style.display = "grid";
+        loop();
+      })();
+    </script>
+  </body>
+</html>

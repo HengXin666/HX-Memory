@@ -162,6 +162,34 @@ if (viaTypert) {
   ok("设置命名空间已注册 (apiproxy settings.describe)");
 }
 
+// --- 5b) 注入时机开关必须能从宿主设置面读到并写得动 ---
+// 为什么断言到字段级: 命名空间注册了但 schema 里没有 injectMode (或默认值写错), 用户在
+// 「设置 → 插件」里就看不到这个开关 —— 而"看不到"和"没注册"在面板上长得一样。
+// 这条曾经真实发生: 开关只是代码里的常量, 面板上没有任何入口。
+const hxns = ((await callApi("settings/describe", {}))?.result?.value?.namespaces ?? []).find(
+  (n) => n && n.ns === "hx-memory",
+);
+if (!hxns) fail("hx-memory 设置命名空间缺失 (无法配置注入时机)");
+if (!JSON.stringify(hxns.schema ?? {}).includes("injectMode")) {
+  fail("hx-memory schema 里没有 injectMode");
+}
+if (hxns.value?.injectMode !== "every-turn") {
+  fail("injectMode 默认值应为 every-turn, 实际 " + JSON.stringify(hxns.value?.injectMode));
+}
+// 写路径真往返 (与面板同一合同: settings.update + revision 栅栏), 再读回确认。
+const written = await callApi("settings/update", {
+  ns: "hx-memory",
+  patch: { injectMode: "first" },
+  expectedRevision: hxns.revision,
+});
+if (written?.result?.ok !== true) fail("settings.update(injectMode) 被拒: " + JSON.stringify(written));
+if (written.result.value?.value?.injectMode !== "first") fail("写入后读回的 injectMode 不是 first");
+const after = ((await callApi("settings/describe", {}))?.result?.value?.namespaces ?? []).find(
+  (n) => n && n.ns === "hx-memory",
+);
+if (after?.value?.injectMode !== "first") fail("重新 describe 后 injectMode 未生效 (面板会显示旧值)");
+ok("注入时机开关可读可写 (schema 含 injectMode, 默认 every-turn, 真往返)");
+
 // --- 6) truth-in-files: 绑定必须真的落盘 ---
 const bindingsFile = join(smokeHome, "hx-memory", "bindings.json");
 let onDisk;

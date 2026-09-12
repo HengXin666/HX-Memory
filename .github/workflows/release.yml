@@ -90,11 +90,14 @@ jobs:
           cat > /tmp/notes.md <<'EOF'
           ## HX-Memory 可安装包
           
-          **安装**:
-          1. 下载本 Release 的 .tgz 文件
-          2. dsh plugin --profile <profile> add file:<下载的 .tgz>
-          3. 或 (已发布到 GitHub Packages): dsh plugin --profile <profile> add @hengxin666/hx-memory
-          4. 重启 DSH, 设置区出现 记忆审阅 / 记忆绑定 / 调用记录 面板
+          **安装** (一条命令, 无需克隆与构建):
+          1. dsh plugin --profile web add <本 Release 的 .tgz 直链>
+          2. 或下载 .tgz 后: dsh plugin --profile web add file:<下载路径>
+          3. 或 (GitHub Packages, 需要 token): dsh plugin --profile web add @hengxin666/hx-memory
+          4. 重启 DSH, 设置区出现 记忆审阅 / 记忆绑定 / 注入时机 入口
+          
+          注意: 不要用仓库的源码 zip/tar.gz 归档安装 —— 源码不含 dist/ 构建产物。
+          各安装通道的实测对照见 docs/plugin-install.md。
           
           由 release 流水线构建+验证后打包并发布到 GitHub Packages (public)。
           EOF
