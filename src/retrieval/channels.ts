@@ -187,6 +187,13 @@ export function gatherChannels(
   }
 
   // ---- 通道 4: 图扩展 (种子 = 目前得分最高的若干条) ----
+  //
+  // 已知张力 (2026-09 实测, 待后续处理): 实体共现建出来的边是**主题邻居**而非**答案** ——
+  // 建边后图候选的 gold 精确率实测只有 8.5% (50/588), 且带 secondary 目标的 6 个 case 上
+  // 图扩展的次级召回增益为 +0.000 (那些目标字面本来就能命中)。
+  // 但把图通道降为"仅兜底"会删掉设计能力 (conformance 明确要求: 从命中的种子出发,
+  // 把字面不相关的邻居召回并给出可审计的 why), 因此本改动**只记录测量**, 不改默认行为。
+  // 要动这条默认需要先有一套"必须靠边才能答对"的 case —— 当前 case 集不满足该前提。
   if (deps.enabled("graph") && deps.graphHops > 0 && ranked.length) {
     const seeds = ranked
       .flatMap((l) => l.ids.slice(0, 5))

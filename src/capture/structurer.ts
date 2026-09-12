@@ -21,6 +21,17 @@ export interface StructuredTurn {
    * 缺省 (启发式兜底 / AI 失败) 时不产出, content 退回原文, 行为与旧版一致。
    */
   conclusion?: string;
+  /**
+   * 抽出的**实体** (规范化名): 人/项目/文件/组件/服务等可被复用的专名。
+   *
+   * 为什么它必须由抽取层产出: 它决定"结构关联"能不能建起来 ——
+   * `planStructuralLinks` 按实体/标签共现建边, 实体为空时图上只剩孤立点。
+   * 实测真实库 entities 填充率 **0%**, 正是因为这一层从来没产出过该字段 (它当时都不存在)。
+   *
+   * 与 conclusion 的取舍一致: 只有能可靠判断时才产出, 拿不准就留空 ——
+   * 垃圾实体会把不相关的记忆连成一团, 比没有边更糟。
+   */
+  entities?: string[];
 }
 
 export interface TurnStructurer {
@@ -38,8 +49,9 @@ export function heuristicStructurer(): TurnStructurer {
     async structure(input) {
       const text = input.text.trim();
       const points = text.length > 120 ? splitPoints(text) : [text];
-      // 兜底**刻意不产 conclusion**: 规则没法可靠判断"这一轮到底定没定";
-      // 产错结论比不产更糟 (会覆盖掉原文)。content 因此保持原文。
+      // 兜底**刻意不产 conclusion / entities**: 规则没法可靠判断"这一轮到底定没定",
+      // 也没法可靠抽出专名。产错比不产更糟 —— 错的实体会把不相干的记忆连成一团。
+      // 因此没有模型时: content 保持原文, 图上不新增边 (行为与旧版一致)。
       return {
         summary: text.length > 200 ? text.slice(0, 200) + "…" : text,
         tags: inferTags(text),
