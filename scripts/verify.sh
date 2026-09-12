@@ -67,6 +67,14 @@ if ! pnpm run verify-docs; then
   exit 1
 fi
 
+# 评测指标快照: 报告里的数字必须与当前实现一致 (防"改了行为但报告没改")。
+# 语料含真实记忆、不入库, 因此缺语料时本步会明确跳过而不是假装通过。
+echo "[verify] bench: metric snapshot (无私有语料时自动跳过)"
+if ! pnpm run verify-bench-snapshot; then
+  echo "[verify] FAILED: verify-bench-snapshot (指标漂移; 有意变更请跑 bench/snapshot.ts --write)" >&2
+  exit 1
+fi
+
 if [[ "${HX_SKIP_NOTE_COVERAGE:-0}" != "1" ]]; then
   echo "[verify] notes: coverage (非平凡改动必须带 Note)"
   # CI 里工作区是干净的, 必须给出比较基线才判得出来; 本地默认比较 HEAD + 工作区。
