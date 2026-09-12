@@ -86,10 +86,41 @@ describe("意图识别 (匹配提问的形状, 不是知识内容)", () => {
     expect(detectIntent("rename this function")).toBeNull();
   });
 
-  it("置信度随命中模式数上升, 且有下限", () => {
-    const one = detectIntent("我们这边一般怎么写日志");
-    expect(one?.confidence).toBeGreaterThanOrEqual(0.34);
-    expect(one?.confidence).toBeLessThanOrEqual(1);
+  it("话题词必须与提问形状同现: 陈述句里的裸词不算提问", () => {
+    // 真实误报 (来自本仓库会话语料): 列举规格时出现"规范"二字, 却既不是提问也不关于约定。
+    expect(
+      detectIntent("HXLoLi支持的专用md格式/文风/目录命名规范/HXLoLiTag(汇总而不是每次都编)"),
+    ).toBeNull();
+    // 同一个词进了问句才是真信号 —— 两层判定的分界就在这里。
+    expect(detectIntent("这个项目的命名规范是什么")).not.toBeNull();
+    // 祈使式的风险提醒是信号 (用户在提醒别踩坑), 不需要问号。
+    expect(detectIntent("注意避免并发超时")).not.toBeNull();
+  });
+
+  it("置信度反映证据强度, 不再钉死在下限", () => {
+    const one = detectIntent("上次这个并发问题是怎么解决的");
+    expect(one?.confidence).toBeCloseTo(0.5, 10);
+    // 两条独立模式命中 → 更高; 断言单调而不是断言某个具体数字。
+    const two = detectIntent("我们当初为什么选 pnpm");
+    expect(two!.confidence).toBeGreaterThan(one!.confidence);
+    // 上限仍然 <= 1 (再多命中也不会溢出)。
+    expect(one!.confidence).toBeLessThanOrEqual(1);
+    expect(two!.confidence).toBeLessThanOrEqual(1);
+  });
+
+  it("话题词与提问形状必须同分句: 分处两句不算 (同现 != 相关)", () => {
+    // 真实误报 (300 字的长消息): 话题词"规范"在列举规格的句子里, 形状词"如何"在另一句,
+    // 整段"同现"曾让它误判为"在问约定"。同分句门槛是能廉价消除它的一步。
+    const long =
+      "HXLoLi支持的专用md格式/文风/目录命名规范。\n重点关注两个问题，如何开始训练，以及如何评估。";
+    expect(detectIntent(long)).toBeNull();
+    // 两者落在同一句时仍然是命中 (门槛收紧不能把真信号一起收掉)。
+    expect(detectIntent("目录命名规范是什么")).not.toBeNull();
+  });
+
+  it("'之前…过…吗' 这类口语回忆形状不再漏掉", () => {
+    // 修复前: prior-art 要求显式"有没有/是否/曾经", 于是这句整条漏掉 (实测确认)。
+    expect(detectIntent("我们之前遇到过幂等问题吗")).not.toBeNull();
   });
 });
 

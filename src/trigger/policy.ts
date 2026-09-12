@@ -21,80 +21,12 @@ import type { MemoryEntry } from "../kernel/types.ts";
 import { tokenSet } from "../kernel/cjk.ts";
 // 语音输入的错别字会让字面判定整体失效 (意图漏命中 / 同话题被误判成换话题), 因此先归一再判定。
 import { normalizeVoice } from "../kernel/voice.ts";
+// 意图库与判定已拆到 intents.ts (policy.ts 只留决策与预算)。
+// import 进来自己用 + re-export 出去, 对外 API 完全不变 (调用方仍从 policy.ts 取)。
+import { DEFAULT_INTENTS, detectIntent, type TriggerIntent } from "./intents.ts";
+export { DEFAULT_INTENTS, detectIntent };
+export type { TriggerIntent };
 
-/** 一种"回忆意图": 命中任意模式即认为本轮需要历史。 */
-export interface TriggerIntent {
-  id: string;
-  /** 人类可读说明 (进触发日志, 便于解释为什么注入)。 */
-  label: string;
-  patterns: RegExp[];
-}
-
-/**
- * 默认意图库。设计原则: **匹配"提问的形状", 而不是匹配"知识的内容"** ——
- * 内容词永远列不全, 但"问过去/问依据/问约定"这些句式是有限且稳定的。
- * 加一条意图只需加一行; 命中率不足时优先扩这里, 而不是去扩关键词表。
- */
-export const DEFAULT_INTENTS: readonly TriggerIntent[] = [
-  {
-    id: "recall-decision",
-    label: "回忆过去的决策与理由",
-    patterns: [
-      /为什么(我们|要|会|用|选|是)/,
-      // "上次/之前/当时 + (怎么|如何|为什么|什么|解决|处理|做|定|选|用)" —— 中文追问的常见形状。
-      /(之前|上次|上回|当时|当初|以前).{0,12}(怎么|如何|为什么|是什么|啥|解决|处理|做|定|选|用|说|提)/,
-      /(决定|结论|方案|取舍).{0,6}(是|是啥|什么|哪个)/,
-      /(why did we|why do we|what did we decide|how did we decide|what was the reasoning)/i,
-      /(remember|recall) (when|how|what|the decision)/i,
-    ],
-  },
-  {
-    id: "session-continuation",
-    label: "接续上次的进度",
-    patterns: [
-      /(继续|接着|上次|前面|之前).{0,8}(做|干|到哪|进展|剩下|还没)/,
-      /(我们|我).{0,4}(做到哪|进行到哪|还剩|下一步)/,
-      /(where (were|did) we|what'?s left|pick up where|continue from)/i,
-    ],
-  },
-  {
-    id: "convention-preference",
-    label: "询问约定、规范与偏好",
-    patterns: [
-      /(约定|规范|惯例|标准|风格|习惯|偏好)/,
-      // 允许"我们这边一般怎么写"这类中间插入 (中文口语常把主语与副词拆开)。
-      /(我们|这边|咱们).{0,6}(一般|通常|习惯|默认|约定).{0,8}(怎么|如何|用|写|做)/,
-      /(best practice|coding standard|convention|style guide|how should i|right way)/i,
-    ],
-  },
-  {
-    id: "pitfall-avoidance",
-    label: "避免重复踩坑",
-    patterns: [
-      /(踩过|踩坑|坑|教训|翻过车|出过问题|踩雷)/,
-      /(注意|小心|避免|别再|不要再).{0,10}(并发|超时|幂等|死锁|雪崩|泄漏)/,
-      /(pitfall|gotcha|footgun|bit us|burned us)/i,
-    ],
-  },
-  {
-    id: "project-status",
-    label: "询问项目状态与背景",
-    patterns: [
-      /(这个项目|本项目|我们项目).{0,8}(怎么|如何|是|用|背景|情况|状态)/,
-      /(项目|仓库).{0,6}(现状|进展|状态|背景)/,
-      /(context|background|overview) (of|for) (this|the) (project|repo)/i,
-    ],
-  },
-  {
-    id: "prior-art",
-    label: "询问是否已有相关经验/既有做法",
-    patterns: [
-      /(有没有|是否|曾经).{0,8}(做过|写过|遇到过|处理过|试过)/,
-      /(我们|之前).{0,6}(有没有|是否).{0,6}(类似|相关|一样的)/,
-      /(have we|did we|is there) (ever|already|any).{0,12}(done|tried|seen|handled)/i,
-    ],
-  },
-];
 
 /** 触发决策 (可观测: 每次都要说清楚"注入了/没注入、为什么")。 */
 export interface TriggerDecision {
@@ -116,7 +48,14 @@ export interface TriggerDecision {
 
 export interface TriggerPolicyOptions {
   intents?: readonly TriggerIntent[];
-  /** 意图命中低于该置信度且无 always-on 内容时不注入 (默认 0.34, 即至少命中 1/3 的模式)。 */
+  /**
+   * 意图置信度低于该值且无 always-on 内容时不注入。
+   *
+   * 默认 0.5 = **至少一条模式命中** (置信度刻度: 1 条 → 0.50, 2 条 → 0.75, 3 条 → 0.875)。
+   * 取 0.5 而不是更低的数字: 更低的阈值永远不会起作用 (置信度的最小值就是 0.50),
+   * 那正是修复前的问题 —— 默认值 0.34 恰好等于旧公式的硬下限, 于是门控对任何命中恒真,
+   * 实测 11/11 命中全部通过、从未拦下过一条。需要"至少两条独立模式"时把这里抬到 0.75。
+   */
   minConfidence?: number;
   /**
    * 话题漂移阈值 (默认 0.9, 由实测标定: 同话题含改述与长句追问 ≤0.8, 换话题 =1.0),
@@ -166,28 +105,6 @@ export function topicDriftOf(rawText: string, rawPrevious?: string): number {
   return Math.max(0, Math.min(1, 1 - overlap));
 }
 
-/** 识别本轮文本命中的意图。返回命中数最多的那个 (可审计), 并给出归一化置信度。 */
-export function detectIntent(
-  rawText: string,
-  intents: readonly TriggerIntent[] = DEFAULT_INTENTS,
-): { intent: TriggerIntent; confidence: number; hits: number } | null {
-  const text = normalizeVoice(rawText);
-  if (!text.trim()) return null;
-  let best: { intent: TriggerIntent; hits: number } | null = null;
-  for (const intent of intents) {
-    const hits = intent.patterns.filter((p) => p.test(text)).length;
-    if (hits === 0) continue;
-    if (!best || hits > best.hits) best = { intent, hits };
-  }
-  if (!best) return null;
-  // 置信度: 命中条数 / 该意图的模式总数 (命中一半即 0.5), 至少 0.34。
-  const confidence = Math.max(
-    0.34,
-    Math.min(1, best.hits / Math.max(1, best.intent.patterns.length)),
-  );
-  return { intent: best.intent, confidence, hits: best.hits };
-}
-
 export class TriggerPolicy {
   private readonly intents: readonly TriggerIntent[];
   private readonly minConfidence: number;
@@ -197,7 +114,7 @@ export class TriggerPolicy {
 
   constructor(opts: TriggerPolicyOptions = {}) {
     this.intents = opts.intents ?? DEFAULT_INTENTS;
-    this.minConfidence = opts.minConfidence ?? 0.34;
+    this.minConfidence = opts.minConfidence ?? 0.5;
     this.driftThreshold = opts.driftThreshold ?? 0.9;
     this.alwaysOnBudget = opts.alwaysOnBudget ?? 400;
     this.intentBudget = opts.intentBudget ?? 300;
