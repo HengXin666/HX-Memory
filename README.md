@@ -71,9 +71,18 @@ diff -rq dist ~/.dsh/profiles/web/node_modules/@hengxin666/hx-memory/dist && ech
 > 注意 `scripts/smoke-dsh.sh` 用的是**隔离的临时 DSH_HOME**, 因此跑它不会碰你的真实记忆。
 > 若要手动对真实 host 跑 `scripts/smoke-dsh-http.mjs`, 它会**覆盖 `<root>/bindings.json`** —— 先备份。
 
-**版本**: 插件声明 `peerDependencies: @deepseek-ai/dsh-* ^0.1.2-rc.1`, 但两条宿主路径都实测可用:
+**版本**: 插件声明 `peerDependencies: @deepseek-ai/dsh-* ^0.1.5-rc.1` (**宿主必须 ≥ 0.1.5-rc.1**):
 
-- 设置面板: 0.1.2-rc.1 走 `ctx.settings.installSection` (接住权威配置 thunk); 0.1.1 走
+> 为什么下限是 0.1.5-rc.1 而不是更低: `@Remote` 标记的存储介质在 `0.1.2-rc.1` 变过一次。
+> `0.1.1-rc.2` 把标记存在协议的**模块私有 WeakMap** 里, 而"有哪些端点"是宿主用它**自己那份**
+> `dsh-typert-protocol` 去读的 —— 两份实例不等价时插件的方法一个都不可见, 结果是
+> `/api/hxMemory/*` **整组 404**, 而插件 fiber 依旧 `active`、日志干净。
+> 另外 `0.1.5-rc.1` 正是 `dsh` 的 npm `latest`, 与本机实测的宿主一致。
+> 插件现在会在装配期自校验这道契约 (`src/adapters/dsh/remote-contract.ts`), 不一致时**直接
+> 加载失败**而不是静默 404; 排查与取舍见
+> [.agents/notes/implemented/bug-fix/2026-09-14-typert-remote-404-cross-instance.md](.agents/notes/implemented/bug-fix/2026-09-14-typert-remote-404-cross-instance.md)。
+
+- 设置面板: 0.1.5-rc.1 走 `ctx.settings.installSection` (接住权威配置 thunk); 更早的宿主走
   `ctx.settings.register(ns, schema, { base })` + `scope.get()`。两条路径都真的注册 `hx-memory`
   命名空间 (真机门禁断言 `settings.describe`)。
 - 会话事件: 0.1.2-rc.1 移除了 `Session.events`, 插件统一经 `session-events.ts` 做能力探测
@@ -289,6 +298,8 @@ src/
   adapters/        # 接入层: 1 套 API 的多个实现
     dsh/           #   DSH (cordis 插件: 会话捕获/工具/Web 面板 + Typert gateway)
                    #   prestep.ts        pre-step 确定性注入 (跨 step 去重)
+                   #   capture-log.ts    捕获耗时账本 (每一轮"花在哪一段/为什么没沉淀")
+                   #   schedule-log.ts   注入调度账本 ("为什么这一轮注入/没注入")
                    #   llm-agent.ts      agents 服务调用 (真实 create/followup/whenIdle 契约)
                    #   settings-source.ts 持有宿主设置源 thunk (设置改动能生效)
                    #   client/rpc.ts     Web 面板 ↔ gateway 的唯一 RPC 入口 (/api + {args})

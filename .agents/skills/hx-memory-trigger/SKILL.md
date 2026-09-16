@@ -17,7 +17,7 @@ description: 排查"AI 没有查记忆"或"记忆没生效"类问题: 判断是�
 | `always-on`      | 保底通道注入 (已确认规则 + 项目关键事实) | always-on 缓存是否已预热 (`Binder.warm`); 预算是否被截断 |
 | `intent`         | 命中回忆型提问句式                       | 句式是否覆盖该表达 → 扩 `DEFAULT_INTENTS`                |
 | `drift-refresh`  | 话题切换后强制重查                       | 漂移度量 (`topicDriftOf`) 是否把同话题误判成切换         |
-| `skip-similar`   | 同话题且刚注入过 → 跳过                  | 是否真的同话题; 阈值 `driftThreshold` (默认 0.8)         |
+| `skip-similar`   | 同话题且刚注入过 → 跳过                  | 是否真的同话题; 阈值 `driftThreshold` (默认 0.9)         |
 | `skip-no-signal` | 无保底 + 无意图 + 未换话题 → 不注入      | 是否需要为该项目配绑定, 或补一条意图                     |
 
 ## 常见根因 (按顺序查)
@@ -35,7 +35,9 @@ description: 排查"AI 没有查记忆"或"记忆没生效"类问题: 判断是�
 ## 调整旋钮
 
 - 意图库: `DEFAULT_INTENTS` (`src/trigger/policy.ts`) —— 扩句式, 不要堆知识词;
-- 漂移阈值: `TriggerPolicy({ driftThreshold })` (默认 0.8, 由同话题 ≤0.73 / 换话题 =1.0 标定);
+- 漂移阈值: `TriggerPolicy({ driftThreshold })` (默认 0.9, 由实测标定: 同话题含改述与长句追问 ≤0.8, 换话题 =1.0);
 - 预算: `alwaysOnBudget` (400) / `intentBudget` (300);
 - 预热时限: 设置项 `semanticWarmupMs` (默认 50ms, 0 = 不预热);
 - always-on 内容范围: `selectAlwaysOn` (规则 + 事实/偏好/决策; **不含** lesson —— lesson 走意图召回)。
+  项目内条目**按 project 过滤** (不传 project = 一条项目内条目都不给; 见 `tests/s2/trigger-cache-project.test.ts`);
+  机器生成的占位草稿 (`经验: … 已沉淀`) 被挡出常驻通道 (见 `src/kernel/rule-shape.ts`)。
