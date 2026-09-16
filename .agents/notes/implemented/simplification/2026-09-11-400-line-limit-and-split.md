@@ -33,6 +33,10 @@ Status: implemented
 
 关键点: **每一刀都沿"变化原因不同"的缝切**, 而不是凑行数。若只按行数切, 得到的是两个互相纠缠的半文件。
 
+> 后续 (2026-09-16): `adapters/dsh/index.ts` 因补 store 卸载逻辑再次触到 400 行上限, 二次拆出
+> `lifecycle-wiring` (预热 + 卸载清理)。这是本闸门第二次实际拦下改动, 见
+> [store-disposer-for-hmr](../bug-fix/2026-09-16-store-disposer-for-hmr.md)。
+
 ### 3. 新增闸门: 禁用 TS 参数属性
 
 `verify-structure.ts` 增加一条静态检查: 任何 `constructor(private|public|protected|readonly x: T)` 直接失败。
