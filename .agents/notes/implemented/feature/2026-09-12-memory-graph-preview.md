@@ -18,8 +18,13 @@ Status: implemented
 
 - `scripts/graph-preview.ts` + `scripts/lib/graph-view.html`: 读**真相文件** (复用
   `storage/truth-scan.ts` 的去重口径), 生成一个自包含的 HTML —— canvas 力导向, 零外部依赖,
-  零构建步骤, 双击即看。支持按类型/作用域/项目/状态着色, 词面搜索, 点节点看详情,
+  零构建步骤, 双击即看。支持按类型/作用域/项目/状态/**检索通道**着色, 词面搜索, 点节点看详情,
   图例当过滤器用。
+- **检索通道着色** (`scripts/lib/channel-probe.ts`, 与本文同批加入): 图上多出一维
+  "这条记忆靠哪条通道被找到", 数据来自**真实检索器**而不是字段猜测 (字段只说明配置, 不说明行为)。
+  两条硬约束: 探针把语料**复制进临时库 (mkdtemp)** 再检索, 因此根目录下 `index.sqlite`
+  一个字节都不动 (只读承诺见 § Consequences); 问题只从**标签/实体**派生, 绝不拿整条内容当查询
+  (那等于用答案问答案, 只会让每条都命中, 读数没有任何信息量)。
 - `npm run graph:preview` 调用; 产出默认落 `.tmp/memory-graph.html`。
 - `bench/score.py` 增加 `H@k` 与 `R@k` 并列输出, 分层表同时给出两个口径。
 
@@ -44,6 +49,9 @@ Status: implemented
 
 ## Testing
 
+- `tests/s2/channel-probe.test.ts` (9 条) 钉住通道探测: 读数来自真实检索、未召回条目不在表里、
+  探针不触碰真实库 (`index.sqlite` 的大小与 mtime 逐项比对)、无问题时返回空表而不是编造问题。
+  另有一条把"import 纯函数顺带重建整张图"这个真实副作用钉死 (见 `invokedDirectly` 守卫)。
 - `npm run graph:preview` 在真实库上产出 117 KB HTML; 用无头 Chromium 验证 JS 执行完成
   (图例 13 项、色块 11 个) 且 canvas 确实绘制 (非背景像素 5358)。
 - `bench/score.py` 在 171 个 case 上重跑, `H@k` 与 `R@k` 分层数字一致可解释。

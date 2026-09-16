@@ -12,7 +12,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { scanTruth } from "../src/storage/truth-scan.ts";
+import { probeChannels, type ChannelProbeResult } from "./lib/channel-probe.ts";
 import type { MemoryEntry, RelationType } from "../src/kernel/types.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -24,7 +26,41 @@ const KNOWN_EDGE_TYPES: readonly RelationType[] = [
   "mentions", "contradicts", "sameAs", "instanceOf", "derivedFrom",
 ];
 
-interface Flags { root: string; out: string; project?: string; max: number; orphans: boolean; open: boolean; }
+interface Flags {
+  root: string;
+  out: string;
+  project?: string;
+  max: number;
+  orphans: boolean;
+  open: boolean;
+  /** 按检索通道着色所需的"真实问题"; 不给就退化成静态图 (不猜问题, 不编造读数)。 */
+  queries: string[];
+  /** 每条命中保留前几名 (通道着色用)。 */
+  topK: number;
+}
+
+/**
+ * 从问题文本派生查询。
+ *
+ * 两种来源, 都**不是编造的**:
+ *   - 语料里已有的查询字段 (若提供 --queries 文件);
+ *   - 从条目自身的标签/实体派生 —— 这些是真实存在的检索锚点 (人真的会拿它们当关键词)。
+ * 刻意不做"拿整条内容当查询": 那等于用答案问答案, 会把每条都染成命中, 读数没有任何信息量。
+ */
+export function deriveQueries(entries: readonly MemoryEntry[], limit = 200): string[] {
+  const out = new Set<string>();
+  for (const e of entries) {
+    for (const tag of e.tags ?? []) {
+      if (tag.trim()) out.add(tag.trim());
+      if (out.size >= limit) return [...out].sort();
+    }
+    for (const ent of e.entities ?? []) {
+      if (ent.trim()) out.add(ent.trim());
+      if (out.size >= limit) return [...out].sort();
+    }
+  }
+  return [...out].sort();
+}
 
 function parseFlags(argv: string[]): Flags {
   const flags: Flags = {
@@ -33,6 +69,8 @@ function parseFlags(argv: string[]): Flags {
     max: 0,
     orphans: true,
     open: false,
+    queries: [],
+    topK: 5,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] ?? "";
@@ -46,6 +84,16 @@ function parseFlags(argv: string[]): Flags {
     else if (key === "max") flags.max = Math.max(0, Number(take()) || 0);
     else if (key === "no-orphans") { flags.orphans = false; if (eq < 0 && val === "") i--; }
     else if (key === "open") { flags.open = true; if (eq < 0) i--; }
+    else if (key === "queries") {
+      // 一行一个问题 (便于人手工维护一组真实问题); 空行与 # 注释忽略。
+      const path = take();
+      if (existsSync(path)) {
+        flags.queries = readFileSync(path, "utf8")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("#"));
+      }
+    } else if (key === "top-k") flags.topK = Math.max(1, Number(take()) || 5);
   }
   return flags;
 }
@@ -59,7 +107,16 @@ function badCount(entry: MemoryEntry): number {
   return (entry.feedback?.irrelevant ?? 0) + (entry.feedback?.wrong ?? 0);
 }
 
-function buildGraph(entries: readonly MemoryEntry[], opts: { project?: string; max: number; orphans: boolean }): Record<string, unknown> {
+function buildGraph(
+  entries: readonly MemoryEntry[],
+  opts: {
+    project?: string;
+    max: number;
+    orphans: boolean;
+    /** 检索通道读数 (可选: 没给就整张图不出现"通道"这一维)。 */
+    probe?: ChannelProbeResult;
+  },
+): Record<string, unknown> {
   const active = entries.filter((e) => e.status !== "shadow");
   const scoped = opts.project ? active.filter((e) => e.project === opts.project) : active;
 
@@ -107,6 +164,10 @@ function buildGraph(entries: readonly MemoryEntry[], opts: { project?: string; m
     tags: e.tags ?? [],
     entities: e.entities ?? [],
     relations: (e.relations ?? []).filter((r) => keptIds.has(r.toId)).map((r) => ({ type: r.type, to: r.toId, weight: r.weight ?? 0 })),
+    // 检索通道: 这张图上前所未有的一维 —— "它靠什么被找到"。
+    // 没被任何查询召回的条目这里为空数组, 前端渲染成灰色 (那是真实结论, 不是缺数据)。
+    channels: opts.probe ? [...(opts.probe.channels.get(e.id) ?? [])].sort() : null,
+    recalledBy: opts.probe ? (opts.probe.hits.get(e.id) ?? []).slice(0, 5) : null,
     degree: degree.get(e.id) ?? 0,
     importance: typeof e.importance === "number" ? e.importance : null,
     reinforcement: typeof e.reinforcement === "number" ? e.reinforcement : null,
@@ -133,6 +194,18 @@ function buildGraph(entries: readonly MemoryEntry[], opts: { project?: string; m
       projects: [...new Set(scoped.map((e) => e.project).filter((p): p is string => Boolean(p)))].sort(),
       root: opts.project ? opts.project : "(all)",
       orphanNodes: nodes.filter((n) => n.degree === 0).length,
+      // 通道覆盖读数必须显式报告: 大片灰是**结论** (这些条目在当前问题分布下召回不到),
+      // 不报告的话看的人会以为是渲染坏了。
+      ...(opts.probe
+        ? {
+            channelProbe: {
+              queries: opts.probe.queries,
+              retrievals: opts.probe.retrievals,
+              covered: opts.probe.covered,
+              total: opts.probe.total,
+            },
+          }
+        : {}),
     },
     nodes,
     edges: allEdges,
@@ -147,7 +220,19 @@ function main(argv: string[]): number {
     return 1;
   }
   const { entries, skipped } = scanTruth(flags.root);
-  const graph = buildGraph([...entries.values()], { project: flags.project, max: flags.max, orphans: flags.orphans });
+  const all = [...entries.values()];
+  // 通道着色: 需要一组**真实问题**。给不出来 (没 --queries 且条目也没有标签/实体) 时不做 ——
+  // 宁可图上没有这一维, 也不要造一组问题再拿它的读数冒充"真实检索行为"。
+  const queries = flags.queries.length ? flags.queries : deriveQueries(all, 200);
+  const probe = queries.length
+    ? probeChannels({ entries: all, queries, topK: flags.topK })
+    : null;
+  const graph = buildGraph(all, {
+    project: flags.project,
+    max: flags.max,
+    orphans: flags.orphans,
+    ...(probe ? { probe } : {}),
+  });
   const stats = graph.stats as Record<string, unknown>;
 
   const json = JSON.stringify(graph)
@@ -165,10 +250,32 @@ function main(argv: string[]): number {
   console.log("孤立节点   : " + stats.orphanNodes);
   if (Number(stats.danglingEdges) > 0) console.log("悬空边     : " + stats.danglingEdges + " (" + stats.danglingNote + ")");
   if (stats.truncated) console.log("已截断     : 只渲染前 " + flags.max + " 条");
+  // 通道读数必须打到 stdout: 生成图的人要能一眼看出"这组问题覆盖了多少条目",
+  // 否则图上那片灰是"真实结论"还是"探测没跑起来"就分不清了。
+  if (probe) {
+    console.log(
+      "通道探测   : " + probe.retrievals + " 次检索 (来自 " + probe.queries + " 个问题), 覆盖 " +
+        probe.covered + "/" + probe.total + " 条",
+    );
+    if (probe.covered === 0) {
+      console.log("            (一条都没召回: 检查 --queries, 或条目没有标签/实体可供派生问题)");
+    }
+  } else {
+    console.log("通道探测   : 跳过 (没有可用问题: 请给 --queries, 或让条目带上标签/实体)");
+  }
   if (skipped.length) console.log("解析警告   : " + skipped.length + " 条");
   console.log("输出       : " + flags.out);
   console.log("体积       : " + (Buffer.byteLength(html) / 1024).toFixed(1) + " KB");
   return 0;
 }
 
-process.exitCode = main(process.argv.slice(2));
+// 只在**被当作脚本执行**时跑 main —— 否则"import 一个纯函数 (deriveQueries) 会顺带整份重建图"
+// 就成了真实副作用: tests/s2/channel-probe.test.ts 为了测派生逻辑 import 本文件时,
+// 会真的去读 ~/.dsh/hx-memory 并覆盖 .tmp/memory-graph.html (踩过: 跑单测时打印出了整份生成日志)。
+// 副作用只能来自显式执行, 不能来自 import —— 这是脚本与库混在一个文件里的经典陷阱。
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+if (invokedDirectly) {
+  process.exitCode = main(process.argv.slice(2));
+}

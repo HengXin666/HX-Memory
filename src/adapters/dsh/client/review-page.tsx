@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Locale } from "./locale.js";
 import { callHxMemory, type HxMemoryRpcCaller } from "./rpc.js";
+import { isStaleHostError, readCovers } from "./review-covers.js";
 
 /** 面板对外暴露的 RPC 面 (供 index.tsx 类型收敛)。 */
 export type ReviewRpc = HxMemoryRpcCaller;
@@ -23,10 +24,29 @@ interface ReviewView {
   id: string;
   status: "proposed" | "confirmed" | "rejected";
   rule: string;
-  covers: number;
+  /**
+   * 被这条提议概括的实例。**新宿主给 id 数组, 旧宿主给计数** —— 面板必须两种都收
+   * (类型标成 unknown, 由 readCovers 归一化): 宿主进程比面板活得久, 只重建 dist 不重启
+   * 宿主时就会遇到旧契约, 直接 .slice() 会抛 TypeError (实测)。见 review-covers.ts。
+   */
+  covers: unknown;
   confidence: number;
   sourceRun: string;
   generatedAt: string;
+  suggestedAction: "confirm" | "rewrite" | "reject";
+  /** true = 启发式占位草稿 (没走 AI 提炼), 必须人工重写后才值得确认。 */
+  drafted: boolean;
+}
+
+/** 人审展开时的一条实例 (被 covers 引用的原文)。 */
+interface ReviewEntryView {
+  id: string;
+  kind: string;
+  content: string;
+  project?: string;
+  scope: string;
+  status: string;
+  assertedAt: string;
 }
 
 interface RecentView {
@@ -60,6 +80,101 @@ interface InvocationView {
   at: string;
 }
 
+/** 调度账本的一条记录 (与 gateway.scheduleLog 的 ScheduleRecord 同形)。 */
+interface SchedRecord {
+  at: string;
+  session: string;
+  project?: string;
+  step: number;
+  channel: "binding" | "trigger" | "none";
+  mode: string | null;
+  outcome: "injected" | "skipped" | "nothing-new" | "empty";
+  intent: string | null;
+  confidence: number;
+  topicDrift: number;
+  reason: string;
+  selected: string[];
+  ids: string[];
+  tokens: number;
+}
+
+/** 按会话聚合后的调度行。 */
+interface SchedSession {
+  session: string;
+  project?: string;
+  firstAt: string;
+  lastAt: string;
+  steps: number;
+  injected: number;
+  skipped: number;
+  tokens: number;
+  modes: Record<string, number>;
+  lastMode: string | null;
+  lastOutcome: SchedRecord["outcome"];
+  lastReason: string;
+  lastIds: string[];
+}
+
+interface SchedView {
+  available: boolean;
+  sessions: SchedSession[];
+  records: SchedRecord[];
+  size: { files: number; records: number };
+}
+
+/** 后台维护记录 (P3 调度器): 面板要看的是"它跑了没有/成功没有", 而不是参数细节。 */
+interface MaintRecord {
+  at: string;
+  tasks: string[];
+  ok: boolean;
+  detail: string;
+  output?: string;
+  elapsedMs: number;
+}
+
+interface MaintView {
+  enabled: boolean;
+  available: boolean;
+  intervalMs: number;
+  idleMs: number;
+  records: MaintRecord[];
+}
+
+/** 捕获耗时账本的一条记录 (与 gateway.captureLog 的 CaptureRecord 同形)。 */
+interface CapRecord {
+  at: string;
+  session: string;
+  project?: string;
+  turn: number;
+  outcome: "stored" | "skipped" | "error";
+  skip?: string;
+  entries: number;
+  qChars: number;
+  aChars: number;
+  episodeMs: number;
+  enrichMs: number;
+  linkMs: number;
+  storeMs: number;
+  totalMs: number;
+  detail?: string;
+}
+
+interface CapStats {
+  count: number;
+  skipped: number;
+  errors: number;
+  totalMs: { p50: number; p95: number; max: number };
+  mean: { episodeMs: number; enrichMs: number; linkMs: number; storeMs: number };
+  slowest?: CapRecord;
+}
+
+interface CapView {
+  available: boolean;
+  stats: CapStats;
+  records: CapRecord[];
+  size: { files: number; records: number };
+}
+
 interface HitView {
   kind?: string;
   content?: string;
@@ -90,6 +205,26 @@ interface GenStatus {
 
 const KIND_KEYS = ["fact", "preference", "decision", "lesson", "rule", "pattern"] as const;
 const SCOPE_KEYS = ["project", "global", "agent"] as const;
+
+/**
+ * 跳过的原因 → 人可读标签。
+ *
+ * 为什么要区分这些: "这轮没沉淀"有五种完全不同的成因, 而处置方式相反
+ * (改设置 / 换会话 / 根本不用管)。把它们显示成同一个"没沉淀"等于没解释。
+ */
+function skipLabel(skip: string | undefined, t: (k: never, v?: Record<string, string>) => string): string {
+  const key =
+    skip === "disabled"
+      ? "captureSkipDisabled"
+      : skip === "subagent"
+        ? "captureSkipSubagent"
+        : skip === "no-turn"
+          ? "captureSkipNoTurn"
+          : skip === "no-conclusion"
+            ? "captureSkipNoConclusion"
+            : "captureSkipNoSignal";
+  return (t as unknown as (k: string) => string)(key);
+}
 
 /** 把后端 kind 映射到调色板类名 (未知值退回中性徽章)。 */
 function kindClass(kind: string | undefined): string {
@@ -139,7 +274,12 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<HitView[]>([]);
   const [searched, setSearched] = useState(false);
-  const [tab, setTab] = useState<"props" | "recent" | "inv" | "flagged">("props");
+  const [tab, setTab] = useState<"props" | "recent" | "inv" | "flagged" | "sched" | "cost">(
+    "props",
+  );
+  const [sched, setSched] = useState<SchedView | null>(null);
+  const [maint, setMaint] = useState<MaintView | null>(null);
+  const [cost, setCost] = useState<CapView | null>(null);
   const [inv, setInv] = useState<InvocationView[]>([]);
   const [flagged, setFlagged] = useState<FlaggedView[]>([]);
   const [recent, setRecent] = useState<RecentView[]>([]);
@@ -150,6 +290,10 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [report, setReport] = useState<BatchReport | null>(null);
   const [status, setStatus] = useState<GenStatus | null>(null);
   const [statusErr, setStatusErr] = useState("");
+  /** 已展开的提议 id (展开时按需取原文, 不是全量预取 —— 队列可能很长)。 */
+  const [open, setOpen] = useState<Record<string, ReviewEntryView[] | "loading" | "error">>({});
+  /** 宿主不认识 entriesByIds (面板比宿主新, 通常是宿主没重启): 提示一次, 不再逐条报错。 */
+  const [staleHost, setStaleHost] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -248,6 +392,44 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     }
   };
 
+  /**
+   * 展开一条提议: 把它概括的实例原文取回来。
+   *
+   * 为什么必须能展开: 提议行本身只有一句被抽象出来的规则, 而人审要判断的恰恰是
+   * "它概括的那几条到底在说什么"。此前接口只回 covers 计数 —— 用户看到
+   * "覆盖 3 条实例" 时无从判断该确认还是驳回 (实测的真实困扰, 也是本页要消灭的
+   * 那一类"不可解释")。取回的内容会缓存, 收起再展开不重复请求。
+   */
+  const toggle = async (p: ReviewView) => {
+    if (open[p.id]) {
+      setOpen((s) => {
+        const next = { ...s };
+        delete next[p.id];
+        return next;
+      });
+      return;
+    }
+    // 旧宿主只有计数: 展开这件事根本做不到, 直说而不是发一次注定失败的请求。
+    const covers = readCovers(p.covers);
+    if (covers.legacy) {
+      setStaleHost(true);
+      return;
+    }
+    setOpen((s) => ({ ...s, [p.id]: "loading" }));
+    try {
+      const rows = await callHxMemory<ReviewEntryView[]>(rpc, "entriesByIds", {
+        ids: covers.ids.slice(0, 100),
+      });
+      setOpen((s) => ({ ...s, [p.id]: Array.isArray(rows) ? rows : [] }));
+    } catch (e) {
+      // 宿主不认识这个出口 (= 面板比宿主新) 是**部署状态**, 不是数据问题:
+      // 提示"重启宿主", 而不是把用户引向"这条提议没有实例"的错误结论。
+      if (isStaleHostError(e)) setStaleHost(true);
+      setOpen((s) => ({ ...s, [p.id]: "error" }));
+      setMsg(String(e));
+    }
+  };
+
   /** 手动触发一次推广批次 (从最近的 lesson/pattern/decision 聚类 → 提议进队列)。 */
   const runBatch = async () => {
     setBusy(true);
@@ -321,6 +503,40 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     if (tab === "flagged") void refreshFlagged();
   }, [tab, refreshFlagged]);
 
+  const refreshSched = useCallback(async () => {
+    try {
+      const view = await callHxMemory<SchedView>(rpc, "scheduleLog", { limit: 120 });
+      setSched(view ?? null);
+    } catch {
+      // 老 gateway 没有这个方法时页面照常可用 (与批次状态栏同一策略)。
+      setSched(null);
+    }
+    try {
+      const m = await callHxMemory<MaintView>(rpc, "maintenance");
+      setMaint(m ?? null);
+    } catch {
+      setMaint(null);
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    if (tab === "sched") void refreshSched();
+  }, [tab, refreshSched]);
+
+  const refreshCost = useCallback(async () => {
+    try {
+      const view = await callHxMemory<CapView>(rpc, "captureLog", { limit: 120 });
+      setCost(view ?? null);
+    } catch {
+      // 老 gateway 没有这个方法时页面照常可用 (与调度账本同一策略)。
+      setCost(null);
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    if (tab === "cost") void refreshCost();
+  }, [tab, refreshCost]);
+
   const delRecent = async (id: string) => {
     setRecentMsg("");
     try {
@@ -376,9 +592,231 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
         >
           {t("tabFlagged")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "sched"}
+          className={tab === "sched" ? "tab on" : "tab"}
+          onClick={() => setTab("sched")}
+        >
+          {t("tabSchedule")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "cost"}
+          className={tab === "cost" ? "tab on" : "tab"}
+          onClick={() => setTab("cost")}
+        >
+          {t("tabCaptureCost")}
+        </button>
       </div>
 
-      {tab === "flagged" ? (
+      {tab === "sched" ? (
+        <section className="pane">
+          <div className="status-head">
+            <span className="status-title">{t("tabSchedule")}</span>
+            {sched?.available ? (
+              <span className="badge soft">
+                {t("schedSize", {
+                  files: String(sched.size.files),
+                  records: String(sched.size.records),
+                })}
+              </span>
+            ) : null}
+            <button type="button" className="ghost" onClick={() => void refreshSched()}>
+              {t("schedRefresh")}
+            </button>
+          </div>
+          <p className="hint">{t("schedHint")}</p>
+
+          {/* 后台维护 (P3 调度器): 它"悄悄发生", 所以必须有一处能看见 —— 没有这块,
+              用户无法区分"维护在正常工作"和"它从来没跑过"(两者在界面上都一样安静)。 */}
+          <h3 className="section-title">{t("maintTitle")}</h3>
+          {!maint ? (
+            <div className="empty">{t("maintUnavailable")}</div>
+          ) : (
+            <>
+              <div className="status-head">
+                <span
+                  className={"badge " + (maint.enabled && maint.available ? "confirmed" : "soft")}
+                >
+                  {!maint.enabled
+                    ? t("maintOff")
+                    : maint.available
+                      ? t("maintOn", { h: String(Math.round(maint.intervalMs / 3_600_000)) })
+                      : t("maintNoCli")}
+                </span>
+                <span className="meta">
+                  {t("maintIdle", { m: String(Math.round(maint.idleMs / 60_000)) })}
+                </span>
+                <button type="button" className="ghost" onClick={() => void refreshSched()}>
+                  {t("schedRefresh")}
+                </button>
+              </div>
+              <p className="hint">{t("maintHint")}</p>
+              {maint.records.length === 0 ? (
+                <div className="empty">{t("maintEmpty")}</div>
+              ) : (
+                <div className="list">
+                  {maint.records.map((r, i) => (
+                    <div className="row" key={r.at + ":" + String(i)}>
+                      <span className={"badge " + (r.ok ? "confirmed" : "rejected")}>
+                        {r.ok ? t("maintOk") : t("maintFailed")}
+                      </span>
+                      <span className="content">{r.tasks.join(", ")}</span>
+                      <span className="meta">
+                        {r.detail} · {t("maintTook", { ms: String(r.elapsedMs) })} · {stamp(r.at)}
+                      </span>
+                      {/* 失败必须带上子进程输出: 只有 "exit:1" 等于没有证据 (踩过)。 */}
+                      {r.output ? <span className="meta">{r.output.slice(0, 400)}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {!sched || !sched.available ? (
+            <div className="empty">{t("schedUnavailable")}</div>
+          ) : sched.sessions.length === 0 ? (
+            <div className="empty">{t("schedEmpty")}</div>
+          ) : (
+            <>
+              <h3>{t("schedTitle")}</h3>
+              <div className="list">
+                {sched.sessions.map((s) => (
+                  <div className="row" key={s.session}>
+                    <span
+                      className={
+                        "badge " + (s.lastOutcome === "injected" ? "confirmed" : "rejected")
+                      }
+                    >
+                      {s.lastMode ?? s.lastOutcome}
+                    </span>
+                    <span className="content">
+                      {s.project ?? "-"} · {s.session.slice(0, 12)}
+                    </span>
+                    <span className="meta">
+                      {t("schedSteps")} {s.steps} · {t("schedInjected")} {s.injected} ·{" "}
+                      {t("schedSkipped")} {s.skipped} · {t("schedTokens")} {s.tokens} ·{" "}
+                      {stamp(s.lastAt)}
+                    </span>
+                    <span className="meta">{s.lastReason}</span>
+                  </div>
+                ))}
+              </div>
+              <h3>{t("schedRecords")}</h3>
+              <div className="list">
+                {sched.records.map((r, i) => (
+                  <div className="row" key={r.session + ":" + String(r.step) + ":" + String(i)}>
+                    <span className={"badge " + (r.outcome === "injected" ? "confirmed" : "soft")}>
+                      {r.mode ?? r.channel}
+                    </span>
+                    <span className="content">
+                      {r.outcome} · step {r.step}
+                      {r.ids.length ? " · " + r.ids.join(", ") : ""}
+                    </span>
+                    <span className="meta">
+                      {r.tokens ? t("schedTokens") + " " + r.tokens + " · " : ""}
+                      {t("schedDrift")} {r.topicDrift.toFixed(2)} · {stamp(r.at)}
+                    </span>
+                    <span className="meta">{r.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      ) : tab === "cost" ? (
+        <section className="pane">
+          <div className="status-head">
+            <span className="status-title">{t("captureTitle")}</span>
+            {cost?.available ? (
+              <span className="badge soft">
+                {t("captureSize", {
+                  files: String(cost.size.files),
+                  records: String(cost.size.records),
+                })}
+              </span>
+            ) : null}
+            <button type="button" className="ghost" onClick={() => void refreshCost()}>
+              {t("schedRefresh")}
+            </button>
+          </div>
+          <p className="hint">{t("captureHint")}</p>
+          {!cost || !cost.available ? (
+            <div className="empty">{t("captureUnavailable")}</div>
+          ) : cost.size.records === 0 ? (
+            <div className="empty">{t("captureEmpty")}</div>
+          ) : (
+            <>
+              {/* 分位数在前, 明细在后: 长尾现象看平均值会被大量正常轮次稀释掉 (见 capture-log.ts)。 */}
+              <div className="status-head">
+                <span className="badge confirmed">
+                  {t("captureP50")} {cost.stats.totalMs.p50}ms
+                </span>
+                <span className="badge soft">
+                  {t("captureP95")} {cost.stats.totalMs.p95}ms
+                </span>
+                <span className="badge soft">
+                  {t("captureMax")} {cost.stats.totalMs.max}ms
+                </span>
+                <span className="meta">{t("captureCount", { n: String(cost.stats.count) })}</span>
+                <span className="meta">
+                  {t("captureSkipCount", { n: String(cost.stats.skipped) })}
+                </span>
+                {cost.stats.errors > 0 ? (
+                  <span className="badge rejected">
+                    {t("captureErrCount", { n: String(cost.stats.errors) })}
+                  </span>
+                ) : null}
+              </div>
+              <p className="hint">
+                {t("captureMeanPhases", {
+                  e: String(cost.stats.mean.episodeMs),
+                  n: String(cost.stats.mean.enrichMs),
+                  l: String(cost.stats.mean.linkMs),
+                  s: String(cost.stats.mean.storeMs),
+                })}
+              </p>
+              {cost.stats.slowest ? (
+                <p className="hint">
+                  {t("captureSlowest")}: {cost.stats.slowest.session.slice(0, 12)} · turn{" "}
+                  {cost.stats.slowest.turn} · {cost.stats.slowest.totalMs}ms
+                </p>
+              ) : null}
+              <h3>{t("captureRecords")}</h3>
+              <div className="list">
+                {cost.records.map((r, i) => (
+                  <div className="row" key={r.session + ":" + String(r.turn) + ":" + String(i)}>
+                    <span
+                      className={
+                        "badge " + (r.outcome === "stored" ? "confirmed" : r.outcome === "error" ? "rejected" : "soft")
+                      }
+                    >
+                      {r.outcome === "stored"
+                        ? t("captureOutcomeStored")
+                        : r.outcome === "error"
+                          ? t("captureSkipError")
+                          : skipLabel(r.skip, t)}
+                    </span>
+                    <span className="content">
+                      {(r.project ?? "-") + " · turn " + r.turn}
+                      {r.skip && r.outcome === "skipped" ? " · " + skipLabel(r.skip, t) : ""}
+                    </span>
+                    <span className="meta">
+                      {r.episodeMs}/{r.enrichMs}/{r.linkMs}/{r.storeMs} ms · 计 {r.totalMs}ms ·{" "}
+                      {r.qChars}+{r.aChars} 字 · {stamp(r.at)}
+                    </span>
+                    {r.detail ? <span className="meta">{r.detail.slice(0, 200)}</span> : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      ) : tab === "flagged" ? (
         <section className="pane">
           <h3>{t("flaggedTitle")}</h3>
           {flagged.length === 0 ? (
@@ -387,11 +825,13 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
             <div className="list">
               {flagged.map((v) => (
                 <div className="row" key={v.id}>
-                  <span className="badge rejected">{t("flaggedBad")} {v.irrelevant + v.wrong}</span>
+                  <span className="badge rejected">
+                    {t("flaggedBad")} {v.irrelevant + v.wrong}
+                  </span>
                   <span className="content">{v.content}</span>
                   <span className="meta">
-                    [{v.kind}] {v.id} · {t("flaggedExposure")} {v.exposure} ·{" "}
-                    {t("flaggedQuality")} {v.quality.toFixed(2)}
+                    [{v.kind}] {v.id} · {t("flaggedExposure")} {v.exposure} · {t("flaggedQuality")}{" "}
+                    {v.quality.toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -448,7 +888,9 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
               {recent.map((r) => (
                 <div className="row" key={r.id}>
                   <span className={"badge " + kindClass(r.kind)}>{r.kind}</span>
-                  <span className={"badge soft " + scopeClass(r.scope)}>{r.project ?? r.scope}</span>
+                  <span className={"badge soft " + scopeClass(r.scope)}>
+                    {r.project ?? r.scope}
+                  </span>
                   <span className="rule-text">{r.content}</span>
                   <span className="meta">
                     {stamp(r.assertedAt)}
@@ -570,31 +1012,78 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
             <div className="empty">{t("empty")}</div>
           ) : (
             <div className="list">
-              {queue.map((p) => (
-                <div className="row" key={p.id}>
-                  <span className={"badge " + p.status}>{p.status}</span>
-                  <span className="rule-text">{p.rule}</span>
-                  <span className="meta">
-                    {t("covers", { n: String(p.covers) })} · {Math.round(p.confidence * 100)}%
-                  </span>
-                  <span className="row-actions">
-                    <button
-                      type="button"
-                      className="confirm"
-                      onClick={() => void act(p.id, "confirmProposal", { by: "user:dsh-web" })}
-                    >
-                      {t("confirm")}
-                    </button>
-                    <button
-                      type="button"
-                      className="reject"
-                      onClick={() => void act(p.id, "rejectProposal")}
-                    >
-                      {t("reject")}
-                    </button>
-                  </span>
-                </div>
-              ))}
+              {queue.map((p) => {
+                const detail = open[p.id];
+                const covers = readCovers(p.covers);
+                return (
+                  <div className="prop" key={p.id}>
+                    <div className="row">
+                      <span className={"badge " + p.status}>{p.status}</span>
+                      {/* 草稿必须显眼: 它的规则文本只是"该主题有 N 条实例"的提示,
+                          直接点确认等于把一句占位文本变成跨项目规则。 */}
+                      {p.drafted ? <span className="badge rejected">{t("draftBadge")}</span> : null}
+                      <span className="rule-text">{p.rule}</span>
+                      <span className="meta">
+                        {t("covers", { n: String(covers.count) })} ·{" "}
+                        {Math.round(p.confidence * 100)}%
+                        {p.sourceRun ? " · " + t("source", { run: p.sourceRun }) : ""}
+                        {p.generatedAt ? " · " + stamp(p.generatedAt) : ""}
+                      </span>
+                      <span className="row-actions">
+                        <button
+                          type="button"
+                          className="ghost"
+                          disabled={covers.legacy || covers.ids.length === 0}
+                          title={covers.legacy ? t("staleHostShort") : ""}
+                          onClick={() => void toggle(p)}
+                        >
+                          {detail ? t("collapse") : t("expand")}
+                        </button>
+                        <button
+                          type="button"
+                          className="confirm"
+                          onClick={() => void act(p.id, "confirmProposal", { by: "user:dsh-web" })}
+                        >
+                          {t("confirm")}
+                        </button>
+                        <button
+                          type="button"
+                          className="reject"
+                          onClick={() => void act(p.id, "rejectProposal")}
+                        >
+                          {t("reject")}
+                        </button>
+                      </span>
+                    </div>
+                    {p.drafted ? <div className="banner warn">{t("draftWarn")}</div> : null}
+                    {/* 旧宿主: 只有计数没有 id, 展开做不到。这是**部署状态** (宿主没重启),
+                        必须说出真正原因 —— 否则用户只会看到按钮灰着, 然后以为功能坏了。 */}
+                    {covers.legacy || staleHost ? (
+                      <div className="banner warn">{t("staleHost")}</div>
+                    ) : null}
+                    {detail === "loading" ? <div className="empty small">{t("loading")}</div> : null}
+                    {detail === "error" ? <div className="banner err">{t("expandFailed")}</div> : null}
+                    {Array.isArray(detail) ? (
+                      detail.length === 0 ? (
+                        <div className="empty small">{t("coversEmpty")}</div>
+                      ) : (
+                        <div className="covers">
+                          {detail.map((c) => (
+                            <div className="cover" key={c.id}>
+                              <span className={"badge " + kindClass(c.kind)}>{c.kind}</span>
+                              <span className="cover-text">{c.content}</span>
+                              <span className="meta">
+                                {c.status !== "active" ? c.status + " · " : ""}
+                                {c.project ?? c.scope} · {stamp(c.assertedAt)} · {c.id}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           )}
 

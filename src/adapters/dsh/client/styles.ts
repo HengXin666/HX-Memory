@@ -496,6 +496,40 @@ body[data-ds-dark-theme] .hxmem-review .badge.s-agent,
   gap: var(--hxmem-s1);
 }
 
+/* 提议块 (行 + 展开的依据 + 草稿警告必须作为一个整体可辨识)。
+   为什么要这一层: 展开后 .row 与依据列表是相邻兄弟, 没有容器时下一个提议的
+   hover 高亮会盖住上一个的展开内容 —— 人审时会看错属于哪条提议。 */
+.hxmem-review .prop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hxmem-s1);
+}
+
+/* 展开的依据 (被 covers 引用的原文)。缩进 + 次级底色: 视觉上从属于上面的提议。 */
+.hxmem-review .covers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hxmem-s1);
+  margin-left: var(--hxmem-s3);
+  padding-left: var(--hxmem-s3);
+  border-left: 2px solid rgba(128, 128, 128, 0.3);
+}
+
+.hxmem-review .cover {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--hxmem-s2);
+  padding: var(--hxmem-s1) var(--hxmem-s2);
+}
+
+.hxmem-review .cover-text {
+  flex: 1;
+  min-width: 200px;
+  overflow-wrap: anywhere;
+  color: var(--hxmem-muted);
+}
+
 .hxmem-review .search {
   display: flex;
   gap: var(--hxmem-s2);

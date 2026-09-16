@@ -105,6 +105,7 @@
           <option value="scope">着色: 作用域</option>
           <option value="project">着色: 项目</option>
           <option value="status">着色: 状态</option>
+          <option value="channel">着色: 检索通道</option>
         </select>
         <label class="chk"><input type="checkbox" id="orphans" /> 孤立节点</label>
         <button id="relayout">重新布局</button>
@@ -133,6 +134,14 @@
           derivedFrom: "#8b5cf6", instanceOf: "#c084fc"
         };
         var SCOPE_COLORS = { global: "#ff88ff", project: "#4ade80", agent: "#60a5fa" };
+        /* 检索通道配色 (item 5): 每条通道一个可区分色相; 未命中任何通道 = 灰。
+           灰不是"缺数据", 而是"这组问题下召回不到它" —— 图上看得出这一点本身就是信息。 */
+        var CHANNEL_COLORS = {
+          rules: "#ff5c8a", bm25: "#5b9dff", vector: "#22d3ee", graph: "#a855f7",
+          tag: "#f59e0b", entity: "#34d399", recency: "#94a3b8"
+        };
+        var CHANNEL_ORDER = ["rules", "bm25", "vector", "graph", "tag", "entity", "recency"];
+        var NO_CHANNEL_COLOR = "#3a4553";
         var STATUS_COLORS = { active: "#4ade80", superseded: "#f59e0b", merged: "#8b5cf6", expired: "#64748b", shadow: "#ef4444" };
         var PROJECT_PALETTE = ["#ff88ff", "#4ade80", "#38bdf8", "#fbbf24", "#f472b6", "#22d3ee", "#a3e635", "#fb923c", "#818cf8", "#2dd4bf"];
         var UNDIRECTED = { relates: 1, sameAs: 1, contradicts: 1, mentions: 1, source: 1 };
@@ -192,6 +201,16 @@
         function nodeColor(n) {
           if (colorMode === "scope") return SCOPE_COLORS[n.d.scope] || "#8b9bb0";
           if (colorMode === "status") return STATUS_COLORS[n.d.status] || "#8b9bb0";
+        if (colorMode === "channel") {
+          var ch = n.d.channels;
+          if (!ch || !ch.length) return NO_CHANNEL_COLOR;
+          /* 多通道命中时取"排序最靠前的那条" —— 单一颜色必须有确定性的选择规则,
+             否则同一张图两次渲染可能长得不一样 (颜色抖动比"取第一个"更难排查)。 */
+          for (var ci = 0; ci < CHANNEL_ORDER.length; ci++) {
+            if (ch.indexOf(CHANNEL_ORDER[ci]) >= 0) return CHANNEL_COLORS[CHANNEL_ORDER[ci]];
+          }
+          return NO_CHANNEL_COLOR;
+        }
           if (colorMode === "project") return n.d.project ? (projectColor[n.d.project] || "#8b9bb0") : "#4b5563";
           return KIND_COLORS[n.d.kind] || "#8b9bb0";
         }
@@ -434,6 +453,12 @@
             out.push("<span class=\"warn\" title=\"" + esc(s.danglingNote || "") + "\">悬空边 " + s.danglingEdges + "</span>");
           }
           if (s.truncated) out.push("<span class=\"warn\">已截断 (共 " + s.totalEntries + " 条, 只渲染 " + nodes.length + ")</span>");
+          /* 通道覆盖读数: 明确写出"N/M 条被这组问题召回" —— 灰节点多时这是解释, 不是故障。 */
+          if (s.channelProbe) {
+            out.push("<span title=\"用真实检索器跑的问题集合; 未覆盖的条目渲染为灰色\">通道覆盖 <b>" +
+              s.channelProbe.covered + "</b>/" + s.channelProbe.total +
+              " (" + s.channelProbe.queries + " 问题)</span>");
+          }
           document.getElementById("stats").innerHTML = out.join(" &middot; ");
         }
 
@@ -452,6 +477,24 @@
                 "<span class=\"swatch dash\" style=\"border-top-color:" + (EDGE_COLORS[t] || "#64748b") + "\"></span>" +
                 esc(t) + "<span class=\"n\">" + edgeCount[t] + "</span></div>";
             });
+          }
+          if (colorMode === "channel" && data.stats.channelProbe) {
+            // 只在"按通道着色"时给出通道图例: 否则图例与画面颜色对不上, 反而误导。
+            html += "<div class=\"lg-title\">检索通道</div>";
+            var covered = {};
+            nodes.forEach(function (n) {
+              (n.d.channels || []).forEach(function (c) { covered[c] = (covered[c] || 0) + 1; });
+            });
+            CHANNEL_ORDER.forEach(function (c) {
+              if (!covered[c]) return;
+              html += "<div class=\"lg-row\"><span class=\"swatch\" style=\"background:" +
+                CHANNEL_COLORS[c] + "\"></span>" + esc(c) + "<span class=\"n\">" + covered[c] + "</span></div>";
+            });
+            var none = nodes.filter(function (n) { return !(n.d.channels || []).length; }).length;
+            if (none) {
+              html += "<div class=\"lg-row\"><span class=\"swatch\" style=\"background:" + NO_CHANNEL_COLOR +
+                "\"></span>未召回<span class=\"n\">" + none + "</span></div>";
+            }
           }
           box.innerHTML = html;
           Array.prototype.forEach.call(box.querySelectorAll("[data-kind]"), function (el) {
@@ -493,6 +536,22 @@
           out += "<dt>写入</dt><dd>" + esc((d.assertedAt || "").slice(0, 19).replace("T", " ")) + "</dd>";
           out += "<dt>来源</dt><dd>" + esc(d.source || "-") + "</dd>";
           out += "</dl>";
+          if (d.channels) {
+            // 这一维回答"它为什么会被找到"; 以及"它根本没被找到时是怎么进图的" ——
+            // 图给它画了边, 但没有任何通道通向它, 那个落差才是最值得看的。
+            out += "<div class=\"sect\">检索通道</div><div class=\"kicker\">";
+            if (!d.channels.length) {
+              out += "<span class=\"hint\">当前问题集合下未召回 (它靠关系边出现在图里, 不是靠检索)</span>";
+            } else {
+              d.channels.forEach(function (c) {
+                out += "<span class=\"tag\" style=\"color:" + (CHANNEL_COLORS[c] || "#8b9bb0") + "\">" + esc(c) + "</span>";
+              });
+            }
+            out += "</div>";
+            if ((d.recalledBy || []).length) {
+              out += "<div class=\"hint\">因这些问题被召回: " + esc(d.recalledBy.join(" / ")) + "</div>";
+            }
+          }
           if ((d.tags || []).length) {
             out += "<div class=\"sect\">标签</div><div class=\"kicker\">";
             d.tags.forEach(function (t) { out += "<span class=\"tag\">" + esc(t) + "</span>"; });
