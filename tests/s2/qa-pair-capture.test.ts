@@ -42,7 +42,9 @@ async function turn(
   });
   await runtime.capture(session, {
     type: "assistant/message",
-    data: { content: [{ type: "text", text: answer }] },
+    // 真实宿主载荷是**信封** { turn, step, message } (文本在 message.content)。
+    // 早先这里写成 data.content —— 测试与生产形状不一致, 长期放过了"助手输出恒为空"。
+    data: { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "text", text: answer }] } },
   });
   await runtime.capture(session, { type: "turn/end", data: { reason: { kind: "completed" } } });
 }
@@ -125,3 +127,62 @@ describe("记忆层: 问句转录被结论取代", () => {
     expect(episodes.all()).toHaveLength(2);
   });
 });
+
+describe("宿主载荷契约: assistant/message 是信封, 不是裸消息", () => {
+  // 回归 (2026-09-15 实测): 真实宿主把助手消息放在 data.message 里
+  // (data = { turn, step, message, usage, stream }), 而 data.content 只存在于 user/message。
+  // runtime.textOf 早先只读 data.content, 于是助手输出恒为空: 315 条 episode 全是 user,
+  // 账本 aChars 恒为 0, 结构化器永远读不到"回答" —— 沉淀下来的自然全是用户原话。
+  // 这个用例直接喂**磁盘上真实的信封形状**, 防止再退回"测试形状 ≠ 生产形状"。
+  it("信封形状 (data.message.content) 能被读出来", async () => {
+    const runtime = mkRuntime();
+    const session = { id: "s6" };
+    runtime.onSessionStart(session);
+    await runtime.capture(session, { type: "turn/start", data: {} });
+    await runtime.capture(session, {
+      type: "user/message",
+      data: { source: { kind: "user" }, content: [{ type: "text", text: "信封形状的问题" }] },
+    });
+    await runtime.capture(session, {
+      type: "assistant/message",
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          role: "assistant",
+          id: "m1",
+          content: [
+            { type: "reasoning", text: "先想一想。" },
+            { type: "text", text: "信封形状的回答。" },
+            { type: "tool-call", id: "c1", name: "bash" },
+          ],
+        },
+        usage: { input: 1, output: 1 },
+      },
+    });
+    await runtime.capture(session, { type: "turn/end", data: { reason: { kind: "completed" } } });
+
+    const all = episodes.all();
+    expect(all.map((e) => e.role)).toEqual(["user", "assistant"]);
+    // 只取 text 块: reasoning/tool-call 都不能混进"回答"。
+    expect(all[1]!.text).toBe("信封形状的回答。");
+  });
+
+  it("user/message 的裸形状 (data.content) 仍然照旧可读", async () => {
+    const runtime = mkRuntime();
+    const session = { id: "s7" };
+    runtime.onSessionStart(session);
+    await runtime.capture(session, { type: "turn/start", data: {} });
+    await runtime.capture(session, {
+      type: "user/message",
+      data: { source: { kind: "user" }, content: "纯字符串正文" },
+    });
+    await runtime.capture(session, {
+      type: "assistant/message",
+      data: { turn: 1, step: 1, message: { content: "纯字符串回答" } },
+    });
+    await runtime.capture(session, { type: "turn/end", data: { reason: { kind: "completed" } } });
+    expect(episodes.all().map((e) => e.text)).toEqual(["纯字符串正文", "纯字符串回答"]);
+  });
+});
+

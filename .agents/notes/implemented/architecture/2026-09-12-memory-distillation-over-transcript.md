@@ -24,6 +24,10 @@ Status: implemented
 
 - `runtime.ts` 同时收 `assistant/message`; 一轮写两条 episode (真实 role, 共用同一个 `turn` 序号),
   记忆吃 `{question, answer}`。
+  **勘误 (2026-09-15)**: 这条接线当时并未真正生效 —— 读出文本的 `textOf` 只认 `data.content`,
+  而宿主 `assistant/message` 的文本在信封 `data.message.content` 里, 助手侧恒为 `""`。
+  实测 315 条 episode 全是 `user`、账本 `aChars` 恒为 0, 本文描述的"提炼"因此从未落地。
+  修复与完整证据见 [assistant-envelope-text](../bug-fix/2026-09-15-assistant-envelope-text.md)。
 - `engine.ts` 有结论闸门: 只有问题、后面什么都没有的轮次直接拦下 (signal 记 `no-conclusion:question`);
   带回答的疑问句放行给结构化器判定; 自问自答与显式确认 ("采用/可以/就这样") 也算结论。
 - `StructuredTurn` 有 `conclusion` 字段。有它时记忆正文就是结论, 没有时正文保持原文。

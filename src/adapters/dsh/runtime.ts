@@ -2,39 +2,40 @@
 // 类型策略: 用宽松结构类型 (SessionLike/SessionEventLike) 与 DSH 解耦,
 // 任何发同类事件的 harness 都可复用 (仿 ReMe 的做法)。
 //
-// project 语义 (2026-09 修正): 项目键 = 会话工作目录所属**仓库名** (git root 目录名, 非仓库回退目录名)。
-// 此前用的是 session.id (UUID), 导致自动捕获永远是 scope:"agent"、绑定面板无从填写、项目内召回永远为空;
-// 后来改用目录名, 又在 monorepo 里按子包碎片化 —— 两个坑都记在 projectKeyOfCwd 上。
+// project 语义见 project-key.ts (它从本文件拆出去: 这个键是跨层契约, 不该埋在运行时里)。
 //
 // autoMemoryInterval (2026-09 实现): 每 N 轮完成对话才落一次记忆 (0/1 = 每轮);
 // 会话结束时强制冲刷, 保证不丢。
-import { execFileSync } from "node:child_process";
+//
+// 三段职责 (2026-09 拆分, 本文件此前 469 行越过 400 行上限):
+//   1. 项目键解析 → project-key.ts;
+//   2. 事件 → 轮次 → 账本形状 → capture-ledger.ts;
+//   3. 本文件: 事件状态机 + 缓冲与冲刷 + 并发/生命周期。
 import type { CapturePipeline } from "../../capture/pipeline.ts";
 import type { EpisodeStore } from "../../kernel/ports.ts";
+import type { CaptureLog, CaptureSkipReason } from "./capture-log.ts";
+import { projectOfSession, type SessionLike } from "./project-key.ts";
+import {
+  completeTurn,
+  flushTurn,
+  skipOnTurnEnd,
+  type FlushTurnDeps,
+  type SessionEventLike,
+  type TurnPair,
+} from "./capture-ledger.ts";
 
-export interface SessionLike {
-  id: string;
-  header?: { origin?: string; cwd?: string };
-}
+export type { SessionLike } from "./project-key.ts";
 
-export interface SessionEventLike {
-  type: string;
-  seq?: number;
-  time?: number;
-  data?: unknown;
-}
+export type { SessionEventLike } from "./capture-ledger.ts";
+// 项目键原语在 project-key.ts; 这里**转发**导出, 让调用方不必知道它搬到哪个文件了
+// (搬运实现不该改变依赖图的形状 —— 否则每次拆分都要改一圈调用点)。
+export { projectKeyOfCwd, projectOfSession } from "./project-key.ts";
 
 export interface RuntimeSettings {
   autoCapture: boolean;
   autoMemoryInterval?: number;
   /** 只捕获根 agent (忽略 subagent): 子 agent 的任务提示词也是 source.kind=user。 */
   rootAgentsOnly?: boolean;
-}
-
-/** 一轮问答 (捕获单元)。 */
-interface TurnPair {
-  question: string;
-  answer: string;
 }
 
 interface TurnState {
@@ -53,73 +54,34 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
-/** 目录名 (路径最后一段), 空串/纯分隔符时 undefined。 */
-function dirNameOf(path: string): string | undefined {
-  const trimmed = path.replace(/[\\/]+$/, "");
-  if (!trimmed) return undefined;
-  const name = trimmed.split(/[\\/]/).pop();
-  return name && name.length ? name : undefined;
-}
-
-/** 默认 git 执行器 (失败抛错, 由调用方回退)。超时 3s: 解析项目键不能拖住会话启动。 */
-function defaultGit(args: readonly string[], cwd: string): string {
-  return execFileSync("git", [...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 3000,
-  });
-}
-
-/** 每目录只解析一次 (会话开始与预步都会问这个键)。 */
-const PROJECT_KEY_CACHE = new Map<string, string>();
-
-/**
- * 会话 → 项目键: 工作目录所属**仓库名** (git root 的目录名); 非仓库回退目录名。
- *
- * 为什么不用目录名当项目键 (2026-09 修正): monorepo 里同一仓库的每个子包是一个目录。
- * 用目录名会让记忆按子包**碎片化** —— 在同一个仓库的另一个目录继续工作时, 之前沉淀的
- * 项目经验就"不在这个项目里"了。git root 在同一仓库的所有子目录上恒定, 因此键稳定,
- * 而跨仓库仍然隔离; 非 git 目录退化为原来的目录名语义 (至少有一个稳定的键)。
- *
- * 可注入的 git 执行器是为了让这条语义可被单测钉住, 不必真的建仓库。
- */
-export function projectKeyOfCwd(
-  cwd: string,
-  git: (args: readonly string[], cwd: string) => string = defaultGit,
-  cache: Map<string, string> = PROJECT_KEY_CACHE,
-): string | undefined {
-  const trimmed = cwd.replace(/[\\/]+$/, "");
-  if (!trimmed) return undefined;
-  const cached = cache.get(trimmed);
-  if (cached !== undefined) return cached;
-  let key: string | undefined;
-  try {
-    key = dirNameOf(git(["rev-parse", "--show-toplevel"], trimmed).trim());
-  } catch {
-    // 非 git 仓库 / git 不可用 / 无权限 → 回退目录名 (不能没有项目键)。
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (!isRecord(part) || typeof part.text !== "string") return "";
+        // 只认正文块: assistant/message 里 reasoning (思维链) 也是 {type, text},
+        // 全收下来会把"想的过程"当成回答沉淀进记忆。
+        // 缺 type 的块按正文处理 —— 别把未知形状静默丢掉 (user/message 的块常常没有 type)。
+        if (typeof part.type === "string" && part.type !== "text") return "";
+        return part.text;
+      })
+      .join("");
   }
-  if (!key) key = dirNameOf(trimmed);
-  if (key) cache.set(trimmed, key);
-  return key;
-}
-
-/** 会话 → 项目键 (见 projectKeyOfCwd); 无 cwd 时 undefined。 */
-export function projectOfSession(session: SessionLike): string | undefined {
-  const cwd = session.header?.cwd;
-  return typeof cwd === "string" ? projectKeyOfCwd(cwd) : undefined;
+  return "";
 }
 
 function textOf(data: unknown): string {
   if (typeof data === "string") return data;
   if (!isRecord(data)) return "";
-  const content = data.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
-      .join("");
-  }
+  // assistant/message 的 data 是**信封** { turn, step, message } —— 文本在 data.message.content,
+  // 不在 data.content 上。只读 data.content 会让助手输出恒为空字符串: 实测 315 条 episode
+  // 全是 user、账本 aChars 恒为 0、结构化器永远读不到"回答", 于是沉淀的全是用户原话。
+  // user/message 则相反, 直接把 message 展开在 data 上 (content/source/role/id)。两种都要认。
+  const direct = contentText(data.content);
+  if (direct) return direct;
+  const message = data.message;
+  if (isRecord(message)) return contentText(message.content);
   return "";
 }
 
@@ -134,6 +96,13 @@ export interface RuntimeOptions {
   episodes?: () => EpisodeStore | null;
   /** 捕获来源标记 (写进 episode.surface, 便于多宿主共存时溯源)。 */
   surface?: string;
+  /**
+   * 捕获耗时账本 (可选)。给了它, 每一轮都会落一条"为什么/花了多久"的记录。
+   *
+   * 用**提供者**而不是实例: 开关 (captureLog) 在面板里可改, 构造插件时读一次会让改动必须重启
+   * 才生效 —— 与 episodes 同一个理由 (真实踩过)。
+   */
+  captureLog?: () => CaptureLog | null;
 }
 
 export class HxMemoryRuntime {
@@ -145,6 +114,11 @@ export class HxMemoryRuntime {
    * 按同一口径算出了项目键。返回**最近的**一个 (用户正在用的那个)。
    */
   private lastProject?: string;
+  /**
+   * 最近一次会话活动的时间戳 (ms; 0 = 本进程还没见过活动)。
+   * 只被 idleMs() 读取, 用来让后台维护避开正在写入的窗口。
+   */
+  private lastActivityAt = 0;
   /** 已触发但尚未结束的冲刷 (会话 dispose 后不再在 turns 里, flushAll 必须也能等到它们)。 */
   private readonly inflight = new Set<Promise<void>>();
 
@@ -162,6 +136,18 @@ export class HxMemoryRuntime {
   /** 最近一次会话的项目键 (无则 undefined)。 */
   project(): string | undefined {
     return this.lastProject;
+  }
+
+  /**
+   * 距离最近一次会话活动过了多久 (ms); 从未有过活动时返回 0。
+   *
+   * 为什么由 runtime 提供而不是让调度器自己看时间: "有没有人在写真相文件"只有捕获路径知道。
+   * 后台维护 (P3 调度器) 用它在**空闲窗**内才动手 —— 与宿主并发改写同一批 Markdown 会丢写。
+   * 返回 0 的语义是"没有活动"(而不是"刚刚活动过"), 调用方按"已空闲"处理。
+   */
+  idleMs(): number {
+    if (this.lastActivityAt === 0) return 0;
+    return Math.max(0, Date.now() - this.lastActivityAt);
   }
 
   onSessionStart(session: SessionLike): void {
@@ -220,38 +206,24 @@ export class HxMemoryRuntime {
   private async flush(session: SessionLike, state: TurnState): Promise<void> {
     const pending = state.pending.splice(0);
     let turn = state.turnBase;
-    // 每次落盘时**重新求值** (面板能在会话中途开关 episode 记录)。
-    const episodeStore = this.options.episodes?.() ?? null;
+    const deps: FlushTurnDeps = {
+      pipe: this.pipe,
+      // 每一轮都**重新求值**: 面板能在会话中途开关 episode 记录与耗时账本 (钉在构造期就得重启)。
+      episodes: () => this.options.episodes?.() ?? null,
+      log: () => this.options.captureLog?.() ?? null,
+      ...(this.options.surface ? { surface: this.options.surface } : {}),
+      ...(this.options.onError ? { onError: this.options.onError } : {}),
+    };
     for (const pair of pending) {
-      turn += 1;
-      const episodeIds: string[] = [];
-      const writeEpisode = async (role: "user" | "assistant", text: string): Promise<void> => {
-        if (!episodeStore || !text) return;
-        try {
-          // 端口允许异步实现 (远端日志/批量刷盘), 这里是 await 点。
-          const episode = await episodeStore.append({
-            session: session.id,
-            turn,
-            role,
-            text,
-            at: new Date().toISOString(),
-            ...(state.project ? { project: state.project } : {}),
-            ...(this.options.surface ? { surface: this.options.surface } : {}),
-          });
-          episodeIds.push(episode.id);
-        } catch (error) {
-          // 原文写失败不能拖垮记忆捕获 (记忆仍可落盘, 只是少了血缘)。
-          this.options.onError?.(error);
-        }
-      };
-      await writeEpisode("user", pair.question);
-      await writeEpisode("assistant", pair.answer);
-      await this.pipe.run({
-        text: pair.question,
-        ...(pair.answer ? { answer: pair.answer } : {}),
+      // 用宿主给的轮次号 (没有则本地递增): 账本要能和 episode/会话日志直接对上,
+      // 而 episode 的 turn 用的是本地计数 —— 两者在"宿主没给 turn"时才可能不同。
+      turn = Math.max(turn + 1, pair.turn);
+      await flushTurn(deps, {
         session: session.id,
         ...(state.project ? { project: state.project } : {}),
-        ...(episodeIds.length ? { episodeIds } : {}),
+        turn,
+        question: pair.question,
+        answer: pair.answer,
       });
     }
     state.turnBase = turn;
@@ -259,9 +231,19 @@ export class HxMemoryRuntime {
 
   /** 消费一个 session/event。turn/end 且 reason=completed 时进入缓冲/落盘。 */
   async capture(session: SessionLike, event: SessionEventLike): Promise<void> {
-    if (!this.settings().autoCapture) return;
+    // 活动时间戳在**开关判定之前**记录: 它是"宿主在动"的事实, 与"要不要捕获"无关。
+    // 后台维护靠它判断空闲窗 (见 idleMs); 若放在 autoCapture 之后, 关掉捕获时维护会误判空闲。
+    this.lastActivityAt = Date.now();
+    const settings = this.settings();
+    if (!settings.autoCapture) {
+      this.recordSkip(session, event, "disabled");
+      return;
+    }
     // subagent 的任务提示词 source.kind 也是 "user", 只看来源挡不住它 —— 按 origin 过滤。
-    if (this.settings().rootAgentsOnly !== false && session.header?.origin === "subagent") return;
+    if (settings.rootAgentsOnly !== false && session.header?.origin === "subagent") {
+      this.recordSkip(session, event, "subagent");
+      return;
+    }
     const state = this.turns.get(session.id);
     if (event.type === "turn/start") {
       if (state) {
@@ -300,14 +282,45 @@ export class HxMemoryRuntime {
       isRecord(event.data) && isRecord(event.data.reason) ? event.data.reason : undefined;
     const kind = typeof reason?.kind === "string" ? reason.kind : undefined;
     const completed = kind === "completed" || kind === "max-tokens";
-    if (completed && state.messages.length > 0) {
-      state.pending.push({
-        question: state.messages.join("\n"),
-        answer: state.answers.join("\n"),
-      });
+    if (completed) {
+      // 配对规则在 capture-ledger.ts (可单测): 没有用户消息就**不是**一轮, 不落任何东西。
+      const pair = completeTurn(state, event);
+      if (pair) state.pending.push(pair);
+      else this.recordSkip(session, event, "no-turn");
+    } else {
+      // 走到这里说明这一轮没有可沉淀的问答 (未完成/没有用户消息)。账本要能解释
+      // "为什么这个 turn/end 之后什么也没发生" —— 否则这段空白与"没开捕获"长得一样。
+      this.recordSkip(session, event, "no-turn");
     }
     state.messages = [];
     state.answers = [];
     if (state.pending.length >= this.interval()) await this.flush(session, state);
+  }
+
+  /**
+   * 记一条"没沉淀"的依据 (开关关着 / subagent / 没形成问答)。
+   *
+   * 为什么这些也要落账: "库里的条数没变"有三种完全不同的成因, 而它们的处置方式相反
+   * (改设置 / 换会话 / 根本不用管)。只记成功的账本回答不了"为什么没沉淀"。
+   * 只在 turn/end 上记: 那是"一轮结束了"的唯一信号, 记在 user/message 上会把同一条
+   * 事实写 N 遍 (一个 turn 里可以有多个 user/message)。
+   */
+  private recordSkip(
+    session: SessionLike,
+    event: SessionEventLike,
+    skip: CaptureSkipReason,
+  ): void {
+    const state = this.turns.get(session.id);
+    const project = state?.project ?? projectOfSession(session);
+    skipOnTurnEnd(
+      { log: () => this.options.captureLog?.() ?? null },
+      event,
+      {
+        session: session.id,
+        ...(project ? { project } : {}),
+        turn: state ? state.turnBase + state.pending.length + 1 : 0,
+      },
+      skip,
+    );
   }
 }
