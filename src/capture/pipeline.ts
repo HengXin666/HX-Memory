@@ -6,6 +6,10 @@
 // v3 (决策反转): 记忆层从**转录**改为**提炼** —— 有 conclusion 时 content 用结论,
 //     原始问答逐字留在 episode 日志里并由 derivedFrom 指回 (ADR-018 不受影响)。
 //     没有 conclusion (启发式兜底/AI 失败) 时 content 仍是原文, 与 v2 行为一致。
+// v4 (2026-09): 每一段的耗时被**测出来**交给调用方 (CaptureOptions.onTiming)。
+//     为什么新增: 捕获对宿主是异步的, 但异步不等于免费 —— 它调 LLM、读全库建边、同步写 SQLite,
+//     全都在对话所在的 event loop 上。此前"这一轮怎么慢了"在证据上完全无法回答。
+//     本文件只**测量**, 不决定记到哪 (那是 adapters/dsh/capture-log.ts 的事)。
 import {
   captureTurn,
   isInterrogative,
@@ -53,25 +57,56 @@ export class CapturePipeline {
    * 疑问句开头的轮次有一条额外规则: **只有结构化器读出结论才落盘**。
    * 因为问句本身不是记忆, 它后面的结论才是; 读不出结论说明这一轮只是讨论,
    * 存下来就是噪声 (实测旧路径 15% 的记忆是问句转录)。
+   *
+   * opts.onTiming 每轮**恰好回调一次** (含"一条都没落盘"的情形) —— 缺了那条,
+   * 账本就会系统性地漏掉最该解释的那些轮次。
    */
   async run(input: TurnInput, opts: CaptureOptions = {}): Promise<CaptureResult> {
+    const started = Date.now();
     const result = captureTurn(input, opts, this.hashes);
+    // 被提炼闸门丢掉的条数单独计数: 它与"指纹重复"是两回事 (前者说明这一轮读不出结论,
+    // 后者说明早就存过), 而调用方要据此区分"这轮没沉淀"的成因 —— 混进 deduped 就分不出来了。
+    let noConclusion = 0;
     const enriched: MemoryEntry[] = [];
     const needsConclusion = isInterrogative(input.text);
     let skipped = 0;
+    let enrichMs = 0;
+    let linkMs = 0;
+    let storeMs = 0;
+    const mark = (): number => Date.now();
     for (const e of result.entries) {
+      const beforeEnrich = mark();
       const enhanced = await this.enrich(e, input.answer);
+      enrichMs += mark() - beforeEnrich;
       if (needsConclusion && !enhanced.structured?.conclusion) {
         skipped++;
+        noConclusion++;
         continue; // 读不出结论 → 不落盘
       }
       // withStructuralLinks 是 async (要读既有条目做共现比较), 必须 await。
+      const beforeLink = mark();
       const linked = await this.withStructuralLinks(enhanced);
+      linkMs += mark() - beforeLink;
+      const beforeStore = mark();
       await this.store.add(linked); // 端口允许异步后端: 必须 await
+      storeMs += mark() - beforeStore;
       this.hashes.add(e.id.slice(1)); // "c<hash>" → hash
       enriched.push(linked);
     }
-    return { ...result, entries: enriched, deduped: result.deduped + skipped };
+    const out: CaptureResult = {
+      ...result,
+      entries: enriched,
+      deduped: result.deduped + skipped,
+      noConclusion,
+    };
+    opts.onTiming?.({
+      episodeMs: (opts.episodeMs ?? 0) | 0,
+      enrichMs,
+      linkMs,
+      storeMs,
+      totalMs: Date.now() - started,
+    }, out);
+    return out;
   }
 
   /**

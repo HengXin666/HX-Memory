@@ -2,7 +2,8 @@
 
 目的: 说明"一轮对话如何变成一条记忆", 以及记忆正文为什么是提炼结论而不是原话转录。
 边界: 不写检索与排序 (见 `architecture.md`), 也不写推广与治理 (见 `adr.md` 的 ADR-003)。
-与代码的关系: 捕获链路在 `src/capture/` (engine / pipeline / structurer), 宿主接线在 `src/adapters/dsh/runtime.ts`,
+与代码的关系: 捕获链路在 `src/capture/` (engine / pipeline / structurer), 宿主接线在 `src/adapters/dsh/`
+(runtime = 事件状态机与冲刷; capture-ledger = 轮次配对与账本形状; capture-log = 耗时账本的落盘与汇总),
 抽取端口与重放在 `src/app/rebuild.ts`。
 
 ## 捕获单元: 一轮问答
@@ -29,6 +30,21 @@ episode 的 role 硬编码为 `user`, 结果是日志里没有任何助手侧内
 `conclusion`。有 conclusion 时记忆正文就是它; 没有时正文保持原文 —— 失败不丢信息。
 
 启发式兜底**刻意不产 conclusion**: 规则无法可靠判断"这一轮到底定没定", 产错结论会覆盖原文。
+
+## 捕获花的时间去哪了
+
+**捕获对宿主是异步的, 但异步不等于免费。** 三条事实叠在一起, 让"这一轮怎么比平时慢"成了必须能回答的问题:
+捕获与对话跑在同一个进程、同一个 event loop 上; 它自己会调一次模型做结构化; 而 `node:sqlite` 的写入是同步的。
+
+因此每一轮完成的对话都会在 `capture/YYYY-MM-DD.jsonl` 留一条记录 (与 `schedule/` 同构的追加式账本,
+见 `adapters/dsh/capture-log.ts`): 结果 (stored / skipped / error)、跳过原因、原文与回答的字符数,
+以及 **episode / 结构化 / 建边 / 落盘四段各自的毫秒数**。
+
+一段不能省的话: 宿主没有"这一轮对话总共花了多久"的稳定接口, 所以 `totalMs` 记的是
+**捕获在 `turn/end` 之后又占用了多久**, 它才是"记忆层拖慢下一轮"的可归因量 —— 把它读成端到端延迟是误读。
+
+"跳过"的原因也在这里区分 (捕获关着 / subagent / 没形成问答 / 无信号 / 读不出结论):
+它们此前在外部只表现为"库里的条数没变", 而处置方式恰好相反。
 
 ## 真相在哪里
 

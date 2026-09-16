@@ -25,15 +25,58 @@ export interface TurnInput {
   episodeIds?: string[];
 }
 
+/** 一段耗时 (毫秒, 已取整)。名字就是它测的东西, 不做二次解释。 */
+export interface CaptureTiming {
+  /** episode 原文追加 (两条: 用户 + 助手)。 */
+  episodeMs: number;
+  /** 结构化器 (真实 LLM 调用 / 启发式兜底)。 */
+  enrichMs: number;
+  /** 结构关联建边 (要读全库做共现比较)。 */
+  linkMs: number;
+  /** 存储写入 (同步 SQLite + 真相文件)。 */
+  storeMs: number;
+  /** 本轮捕获占用的总时间。 */
+  totalMs: number;
+}
+
+/**
+ * 捕获结束的回调 (成功与失败都会调一次)。
+ *
+ * 为什么由调用方注入而不是 pipeline 自己落盘: 分段耗时只有 pipeline 知道 (它才知道
+ * enrich/link/store 各自花了多久), 而"这条属于哪个会话/第几轮/哪个项目"只有 adapter 知道。
+ * pipeline 只**测量并回报**, 记到哪由适配层决定 —— 内核因此不必知道日志格式。
+ */
+export type CaptureTimingReporter = (timing: CaptureTiming, result: CaptureResult) => void;
+
 export interface CaptureOptions {
   mode?: "auto" | "explicit" | "off";
   forceKind?: MemoryKind;
+  /**
+   * 捕获结束时的耗时回报 (由 pipeline.run 在**每一条**路径上恰好调一次)。
+   * engine 自己不做测量 —— 它只负责把调用方传进来的上游耗时透传下去,
+   * 这样"一段耗时的唯一来源"就不会因为多一条返回路径而分叉。
+   */
+  onTiming?: CaptureTimingReporter;
+  /**
+   * 调用方在本轮进 engine **之前**已经花掉的原文追加耗时 (episode 写入)。
+   * 放在这里而不是让 pipeline 自己计时: episode 是 runtime 写的, 它才知道那一段。
+   */
+  episodeMs?: number;
 }
 
 export interface CaptureResult {
   entries: MemoryEntry[];
   deduped: number;
   signal: string;
+  /**
+   * 被**提炼闸门**丢掉的条数 (问句开头 + 结构化器读不出结论)。
+   *
+   * 为什么与 deduped 分开: 两者都表现为"库里没多出条目", 但成因相反 ——
+   * 一个是"这一轮没有可沉淀的结论", 一个是"早就存过了"。调用方 (账本/面板)
+   * 要解释"为什么没沉淀", 把两者混在一个计数里就等于没解释。
+   * engine 不产它 (它为 0), 由 pipeline 在闸门处累加。
+   */
+  noConclusion?: number;
 }
 
 const EXPLICIT_PATTERNS: RegExp[] = [
