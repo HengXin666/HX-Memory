@@ -109,6 +109,29 @@ const flagged = await callApi("hxMemory/flaggedMemories", { limit: 50 });
 if (flagged?.result?.ok !== true) fail("flaggedMemories: envelope not ok");
 if (!Array.isArray(flagged.result.value)) fail("flaggedMemories 必须返回数组 (空数组 = 没有坏评, 是好事)");
 ok("flaggedMemories 可用 (agent 标注面)");
+// 注入调度账本: 面板「注入调度」tab 的唯一出口。断言形状而不是内容 ——
+// 全新宿主上还没有任何预步判定, 所以 sessions/records 为空是**正常**的 (available 才是契约)。
+const sched = await callApi("hxMemory/scheduleLog", { limit: 20 });
+if (sched?.result?.ok !== true) fail("scheduleLog: envelope not ok");
+const schedValue = sched.result.value;
+if (typeof schedValue !== "object" || schedValue === null) fail("scheduleLog 必须返回对象");
+if (typeof schedValue.available !== "boolean") fail("scheduleLog 必须给出 available (账本是否挂载)");
+if (!Array.isArray(schedValue.sessions) || !Array.isArray(schedValue.records))
+  fail("scheduleLog 必须返回 sessions/records 数组");
+if (typeof schedValue.size?.records !== "number") fail("scheduleLog.size.records 必须是数字");
+ok("scheduleLog 可用 (注入调度的'为什么'可查)");
+// 捕获耗时账本: 面板「沉淀耗时」tab 的唯一出口。同样断言形状而不是内容 ——
+// 全新宿主上还没跑过任何完成的轮次, 所以 records 为空、各统计为 0 都是**正常**的。
+const capLog = await callApi("hxMemory/captureLog", { limit: 20 });
+if (capLog?.result?.ok !== true) fail("captureLog: envelope not ok");
+const capValue = capLog.result.value;
+if (typeof capValue !== "object" || capValue === null) fail("captureLog 必须返回对象");
+if (typeof capValue.available !== "boolean") fail("captureLog 必须给出 available (账本是否挂载)");
+if (!Array.isArray(capValue.records)) fail("captureLog 必须返回 records 数组");
+if (typeof capValue.stats?.count !== "number") fail("captureLog.stats.count 必须是数字");
+if (typeof capValue.stats?.totalMs?.p95 !== "number") fail("captureLog.stats.totalMs.p95 必须是数字");
+if (typeof capValue.stats?.mean?.enrichMs !== "number") fail("captureLog.stats.mean.enrichMs 必须是数字");
+ok("captureLog 可用 (沉淀耗时与'为什么没沉淀'可查)");
 await check("hxMemory/listBindings", {}, "listBindings 可用 (bindingStore 已挂载)");
 await check(
   "hxMemory/saveBindings",

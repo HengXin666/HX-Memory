@@ -2,7 +2,7 @@
 // 断言: apply() 会调 installSection; 接住 setSource 后, 改设置会改变插件行为
 // (用 session-start 是否注入指引作为可观察信号)。
 import { describe, expect, it, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apply } from "../../src/adapters/dsh/index.ts";
@@ -279,6 +279,118 @@ describe("DSH settings 接入", () => {
 
     current = { ...DEFAULT_SETTINGS, injectBindings: false };
     expect((await run()).messages.some((m) => JSON.stringify(m).includes("并发上限"))).toBe(false);
+    store.close();
+  });
+});
+
+describe("注入调度账本: apply() 真的把判定落到磁盘 (接线端到端)", () => {
+  it("pre-step 判一次 → <root>/schedule/*.jsonl 出现一条完整记录", async () => {
+    root = mkdtempSync(join(tmpdir(), "hxmem-sched-apply-"));
+    const store = new FileBackend({ root });
+    const installed: Installed = {};
+    const ctx = makeCtx(installed);
+    apply(ctx as never, { root, store });
+
+    const preStep = ctx.handlers.get("agent/pre-step")?.[0];
+    expect(typeof preStep).toBe("function");
+    const payload = {
+      agent: { session: { id: "s-sched", header: { cwd: "/code/api" }, events: [] } },
+      messages: [{ role: "user", content: [{ type: "text", text: "把函数改名" }] }],
+      step: 4,
+    };
+    await preStep!(payload, async () => ({ kind: "enter", messages: [...payload.messages] }));
+
+    const dir = join(root, "schedule");
+    const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+    expect(files.length).toBe(1);
+    const line = readFileSync(join(dir, files[0]!), "utf8").trim();
+    expect(line.length).toBeGreaterThan(0);
+    const rec = JSON.parse(line) as Record<string, unknown>;
+    // 没有绑定也没有规则 → 仍然必须落一条"为什么没注入"。
+    expect(rec.session).toBe("s-sched");
+    expect(rec.step).toBe(4);
+    expect(["empty", "nothing-new", "skipped"]).toContain(rec.outcome);
+    expect(typeof rec.reason).toBe("string");
+    expect(Array.isArray(rec.ids)).toBe(true);
+
+    // 关掉账本 → 不再写新行 (设置当轮生效, 不需要重启)。
+    const countLines = (): number =>
+      readFileSync(join(dir, files[0]!), "utf8").split("\n").filter(Boolean).length;
+    const before = countLines();
+    installed.setSource?.(() => ({ ...DEFAULT_SETTINGS, scheduleLog: false }));
+    await preStep!(payload, async () => ({ kind: "enter", messages: [...payload.messages] }));
+    const after = countLines();
+    expect(after).toBe(before);
+    store.close();
+  });
+});
+
+describe("捕获耗时账本: apply() 真的把每一轮的依据落到磁盘 (接线端到端)", () => {
+  it("turn/end 之后 <root>/capture/*.jsonl 出现完整记录; 关掉开关当轮生效", async () => {
+    root = mkdtempSync(join(tmpdir(), "hxmem-capture-apply-"));
+    const store = new FileBackend({ root });
+    const installed: Installed = {};
+    const ctx = makeCtx(installed);
+    apply(ctx as never, { root, store });
+
+    const sessionEvent = ctx.handlers.get("session/event")?.[0];
+    expect(typeof sessionEvent).toBe("function");
+    const session = { id: "s-cap", header: { cwd: "/code/api" } };
+    // 先注册会话 (真实宿主是 session-start), 再走一轮完整问答。
+    ctx.handlers.get("agent/session-start")?.[0]?.({ agent: { ctx, session, inject: () => {} } });
+    await sessionEvent!(session, { type: "turn/start", data: { turn: 2 } });
+    // 宿主派发不 await 监听器 (dsh-session 的 invokeContainedSessionObservers 直接丢掉 promise)。
+    // 这里如实复刻那一点: 落盘是后台的, 断言前给它一次让出 event loop 的机会。
+    const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+    await sessionEvent!(session, {
+      type: "user/message",
+      data: { source: { kind: "user" }, content: [{ type: "text", text: "踩坑: 并发要加锁" }] },
+    });
+    await sessionEvent!(session, {
+      type: "assistant/message",
+      data: { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "text", text: "好的，记下了" }] } },
+    });
+    await sessionEvent!(session, {
+      type: "turn/end",
+      data: { turn: 2, reason: { kind: "completed" } },
+    });
+    await settle();
+
+    const dir = join(root, "capture");
+    const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+    expect(files.length).toBe(1);
+    const line = readFileSync(join(dir, files[0]!), "utf8").trim();
+    const rec = JSON.parse(line) as Record<string, unknown>;
+    expect(rec.session).toBe("s-cap");
+    expect(rec.turn).toBe(2); // 与 episode/会话日志同源
+    expect(rec.outcome).toBe("stored");
+    expect(rec.entries).toBe(1);
+    // 分段耗时必须真的被测出来 (全是 0 说明测量点没接上)。
+    expect(typeof rec.totalMs).toBe("number");
+    expect(rec.qChars).toBe("踩坑: 并发要加锁".length);
+
+    // 关掉账本 → 不再写新行 (设置当轮生效, 不需要重启)。
+    const countLines = (): number =>
+      readFileSync(join(dir, files[0]!), "utf8").split("\n").filter(Boolean).length;
+    const before = countLines();
+    installed.setSource?.(() => ({ ...DEFAULT_SETTINGS, captureLog: false }));
+    await sessionEvent!(session, { type: "turn/start", data: { turn: 3 } });
+    await sessionEvent!(session, {
+      type: "user/message",
+      data: { source: { kind: "user" }, content: [{ type: "text", text: "踩坑: 幂等要加键" }] },
+    });
+    await sessionEvent!(session, {
+      type: "assistant/message",
+      data: { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "text", text: "明白" }] } },
+    });
+    await sessionEvent!(session, {
+      type: "turn/end",
+      data: { turn: 3, reason: { kind: "completed" } },
+    });
+    await settle();
+    expect(countLines()).toBe(before);
+    // 但捕获本身照常工作 (观测开关不许影响功能)。
+    expect(store.query({}).length).toBe(2);
     store.close();
   });
 });

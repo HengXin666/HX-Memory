@@ -4,23 +4,36 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 // 端口缺口已补 (MemoryOperations.recent): 不再需要 Pick<FileBackend> 这种"借具体类要能力"的写法。
-import { badCount, qualityFactor } from "../../kernel/feedback.ts";
 import type { MemoryOperations } from "../../kernel/ports.ts";
 import type { MemoryFacade } from "../../app/facade.ts";
 import type { BindingStore } from "../../bindings/store.ts";
 import type { BindingConfig } from "../../kernel/binder.ts";
-import type {
-  GeneralizerService,
-  ProposalStatus,
-  QueuedProposal,
-} from "../../generalize/service.ts";
-import type {
-  GeneralizationRunReport,
-  GeneralizationStatus,
-} from "../../kernel/types.ts";
+import type { GeneralizerService, ProposalStatus } from "../../generalize/service.ts";
+import type { GeneralizationRunReport, GeneralizationStatus } from "../../kernel/types.ts";
 import type { MemoryNormalizer, NormalizeReport } from "../../app/normalize.ts";
 import type { InvocationLog } from "./invocations.js";
 import type { LlmInvocationRecord } from "./llm-agent.js";
+import type { ScheduleLog } from "./schedule-log.js";
+import type { CaptureLog } from "./capture-log.js";
+import type { MaintenanceLog } from "./maintenance-log.js";
+import {
+  projectCaptureLog,
+  projectMaintenance,
+  projectScheduleLog,
+  type CaptureLogView,
+  type MaintenanceView,
+  type ScheduleLogView,
+} from "./gateway-observability.js";
+// 人审面 (队列提议 / 被标注记忆) 的投影: 与账本投影分开成文件, 同一理由是 gateway 的 400 行上限。
+import {
+  projectFlagged,
+  toReviewView,
+  type FlaggedMemoryView,
+  type ReviewEntryView,
+  type ReviewQueueView,
+} from "./gateway-review.js";
+// 视图形状仍从 gateway 转出: 宿主与既有测试 import 的是 gateway (契约面不搬家)。
+export type { FlaggedMemoryView, ReviewEntryView, ReviewQueueView } from "./gateway-review.js";
 
 /** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
 export interface HxMemoryGatewayDeps {
@@ -45,6 +58,33 @@ export interface HxMemoryGatewayDeps {
    */
   facade?: Pick<MemoryFacade, "recent" | "forget" | "recall">;
   /**
+   * 注入调度账本 (可选: 不注入则「调度」tab 明确说自己不可用, 而不是无声空白)。
+   *
+   * 为什么必须由服务端给: 账本是 <root>/schedule 下的文件, 浏览器侧 (面板) 碰不到文件系统。
+   */
+  schedule?: Pick<ScheduleLog, "sessions" | "recent" | "size">;
+  /**
+   * 捕获耗时账本 (可选: 不注入则「捕获耗时」区块明确说自己不可用)。
+   *
+   * 与调度账本同一个理由必须由服务端给: 数据是 <root>/capture 下的文件, 浏览器侧碰不到。
+   * 它与调度账本是**两条不同的轴**: 一个记"为什么注入/没注入", 一个记"沉淀花了多久、为什么没沉淀"。
+   */
+  capture?: Pick<CaptureLog, "stats" | "recent" | "size">;
+  /**
+   * 后台维护记录 (可选: 不注入则面板不显示维护区块)。
+   *
+   * 为什么必须由服务端给: 维护记录在插件进程的内存里 (环形缓冲), 浏览器侧拿不到。
+   * 它是**内存**而不是文件 —— 与调度账本不同, 维护只回答"它最近有没有在工作",
+   * 跨重启的历史不在它的职责内 (见 maintenance-log.ts 的取舍说明)。
+   */
+  maintenance?: Pick<MaintenanceLog, "recent" | "lastRun" | "size">;
+  /** 维护开关与周期 (面板要显示"现在是开还是关", 而不是让人去猜设置)。 */
+  maintenanceConfig?: () => {
+    intervalMs: number;
+    idleMs: number;
+    available: boolean;
+  };
+  /**
    * 当前会话的项目键 (可选)。
    *
    * 为什么必须由服务端给: 面板跑在宿主 Web 里, 浏览器的 rpc 调用器**只有 call**, 拿不到
@@ -52,29 +92,6 @@ export interface HxMemoryGatewayDeps {
    * 这条能力只能是"知道会话的项目键"的一侧提供 (即 DSH 适配层)。
    */
   currentProject?: () => string | undefined;
-}
-
-/** 一条被 agent 标注过 (负面) 的记忆 —— 面板展示 "bad / 曝光", 让拖后腿的条目可查。 */
-export interface FlaggedMemoryView {
-  id: string;
-  kind: string;
-  content: string;
-  irrelevant: number;
-  wrong: number;
-  /** 曝光次数 (reinforcement): 阈值的分母。 */
-  exposure: number;
-  /** 当前质量因子 0..1 (排序实际用的值)。 */
-  quality: number;
-}
-
-export interface ReviewQueueView {
-  id: string;
-  status: ProposalStatus;
-  rule: string;
-  covers: number;
-  confidence: number;
-  sourceRun: string;
-  generatedAt: string;
 }
 
 declare module "@deepseek-ai/cordis" {
@@ -95,7 +112,40 @@ export class HxMemoryGateway extends TypertRemoteService {
 
   @Remote("reviewQueue")
   reviewQueue(status: ProposalStatus): ReviewQueueView[] {
-    return this.deps.generalizer.listQueue(status).map(toView);
+    return this.deps.generalizer.listQueue(status).map(toReviewView);
+  }
+
+  /**
+   * 单条记忆 (按 id 取)。**面板人审提议时读它**: 提议只带 covers 的 id 列表,
+   * 没有这个出口前端就无法把"它概括的那几条原文"显示给人看 —— 而人审的判断对象
+   * 恰恰是原文, 不是 id, 也不是一个 covers 计数。
+   *
+   * 走 store.get (与 confirm 落规则时读 covers 的同一入口): 人审要看的是**被引用的那条**,
+   * 即便它已被撤回/合并也要如实显示 (隐藏它会让"这条提议在说什么"再次变成猜测)。
+   * 找不到就跳过: 单个 id 失效不该让整块展开失败。
+   */
+  @Remote("entriesByIds")
+  entriesByIds(ids: string[]): ReviewEntryView[] {
+    const out: ReviewEntryView[] = [];
+    // 去重: 同一个 id 出现两次会让展开列表里出现两条一模一样的依据 (测试抓到的真实缺口)。
+    const seen = new Set<string>();
+    // 上限封顶: 面板一次最多展开一条提议 (covers 一簇最多几十条), 防止被构造出大扫描。
+    for (const id of ids.slice(0, 100)) {
+      if (typeof id !== "string" || !id || seen.has(id)) continue;
+      seen.add(id);
+      const e = this.deps.store.get(id);
+      if (!e) continue;
+      out.push({
+        id: e.id,
+        kind: e.kind,
+        content: e.content.slice(0, 1000),
+        project: e.project,
+        scope: e.scope,
+        status: e.status ?? "active",
+        assertedAt: e.ts.assertedAt,
+      });
+    }
+    return out;
   }
 
   /**
@@ -108,19 +158,7 @@ export class HxMemoryGateway extends TypertRemoteService {
     // 走 facade.recent 而不是 store.all: 可见性 (shadow/merged/expired 默认隐藏)
     // 与排序口径只有一处 —— 面板不该看到已撤回的条目出现在"被标注"列表里。
     const rows = this.deps.facade ? await this.deps.facade.recent(500) : [];
-    return rows
-      .filter((e) => e.feedback && badCount(e.feedback) > 0)
-      .map((e) => ({
-        id: e.id,
-        kind: e.kind,
-        content: e.content.slice(0, 200),
-        irrelevant: e.feedback?.irrelevant ?? 0,
-        wrong: e.feedback?.wrong ?? 0,
-        exposure: e.reinforcement ?? 0,
-        quality: qualityFactor(e.feedback, e.reinforcement ?? 0),
-      }))
-      .sort((a, b) => b.irrelevant + b.wrong - (a.irrelevant + a.wrong))
-      .slice(0, Math.min(100, Math.max(1, limit ?? 50)));
+    return projectFlagged(rows, limit);
   }
 
   /**
@@ -195,6 +233,40 @@ export class HxMemoryGateway extends TypertRemoteService {
     }
   }
 
+  /**
+   * 注入调度账本 (按会话聚合)。
+   *
+   * 为什么要有这个出口: 触发层的设计目标写着"'为什么没注入'必须和'注入了什么'一样可查",
+   * 而 TriggerDecision 此前只活在内存里、无人读取 —— 面板是它唯一的兑现处。
+   * 投影逻辑在 gateway-observability.ts (缺依赖时返回形状完整的降级对象)。
+   */
+  @Remote("scheduleLog")
+  scheduleLog(limit?: number): ScheduleLogView {
+    return projectScheduleLog(this.deps.schedule, limit);
+  }
+
+  /**
+   * 后台维护状态 (最近记录 + 开关/周期)。
+   *
+   * 为什么这个出口是必要的: 维护是"悄悄发生的事" —— 一个只在空闲期启动子进程的任务,
+   * 如果没有一个地方能看见"它跑了没有/成功没有", 用户就只能相信它。
+   */
+  @Remote("maintenance")
+  maintenance(): MaintenanceView {
+    return projectMaintenance(this.deps);
+  }
+
+  /**
+   * 捕获耗时账本 (分位数 + 分阶段均值 + 最近原始记录)。
+   *
+   * 为什么要有这个出口: 捕获是异步的, 但异步不等于免费 —— 它调 LLM、读全库建边、同步写
+   * SQLite, 全在对话所在的 event loop 上。没有它, "这一轮怎么慢了"只能靠猜 (真实问题)。
+   */
+  @Remote("captureLog")
+  captureLog(limit?: number): CaptureLogView {
+    return projectCaptureLog(this.deps.capture, limit);
+  }
+
   @Remote("listInvocations")
   listInvocations(limit?: number): LlmInvocationRecord[] {
     return this.deps.invocations?.recent(limit ?? 50) ?? [];
@@ -253,7 +325,9 @@ export class HxMemoryGateway extends TypertRemoteService {
    * 但此前**没有任何入口能列出这些矛盾** —— 数据在库里, 却没人看得见, 等于永久悬空。
    */
   @Remote("contradictions")
-  contradictions(limit?: number): Array<{ id: string; kind: string; content: string; withId: string }> {
+  contradictions(
+    limit?: number,
+  ): Array<{ id: string; kind: string; content: string; withId: string }> {
     const max = Math.min(200, Math.max(1, limit ?? 50));
     const all = this.deps.store.query({ limit: Number.MAX_SAFE_INTEGER });
     const out: Array<{ id: string; kind: string; content: string; withId: string }> = [];
@@ -311,18 +385,6 @@ export class HxMemoryGateway extends TypertRemoteService {
       validAt: e.ts.validAt,
     }));
   }
-}
-
-function toView(p: QueuedProposal): ReviewQueueView {
-  return {
-    id: p.id,
-    status: p.status,
-    rule: p.proposal.rule,
-    covers: p.proposal.covers.length,
-    confidence: p.proposal.confidence,
-    sourceRun: p.sourceRun,
-    generatedAt: p.proposal.generatedAt,
-  };
 }
 
 export default HxMemoryGateway;
