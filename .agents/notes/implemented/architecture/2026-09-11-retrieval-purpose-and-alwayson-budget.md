@@ -36,6 +36,11 @@ Status: implemented
 - `ruleBudgetRatio: 1` 可恢复旧的"规则优先填满"行为。
 - 同时把 `scope:"agent"` 的 fact/preference 纳入 always-on 候选: 它们是**跨工作区共享层**
   (不属于任何项目), 对每个项目都应常驻。
+- 修正 (2026-09-15): 项目内条目的过滤条件**不在** `opts.project &&` 之下 ——
+  缺 `project` 时必须一条项目内条目都不给 (此前会放行全部项目, 实测泄漏);
+  机器生成的占位草稿 (`经验: … 已沉淀`) 在此处被挡出常驻通道。见
+  [always-on 的项目隔离](../bug-fix/2026-09-15-alwayson-project-isolation.md) 与
+  [占位草稿不进 always-on](../bug-fix/2026-09-15-placeholder-rules-out-of-alwayson.md)。
 
 ## Alternatives considered
 
@@ -68,6 +73,8 @@ Status: implemented
 
 `tests/s2/recall-separation.test.ts` (8 项): 无关规则在 recall 下不出现; 相关规则仍被召回;
 inject (默认) 仍带保底; 显式 `channels.rules.enabled` 可覆盖; 预算分仓下事实能进入注入;
-单组时用满预算; `ruleBudgetRatio: 1` 回到旧行为; agent scope 事实对每个项目常驻。
+单组时用满预算; `ruleBudgetRatio: 1` 回到旧行为; agent scope 事实对每个项目常驻;
+别的项目的决策不注入; 缺 `project` 时不注入任何项目内条目; 占位草稿不占常驻预算。
+always-on 缓存的按项目隔离另见 `tests/s2/trigger-cache-project.test.ts`。
 回归: 既有 `tests/s1/trigger-policy.test.ts`、`tests/s2/trigger-injection.test.ts`、
 `tests/s2/recall-rules.test.ts` 在默认 `inject` 语义下全部保持通过。

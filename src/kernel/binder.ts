@@ -9,6 +9,7 @@
 import type { MemoryEntry, Query } from "./types.ts";
 import { TriggerPolicy, type TriggerDecision } from "../trigger/policy.ts";
 import { formatEntryLine } from "./injection-format.ts";
+import { estimateTokens } from "./ranking.ts";
 import type { RetrievalRequest, RetrievalWarmup, SyncMemoryStore, SyncRetriever } from "./ports.ts";
 
 /** 每个绑定: 查询条件 + 权重 + 条数预算 + 可选信号词门控。 */
@@ -141,10 +142,15 @@ export function bindingToRequest(binding: MemoryBinding, text: string): Retrieva
 
 /** 触发通道的数据来源 (由调用方注入: always-on 选择 + 意图召回 + 时钟)。 */
 export interface TriggerSource {
-  /** always-on 条目的 id (只用于判定"有没有", 空数组 = 无保底内容)。 */
-  alwaysOn(): readonly string[];
+  /**
+   * always-on 条目的 id (只用于判定"有没有", 空数组 = 无保底内容)。
+   *
+   * 必须带 project: always-on 里有**项目内**的事实/决策, 不区分项目就会把 A 项目的私有记忆
+   * 注入给 B 项目 (实测泄漏)。"不知道是哪个项目"时传空串 —— 那时只该给跨项目规则。
+   */
+  alwaysOn(project: string): readonly string[];
   /** 按触发决策召回条目 (实现方决定用哪些通道/预算)。 */
-  recallFor(text: string, decision: TriggerDecision): MemoryEntry[];
+  recallFor(text: string, decision: TriggerDecision, project: string): MemoryEntry[];
   /** 当前时间 (ISO)。 */
   now(): string;
   /**
@@ -159,7 +165,7 @@ export interface TriggerSource {
    * prestep 会在注入前先 `binder.warm()` —— 这是"第一轮就有 always-on 保底"的关键,
    * 否则首轮会因为没有缓存而完全无记忆 (而那正是最需要保底的时刻)。
    */
-  warm?(): Promise<void>;
+  warm?(project?: string): Promise<void>;
 }
 
 export class Binder {
@@ -176,6 +182,12 @@ export class Binder {
   private lastIds: string[] = [];
   /** 最近一次召回的切分结果 (常驻组 / 新召回组), 供测试与可观测读取。 */
   private lastGroups: TriggerGroups | null = null;
+  /** 上一次注入走的是哪条路 ("没走"也是要能被问出来的事实)。 */
+  private lastChannel: "binding" | "trigger" | "none" = "none";
+  /** 上一次该通道**选中**的条目 id (差量过滤之前); 与 lastIds 的差就是"被去重挡掉的"。 */
+  private lastSelected: string[] = [];
+  /** 上一次注入文本的 token 估算 (与预算同一把尺, 见 kernel/ranking.estimateTokens)。 */
+  private lastTokens = 0;
   /**
    * v2 检索器 (可选): 传入则绑定走混合检索 (BM25 + 图扩展 + 预算 + 治理闸门);
    * 不传则走 v1 的关键词路径 —— 后者保留是为了不让"没升级的宿主/老测试"被迫一起改,
@@ -208,14 +220,15 @@ export class Binder {
    * 注入前热身 (可选): 异步嵌入器的向量投影需要在后台补齐才有语义召回。
    * 带硬时限, 永不阻塞 —— 没补齐就降级 (结果里会说明), 补多少算多少。
    */
-  async warm(deadlineMs = 50, query?: string): Promise<void> {
+  async warm(deadlineMs = 50, query?: string, project?: string): Promise<void> {
     // 两条都要热: ①向量投影 (异步嵌入器); ②always-on 缓存 (存储查询是异步的)。
     const warmups: Promise<unknown>[] = [];
     const retriever = this.retriever as Partial<RetrievalWarmup> | undefined;
     if (retriever && typeof retriever.warm === "function") {
       warmups.push(retriever.warm(deadlineMs, query));
     }
-    if (this.triggerSource?.warm) warmups.push(this.triggerSource.warm());
+    // project 必须透传: 否则热的是"不属于本项目"的那份缓存, 而查的是本项目那份 (永远缓存不中)。
+    if (this.triggerSource?.warm) warmups.push(this.triggerSource.warm(project));
     if (!warmups.length) return;
     // 硬时限: 超时不报错 (宁可首轮没有 always-on, 也不能阻塞对话)。
     let timer: NodeJS.Timeout | undefined;
@@ -248,23 +261,34 @@ export class Binder {
     const bindings = this.bindingsFor(project);
     const blocks: string[] = [];
     const sentIds = new Set<string>();
+    const selectedIds = new Set<string>();
     for (const b of bindings) {
       // 差量: 本会话已注入过的条目不再重发 (声明式绑定默认每轮注入, 与 always-on 同病)。
-      const entries = this.resolve(b, text).filter((e) => !excluded.has(e.id));
+      const resolved = this.resolve(b, text);
+      const entries = resolved.filter((e) => !excluded.has(e.id));
       const block = formatBoundEntries(b.id, entries);
       if (!block) continue;
       blocks.push(block);
+      for (const e of resolved) selectedIds.add(e.id);
       for (const e of entries) sentIds.add(e.id);
     }
-    this.lastIds = [...sentIds];
+    // 即使这一轮一条都没发出去, 也要如实记下"走的是绑定通道、选了什么" ——
+    // 否则 pre-step 只能拿到上一次的状态, 把"差量挡掉"误报成"库里没有"。
+    if (bindings.length) {
+      this.lastChannel = "binding";
+      this.lastIds = [...sentIds];
+      this.lastSelected = [...selectedIds];
+    }
     if (blocks.length) {
+      const text2 = blocks.join("\n");
+      this.lastTokens = estimateTokens(text2);
       // 声明式绑定注入同样要算"被用到" (否则配了绑定的项目反而永不强化);
       // 只算实际发出的条目 —— 被差量过滤掉的本轮并没有被用到。
       if (sentIds.size) this.triggerSource?.onInjected?.([...sentIds]);
-      return blocks.join("\n");
+      return text2;
     }
     // 通用通道 (无绑定时的兜底): 由触发策略决定是否注入, 逻辑见 trigger/policy.ts。
-    return this.injectWithTrigger(text, excluded);
+    return this.injectWithTrigger(project, text, excluded);
   }
 
   /** 最近一次注入实际发出的条目 id (空 = 本轮没有可注入的内容)。 */
@@ -278,9 +302,17 @@ export class Binder {
   }
 
   /** 通用触发通道 (无项目绑定时的保底): 用注入回调拿 always-on 与意图召回的条目。 */
-  private injectWithTrigger(text: string, excluded: ReadonlySet<string>): string {
-    if (!this.triggerSource) return "";
-    const alwaysOnIds = this.triggerSource.alwaysOn();
+  private injectWithTrigger(
+    project: string,
+    text: string,
+    excluded: ReadonlySet<string>,
+  ): string {
+    if (!this.triggerSource) {
+      // 既没有绑定也没有通用触发通道: "没走任何路"本身就是要能被问出来的事实。
+      this.lastChannel = "none";
+      return "";
+    }
+    const alwaysOnIds = this.triggerSource.alwaysOn(project);
     const hasAlwaysOn = alwaysOnIds.length > 0;
     const decision = this.triggerPolicy.decide({
       text,
@@ -290,33 +322,57 @@ export class Binder {
     });
     this.lastDecision = decision;
     this.lastQuery = text;
+    this.lastChannel = "trigger";
     if (!decision.inject) {
       this.lastIds = [];
       this.lastGroups = null;
+      this.lastSelected = [];
+      this.lastTokens = 0;
       return "";
     }
     // 注意: always-on 与意图召回是**两条独立通道**, 不是二选一 ——
     // always-on 给"不变量", 意图召回给"这件事的具体历史"; 只给前者会让用户问"上次怎么解决的"
     // 时拿不到那条 lesson (真实踩过)。recallFor 的实现方负责合并两者并按预算去重。
-    const entries = this.triggerSource.recallFor(text, decision);
+    const entries = this.triggerSource.recallFor(text, decision, project);
     if (!entries.length) return "";
     // 差量注入: 常驻组只该在会话开始时进一次, 之后只补"本会话还没出现过"的条目。
     const groups = splitTriggerGroups(entries, alwaysOnIds);
     this.lastGroups = groups;
+    this.lastSelected = entries.map((e) => e.id);
     const fresh = [...groups.alwaysOn, ...groups.fresh].filter((e) => !excluded.has(e.id));
     this.lastIds = [];
-    if (!fresh.length) return "";
+    if (!fresh.length) {
+      this.lastTokens = 0;
+      return "";
+    }
     this.lastInjectedAt = this.triggerSource.now();
     this.lastIds = fresh.map((e) => e.id);
     // 命中即强化: 确定性注入是"每轮都在跑"的主通道, 它注入过的记忆必须也算被用到
     // (只算**实际发出**的那部分 —— 被差量过滤掉的条目这轮并没有被"用到")。
     this.triggerSource.onInjected?.(this.lastIds);
-    return formatBoundEntries("相关记忆 (" + decision.mode + ")", fresh);
+    const out = formatBoundEntries("相关记忆 (" + decision.mode + ")", fresh);
+    this.lastTokens = estimateTokens(out);
+    return out;
   }
 
   /** 最近一次触发决策 (可观测: 面板/日志要看"为什么这轮没注入")。 */
   lastTriggerDecision(): TriggerDecision | null {
     return this.lastDecision;
+  }
+
+  /** 上一次注入走的通道 ("binding" 声明式绑定 / "trigger" 通用触发 / "none" 都没走)。 */
+  lastInjectionChannel(): "binding" | "trigger" | "none" {
+    return this.lastChannel;
+  }
+
+  /** 上一次该通道选中的条目 id (差量与 lastInjectedIds 之差 = 被判重挡掉的)。 */
+  lastSelectedIds(): readonly string[] {
+    return this.lastSelected;
+  }
+
+  /** 上一次注入文本的 token 估算 (估算, 不是计量值; 与预算同一把尺)。 */
+  lastInjectedTokens(): number {
+    return this.lastTokens;
   }
 
   /** 解析一条绑定: 有 Retriever 走混合检索 (带治理闸门与预算), 否则走 v1 关键词路径。 */

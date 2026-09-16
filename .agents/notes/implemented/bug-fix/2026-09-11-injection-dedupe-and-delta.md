@@ -22,8 +22,11 @@ Status: implemented
 
 注入行带**稳定 id 标记**, 判重与注入都以"条目 id 集合"为准:
 
-- `kernel/injection-format.ts`: 注入行形如 `- [id] 内容 <!--hx-memory:id=id-->`。
+- `kernel/injection-format.ts`: 注入行形如 `- 内容 <!--hx-memory:id=id-->`。
   标记做成行尾注释 —— 人读是可忽略的注记, 代码解析是稳定接口。
+  修正 (2026-09-15): 行首的 `[id] ` 句柄已删除 (实测几乎从未被模型使用, 却占注入块 19% 字符),
+  行尾标记不变 —— 判重仍以"条目 id 集合"为准。见
+  [注入行去掉行首 id 句柄](../simplification/2026-09-15-drop-injected-id-handle.md)。
 - `Binder.injectFor(project, text, injectedIds)` 增加第三个参数: 本会话**已注入过的条目 id**,
   由调用方 (pre-step) 从会话日志解析后传入。召回结果减去已注入集合 = 本轮该给的东西。
 - 召回结果按 **always-on 组 / 新召回组** 切分 (`splitTriggerGroups`): 前者是常驻不变量,

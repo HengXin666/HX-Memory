@@ -24,45 +24,63 @@ export interface TriggerCacheDeps {
 export interface TriggerCache {
   /** 刷新 (写版本号变了才重算); 预步注入前 await 它, 因此第一轮就有保底内容。 */
   refresh(project?: string): Promise<void>;
-  /** 当前 always-on 集合的 id。 */
-  ids(): string[];
+  /** 当前 always-on 集合的 id (按项目取; 不传 = 不含任何项目内条目)。 */
+  ids(project?: string): string[];
   /** 按触发决策组装注入内容 (always-on 保底 + 意图召回叠加)。 */
-  recallFor(text: string, decision: Pick<TriggerDecision, "inject" | "budgetTokens">): MemoryEntry[];
+  recallFor(
+    text: string,
+    decision: Pick<TriggerDecision, "inject" | "budgetTokens">,
+    project?: string,
+  ): MemoryEntry[];
 }
+
+/** 缓存键: 项目键, 或""表示"没有项目上下文"。 */
+type CacheKey = string;
 
 export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
   const budget = deps.budgetTokens ?? 400;
-  let cache: MemoryEntry[] = [];
-  let cachedRevision = -1;
-  let inflight: Promise<void> | null = null;
+  // **按项目分别缓存**, 而不是一份全局缓存。
+  //
+  // 为什么必须分开 (真实缺陷): 此前只有一对 cache/cachedRevision, 且失效判据是
+  // "写版本号变了"。同一版本里第一个来热身的项目会把**它自己项目的**always-on 灌进去,
+  // 之后所有项目都直接命中这份缓存 —— 于是 A 项目的私有决策被注入给 B 项目, 直到某次写入
+  // 把版本号顶掉才重算 (实测: 8 个项目的条目混在同一次注入里)。
+  // 版本号仍然必要 (变了才重算), 但它是**每个项目各自**的失效依据。
+  const caches = new Map<CacheKey, { entries: MemoryEntry[]; revision: number }>();
+  const inflight = new Map<CacheKey, Promise<void>>();
+  const keyOf = (project?: string): CacheKey => project ?? "";
 
   const refresh = (project?: string): Promise<void> => {
+    const key = keyOf(project);
     const revision = deps.revision();
-    if (revision === cachedRevision && cache.length) return Promise.resolve();
-    // 同一版本的在途刷新直接复用 (避免并发预步重复查询)。
-    if (inflight) return inflight;
-    inflight = deps.facade
+    const cached = caches.get(key);
+    if (cached && cached.revision === revision && cached.entries.length) return Promise.resolve();
+    // 同一项目、同一版本的在途刷新直接复用 (避免并发预步重复查询)。
+    const pending = inflight.get(key);
+    if (pending && cached?.revision === revision) return pending;
+    const task = deps.facade
       .alwaysOn({ ...(project ? { project } : {}), budgetTokens: budget })
       .then((entries) => {
-        cache = entries;
-        cachedRevision = revision;
+        caches.set(key, { entries, revision });
       })
       // 失败静默: 该轮退化为"无 always-on"而不是阻塞对话 (超时同理, 由调用方限时)。
       .catch(() => undefined)
       .finally(() => {
-        inflight = null;
+        inflight.delete(key);
       });
-    return inflight;
+    inflight.set(key, task);
+    return task;
   };
 
   return {
     refresh,
-    ids: () => cache.map((e) => e.id),
-    recallFor: (text, decision) => {
+    ids: (project) => (caches.get(keyOf(project))?.entries ?? []).map((e) => e.id),
+    recallFor: (text, decision, project) => {
       if (!decision.inject) return [];
+      const entry = caches.get(keyOf(project))?.entries ?? [];
       const out = new Map<string, MemoryEntry>();
-      for (const entry of cache) out.set(entry.id, entry);
-      const alwaysOnCost = cache.reduce((n, e) => n + e.content.length + 8, 0);
+      for (const e of entry) out.set(e.id, e);
+      const alwaysOnCost = entry.reduce((n, e) => n + e.content.length + 8, 0);
       const intentsBudget = Math.max(0, decision.budgetTokens - alwaysOnCost);
       if (intentsBudget > 0) {
         for (const hit of deps.facade.recall({

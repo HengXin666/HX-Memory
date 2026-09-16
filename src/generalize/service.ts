@@ -15,6 +15,7 @@ import type {
 import type { ProposalStatus, QueuedProposal } from "../kernel/types.ts";
 import type { Abstractor, Generalizer, MemoryStore } from "../kernel/ports.ts";
 import { clusterByTheme } from "./cluster.ts";
+import { heuristicRuleText } from "../kernel/rule-shape.ts";
 
 export type { ProposalStatus, QueuedProposal, GeneralizationRunReport, GeneralizationStatus };
 export type { Abstractor };
@@ -53,6 +54,8 @@ function parseProposalLine(line: string): QueuedProposal | null {
         covers,
         confidence: Number.isFinite(confidence) ? confidence : 0.5,
         suggestedAction: parsed.proposal.suggestedAction ?? "confirm",
+        // 老队列行没有这个字段: 缺省 undefined = "未知", 不当成草稿 (不能凭空给旧提议扣帽子)。
+        ...(parsed.proposal.drafted === true ? { drafted: true } : {}),
         generatedAt:
           typeof parsed.proposal.generatedAt === "string"
             ? parsed.proposal.generatedAt
@@ -109,10 +112,8 @@ export class GeneralizerService implements Generalizer {
     const distinct = new Set(texts.map((t) => t.trim()).filter(Boolean));
     if (distinct.size < 2) return null;
     const confidence = Math.min(0.9, 0.5 + distinct.size * 0.1);
-    return {
-      rule: `经验: ${cluster.theme} 相关的 ${distinct.size} 条实例已沉淀, 建议复核提炼为跨项目规则`,
-      confidence,
-    };
+    // 模板与识别同源 (kernel/rule-shape): 这里的产出形状就是 always-on 挡掉占位草稿的判据。
+    return { rule: heuristicRuleText(cluster.theme, distinct.size), confidence };
   }
 
   /**
@@ -170,6 +171,9 @@ export class GeneralizerService implements Generalizer {
           covers: c.entries.map((e) => e.id),
           confidence: abstracted.confidence,
           sourceRun,
+          // 逐条记"这是不是占位草稿": 批次报告的 usedLlm 只描述最近一批, 而队列跨批次 ——
+          // 人审时要能区分"AI 提炼的规则"与"只有 N 条实例"的兜底提示。
+          drafted: !abstracted.usedLlm,
         }),
       );
     }
@@ -275,6 +279,7 @@ export class GeneralizerService implements Generalizer {
     covers: string[];
     confidence: number;
     sourceRun: string;
+    drafted?: boolean;
   }): QueuedProposal {
     const proposal: QueuedProposal = {
       id: "p" + randomUUID().replace(/-/g, "").slice(0, 16),
@@ -284,8 +289,10 @@ export class GeneralizerService implements Generalizer {
         rule: input.rule,
         covers: input.covers,
         confidence: input.confidence,
-        suggestedAction: "confirm",
+        // 无 AI 提炼时这条只是占位草稿 (文本是"该主题有 N 条实例"): 必须能被人审界面标注出来。
+        suggestedAction: input.drafted ? "rewrite" : "confirm",
         generatedAt: new Date().toISOString(),
+        ...(input.drafted ? { drafted: true } : {}),
       },
     };
     this.appendToQueue(proposal);

@@ -88,6 +88,8 @@ describe("Binder (确定性注入)", () => {
   it("注入含绑定名分节, 与 recall 同风格", () => {
     const injected = binder.injectFor("proj-web", "容器");
     expect(injected).toContain("【rules】");
-    expect(injected).toContain("- [rA]");
+    // 2026-09: 行首的 `[id] ` 句柄已去掉 (实测几乎从未被模型用过, 却占条目正文 46% 的字符);
+    // 机器需要的 id 仍在行尾标记里, 去重与差量注入不受影响。
+    expect(injected).toContain("- 所有容器都要显式设计并发上限 <!--hx-memory:id=rA-->");
   });
 });

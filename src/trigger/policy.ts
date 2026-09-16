@@ -24,6 +24,8 @@ import { normalizeVoice } from "../kernel/voice.ts";
 // 意图库与判定已拆到 intents.ts (policy.ts 只留决策与预算)。
 // import 进来自己用 + re-export 出去, 对外 API 完全不变 (调用方仍从 policy.ts 取)。
 import { DEFAULT_INTENTS, detectIntent, type TriggerIntent } from "./intents.ts";
+// 占位草稿判据与生成方同源 (generalize/service.ts 用同一个模板产出)。
+import { isHeuristicRulePlaceholder } from "../kernel/rule-shape.ts";
 export { DEFAULT_INTENTS, detectIntent };
 export type { TriggerIntent };
 
@@ -244,11 +246,23 @@ export function selectAlwaysOn(
   const scored = entries
     .filter((e) => {
       if ((e.status ?? "active") !== "active") return false;
-      if (e.kind === "rule") return e.scope === "global" && Boolean(e.confirmedBy && e.confirmedAt);
+      if (e.kind === "rule") {
+        // 机器生成的占位草稿 ("经验: <主题> 相关的 N 条实例已沉淀") 不进常驻通道。
+        // 为什么必须在这里挡: 规则在下面得分为 100 + importance, 永远排在事实/决策之前,
+        // 而占位草稿**不含任何可执行约束** —— 实测 10 条草稿把 400 token 的保底预算吃光,
+        // 真正的架构决策一条都注入不进来 (保底通道因此只剩噪声)。判据见 kernel/rule-shape。
+        if (isHeuristicRulePlaceholder(e.content)) return false;
+        return e.scope === "global" && Boolean(e.confirmedBy && e.confirmedAt);
+      }
       // 非规则: 项目内关键事实/偏好/决策 (lesson 由意图通道按需召回, 不常驻)。
       // scope:"agent" 的关键事实/偏好是**跨工作区共享层**: 不属于任何项目, 对每个项目都常驻候选。
       if (e.scope === "agent") return e.kind === "fact" || e.kind === "preference";
-      if (opts.project && e.scope === "project" && e.project !== opts.project) return false;
+      // 项目内的条目**必须**匹配当前项目 —— 判据不能挂在 `opts.project &&` 之下:
+      // 调用方没传 project 时 (例如会话还没有工作区) 那个短路会让**所有项目**的
+      // 事实/决策一起通过, 于是别的项目的私有记忆被当成"本项目关键事实"注入 (实测泄漏:
+      // 一次无 project 的调用返回了 HX-Memory/Freebuff 等 8 个项目的条目)。
+      // 不知道是哪个项目时, 正确的答案是"一条项目内条目都不给", 而不是"全都给"。
+      if (e.scope === "project" && e.project !== opts.project) return false;
       return e.kind === "fact" || e.kind === "preference" || e.kind === "decision";
     })
     .map((e) => ({

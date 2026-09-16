@@ -17,9 +17,19 @@ export const ENTRY_ID_MARKER = "<!--hx-memory:id=";
 /** 行尾标记的解析器 (带 g 标志, 每次 parse 前重置 lastIndex)。 */
 const ENTRY_ID_RE = /<!--hx-memory:id=([A-Za-z0-9_-]+)-->/g;
 
-/** 一条注入行: `- [id] 内容 <!--hx-memory:id=id-->`。 */
+/**
+ * 一条注入行: `- 内容 <!--hx-memory:id=id-->`。
+ *
+ * 2026-09 去掉行首的 `[id] ` 前缀 (实测): 它原本是给模型一个"可以引用的句柄"
+ * (memory_flag/memory_rule_propose 按 id 操作), 但**实测该句柄几乎从未被用过** ——
+ * 149 个会话 / 18138 次工具调用里 memory_flag 只出现 2 次; 而代价是每条 20 字符、
+ * 一次 9 条的注入就多出 180 字符 (占条目正文 391 字符的 46%)。
+ * 机器需要的 id 仍在行尾标记里 (那是去重与差量注入的唯一判据), 因此这是纯减法:
+ * 模型看到的是记忆**内容**, 代码看到的仍是稳定 id。按 id 操作的能力保留在
+ * memory_search 的结果里 (那里仍显示 id, 且是模型主动检索后才会用到的场景)。
+ */
 export function formatEntryLine(id: string, content: string): string {
-  return "- [" + id + "] " + content + " " + ENTRY_ID_MARKER + id + "-->";
+  return "- " + content + " " + ENTRY_ID_MARKER + id + "-->";
 }
 
 /** 从注入文本里解析出全部已注入条目 id (顺序保留、去重)。 */

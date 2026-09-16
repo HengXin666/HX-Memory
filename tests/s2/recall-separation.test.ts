@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { FileBackend } from "../../src/storage/file-store.ts";
 import { HybridRetriever } from "../../src/retrieval/hybrid.ts";
 import { selectAlwaysOn } from "../../src/trigger/policy.ts";
+import { heuristicRuleText } from "../../src/kernel/rule-shape.ts";
 import { estimateTokens } from "../../src/kernel/ranking.ts";
 import type { MemoryEntry, MemoryEntryInput } from "../../src/kernel/types.ts";
 
@@ -186,6 +187,65 @@ describe("always-on 预算分仓: 规则不能吃光预算", () => {
     // 规则被压到 120 token 以内 → 一条也进不来; 事实那组拿满 200, f1 能进。
     expect(tight.map((e) => e.id)).toEqual(["f1"]);
     expect(loose.map((e) => e.id)).toEqual(["r1", "f1"]);
+  });
+
+  it("占位草稿不进 always-on (10 条草稿会把 400 token 预算吃光, 真规则一条都进不来)", () => {
+    // 实测缺陷: 推广服务的启发式回退产出"经验: <主题> 相关的 N 条实例已沉淀", 被确认后
+    // 与真规则同形落成 scope:global 的 rule; 规则得分 100 + importance, 永远排在最前。
+    const draft = (id: string, theme: string): MemoryEntry => ({
+      id,
+      kind: "rule",
+      scope: "global",
+      content: heuristicRuleText(theme, 3),
+      source: "generalizer:panel:x",
+      ts: T,
+      confirmedBy: "user:dsh-web",
+      confirmedAt: T.assertedAt,
+    });
+    const real: MemoryEntry = {
+      id: "rReal",
+      kind: "rule",
+      scope: "global",
+      content: "派生索引必须可全量重建, 带版本身份",
+      source: "generalizer:panel:x",
+      ts: T,
+      confirmedBy: "u",
+      confirmedAt: T.assertedAt,
+    };
+    const entries = [draft("d1", "api"), draft("d2", "ui"), draft("d3", "docs"), real];
+    const picked = selectAlwaysOn(entries, { project: "api", budgetTokens: 400, estimate });
+    const ids = picked.map((e) => e.id);
+    expect(ids).toEqual(["rReal"]); // 草稿全挡掉, 真规则留下
+    // 反向保护: 没有真规则时也不能凭空注入草稿。
+    expect(selectAlwaysOn(entries.slice(0, 3), { project: "api", budgetTokens: 400, estimate })).toEqual(
+      [],
+    );
+  });
+
+  it("别的项目的**决策**不注入 (修复前 opts.project 缺失时全部放行)", () => {
+    const mine: MemoryEntry = {
+      id: "dMine",
+      kind: "decision",
+      scope: "project",
+      project: "api",
+      content: "本项目决定用 SQLite",
+      source: "s",
+      ts: T,
+    };
+    const theirs: MemoryEntry = {
+      id: "dTheirs",
+      kind: "decision",
+      scope: "project",
+      project: "web",
+      content: "别的项目的私有决策",
+      source: "s",
+      ts: T,
+    };
+    expect(selectAlwaysOn([mine, theirs], { project: "api", budgetTokens: 400, estimate }).map((e) => e.id)).toEqual(
+      ["dMine"],
+    );
+    // 不知道是哪个项目时: 一条项目内条目都不给 (此前是"全都给" —— 实测泄漏 8 个项目的记忆)。
+    expect(selectAlwaysOn([mine, theirs], { budgetTokens: 400, estimate })).toEqual([]);
   });
 
   it("scope:agent 的关键事实是跨工作区共享层, 对每个项目都常驻", () => {

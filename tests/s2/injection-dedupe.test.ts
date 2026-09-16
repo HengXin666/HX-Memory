@@ -70,7 +70,9 @@ async function makeBinder() {
 describe("注入行的稳定 id 标记", () => {
   it("格式化后可被解析回原 id (标记是人类可忽略的行尾注释)", () => {
     const line = formatEntryLine("r123", "规则内容");
-    expect(line.startsWith("- [r123] 规则内容")).toBe(true);
+    // 行首不再有 [id] 句柄 (人读的就是记忆内容本身), 但行尾标记仍是稳定机器接口。
+    expect(line).toBe("- 规则内容 <!--hx-memory:id=r123-->");
+    expect(line.startsWith("- [r123]")).toBe(false);
     expect(parseInjectedIds(line)).toEqual(["r123"]);
   });
 

@@ -21,6 +21,7 @@ import {
 import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
 import { parseInjectedIds } from "../../kernel/injection-format.ts";
 import { sessionEvents } from "./session-events.js";
+import type { TriggerDecision } from "../../trigger/policy.ts";
 
 /** 从会话消息里提取最新一条**直接用户**文本 (content 可为 string 或 parts 数组)。 */
 export function latestUserText(messages: unknown[]): string {
@@ -167,6 +168,24 @@ function collectInjectionEntries(messages: unknown[], into: PriorInjections): vo
   }
 }
 
+/** 一次判定的落账输入 (不含时间戳: 由账本自己盖, 保证时间只有一个来源)。 */
+export interface PreStepRecord {
+  session: string;
+  project: string;
+  step: number;
+  channel: "binding" | "trigger" | "none";
+  /** 触发决策模式; 声明式绑定通道不经过 TriggerPolicy, 记 null。 */
+  mode: TriggerDecision["mode"] | null;
+  outcome: "injected" | "skipped" | "nothing-new" | "empty";
+  intent: string | null;
+  confidence: number;
+  topicDrift: number;
+  reason: string;
+  selected: string[];
+  ids: string[];
+  tokens: number;
+}
+
 export interface PreStepEnterDecision {
   kind: "enter";
   messages: unknown[];
@@ -197,6 +216,15 @@ export function makePreStepHandler(
     language?: () => "zh" | "en";
     /** 注入时机 (默认 every-turn = 逐轮差量; first = 只在会话首轮注入一次)。 */
     injectMode?: () => InjectMode;
+    /**
+     * 判定落账 (可选): 每一次真实判定都会回调一次, **含"没注入"的那几种**。
+     *
+     * 为什么由 pre-step 回调而不是让调用方事后读 Binder: 只有这里同时拿着 step 与判定结果,
+     * 而"为什么这轮没注入"与"注入了什么"必须同源 —— 事后读 Binder 只能拿到最后一次状态,
+     * 会把"库里没有"与"被判重挡掉"混成同一个读数 (真实缺陷类别)。
+     * 实现方必须 best-effort (写失败不许抛), 否则账本会拖垮对话。
+     */
+    onDecision?: (decision: PreStepRecord) => void;
   },
 ) {
   const projectOf = options.projectOf ?? ((p: PreStepPayload) => p.agent.session.id);
@@ -220,7 +248,8 @@ export function makePreStepHandler(
     const text = latestUserText(payload.messages);
     if (!text) return decision;
     // 注入前热身异步向量投影 (硬时限): 首次预热可能补不齐, 后续轮次就有真语义召回了。
-    await binder.warm(options.warmupMs?.() ?? 50, text);
+    // project 必须一起传: always-on 缓存是**按项目**存的, 热错了一份等于没热 (首轮就没保底)。
+    await binder.warm(options.warmupMs?.() ?? 50, text, project);
     const msgs = decision.messages as unknown[];
     const prior = scanPriorInjections(agent);
     // 关键: 把**本轮 claimed 批次**里已有的注入也并进判重基线。
@@ -231,13 +260,47 @@ export function makePreStepHandler(
     // 首轮必然再发一份 (session-54bf3f3b: seq 10 与 seq 12 两块, 8 个 id 里 6 个重复)。
     collectInjectionEntries(payload.messages, prior);
     collectInjectionEntries(msgs, prior);
+    // 账本: 每一次**真实判定**都留一条 (含"没注入"与"为什么")。
+    // 为什么在这里而不是在 index.ts 的事件回调里: 只有这里同时知道 step 与判定结果,
+    // 而设计目标要的正是"'为什么没注入'必须和'注入了什么'一样可查"。
+    const record = (outcome: "injected" | "skipped" | "nothing-new" | "empty"): void => {
+      if (!options.onDecision) return;
+      const d = binder.lastTriggerDecision();
+      options.onDecision({
+        session: agent.session.id,
+        project,
+        step: payload.step,
+        channel: binder.lastInjectionChannel(),
+        mode: d?.mode ?? null,
+        outcome,
+        intent: d?.intent ?? null,
+        confidence: d?.confidence ?? 0,
+        topicDrift: d?.topicDrift ?? 0,
+        reason: d?.reason ?? "",
+        selected: [...binder.lastSelectedIds()],
+        ids: [...binder.lastInjectedIds()],
+        tokens: binder.lastInjectedTokens(),
+      });
+    };
     // first 模式: 本会话已经有过**记忆条目块** → 不再进入注入通道 (连检索都不做)。
     // 判据在 warm 之后取 (warm 会跨 await), 否则并发的首步会各注入一份。
-    if (injectMode() === "first" && prior.ids.size > 0) return decision;
+    if (injectMode() === "first" && prior.ids.size > 0) {
+      record("skipped");
+      return decision;
+    }
     // 差量注入: 把"本会话已注入过的条目 id"交给 Binder 排除。
     // 于是常驻记忆 (规则/关键事实) 只会在会话开始时进一次, 之后的轮次只补真正的新条目。
     const bound = binder.injectFor(project, text, [...prior.ids]);
-    if (!bound) return decision;
+    if (!bound) {
+      // 三种"没内容"必须分开记, 否则账本给出误导性读数:
+      //   skipped     —— 触发策略主动不注入 (同话题重复 / 无信号);
+      //   nothing-new —— 选中了条目但全被判重挡掉 (差量注入的正常结果);
+      //   empty       —— 压根没选中任何东西 (库里没有 / 没有通道可走)。
+      const declined = binder.lastTriggerDecision();
+      const byPolicy = declined?.mode === "skip-similar" || declined?.mode === "skip-no-signal";
+      record(byPolicy ? "skipped" : binder.lastSelectedIds().length ? "nothing-new" : "empty");
+      return decision;
+    }
     // 框架句在最前: 让模型知道这是"检索出来的证据", 并声明不覆盖当前指令 (对齐 DSH 的
     // workspace-instruction 做法)。硬约束: 框架句必须与记忆内容同块, 否则"证据"语义会丢。
     // 末尾追加可操作入口: "不适用就换词再查"。它必须与记忆内容同块 ——
@@ -251,8 +314,14 @@ export function makePreStepHandler(
       "\n" +
       memoryEntryHint(language());
     // 去重: 本批已含, 或会话日志里已经注入过同一块 (跨 step/跨轮) → 跳过。
-    if (msgs.some((m) => messageTextOf(m) === injectedText)) return decision;
-    if (prior.texts.has(injectedText)) return decision;
+    if (msgs.some((m) => messageTextOf(m) === injectedText)) {
+      record("skipped");
+      return decision;
+    }
+    if (prior.texts.has(injectedText)) {
+      record("skipped");
+      return decision;
+    }
     const injected = createUserMessage({
       content: [{ type: "text", text: injectedText }],
       source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
@@ -267,6 +336,7 @@ export function makePreStepHandler(
       }
     }
     const nextMsgs = [...msgs.slice(0, idx + 1), injected, ...msgs.slice(idx + 1)];
+    record("injected");
     return { kind: "enter", messages: nextMsgs };
   };
 }
