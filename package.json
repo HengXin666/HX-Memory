@@ -60,7 +60,7 @@
     "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
     "@deepseek-ai/dsh-settings": "0.1.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.1",
     "@deepseek-ai/schemastery": "3.18.2",
     "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",
@@ -79,10 +79,11 @@
     "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2"
   },
   "dsh": {
+    "host": "^0.1.5-rc.1",
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-locale",

@@ -7,6 +7,8 @@
 
 export const HXMEM_REMOTE_METHODS = [
   "reviewQueue",
+  // 人审展开: 提议只带 covers 的 id, 原文必须能取回来 —— 否则"该不该确认"只能靠猜。
+  "entriesByIds",
   "runGeneralization",
   "generalizationStatus",
   "currentProject",
@@ -24,6 +26,12 @@ export const HXMEM_REMOTE_METHODS = [
   "contradictions",
   // 被 agent 负面标注过的记忆 (标注会降权排序, 必须可解释)。
   "flaggedMemories",
+  // 注入调度账本: "为什么这一轮注入/没注入" —— 触发层设计目标的兑现处。
+  "scheduleLog",
+  // 后台维护 (P3 调度器): "它最近跑了没有/成功没有/下次什么时候" —— 否则只能相信它。
+  "maintenance",
+  // 捕获耗时账本: "沉淀有没有把这一轮拖慢、拖在哪一段、为什么没沉淀" —— 否则只能靠猜。
+  "captureLog",
 ] as const;
 
 export type HxMemoryRemoteMethod = (typeof HXMEM_REMOTE_METHODS)[number];

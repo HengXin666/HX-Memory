@@ -31,6 +31,11 @@ fail() { echo "[smoke] FAIL: $*" >&2; exit 1; }
 ok() { echo "[smoke] ok: $*"; }
 
 command -v "$DSH_BIN" >/dev/null 2>&1 || fail "dsh not found ($DSH_BIN)"
+# `dsh plugin` 是 pnpm 的转发器 (它 spawn 一个 pnpm 去管 profile 依赖)。pnpm 不在 PATH 上时
+# 它只会失败, 而失败原因会被下面的重定向吞掉 —— 先自己检查, 把"缺什么"直接说出来。
+# 实测: 本机 pnpm 只在它自己的安装目录里 (不在 PATH), 于是本脚本静默死在第一步。
+command -v pnpm >/dev/null 2>&1 \
+  || fail "pnpm not found on PATH — dsh plugin needs it; e.g. export PATH=\"\$(dirname \"\$(ls -d \"\$HOME\"/.local/share/pnpm/.tools/pnpm/*/bin/pnpm 2>/dev/null | tail -1)\")/:\$PATH\""
 [ -f "$PKG/package.json" ] || fail "no package.json under $PKG"
 [ -f "$PKG/dist/adapters/dsh/index.js" ] || fail "runtime build missing: run pnpm run build"
 [ -f "$PKG/dist/dsh/client.js" ] || fail "client bundle missing: run pnpm run build:client"
@@ -54,7 +59,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[smoke] installing plugin into an isolated DSH_HOME"
-"$DSH_BIN" plugin --profile web add "file:$PKG" >/dev/null 2>&1 || fail "dsh plugin add failed"
+# 不把输出丢进 /dev/null: 安装失败的原因 (版本冲突、pnpm 报错、tarball 问题) 正是排查所需。
+if ! ADD_OUT="$("$DSH_BIN" plugin --profile web add "file:$PKG" 2>&1)"; then
+  echo "$ADD_OUT" >&2
+  fail "dsh plugin add failed"
+fi
 
 TREE="$("$DSH_BIN" --profile web --dump-config 2>&1 || true)"
 echo "$TREE" | grep -q "id: hx-memory$" || fail "plugin group missing from composed profile"

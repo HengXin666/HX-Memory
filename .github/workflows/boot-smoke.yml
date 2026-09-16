@@ -45,7 +45,19 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: "10.10.0"
-      # 版本必须与 package.json 的 peerDependencies 一致, 否则测的是一个不受支持的组合。
-      - run: npm install -g @deepseek-ai/dsh@0.1.2-rc.1
+      # 宿主版本只有一个来源: package.json 的 dsh.host (不是这里写死的字面量)。
+      # 为什么必须同源: 曾经这里写死 0.1.2-rc.1 而线上跑 0.1.5-rc.1, 于是"跨实例 marker 导致
+      # 端点整组 404"这类**宿主版本差异**缺陷在门禁里完全看不见 —— 它测的是另一个组合。
+      - name: Resolve host version (single source: package.json dsh.host)
+        id: host
+        # set -e 很重要: 解析失败时 `version="$(...)"` 会让这一步失败。
+        # 只写成 `echo "version=$(...)"` 的话, 命令替换失败会被 echo 的成功掩盖,
+        # 于是拿到空版本、门禁静默变成"没测宿主" —— 那正是本改动要消灭的失败模式。
+        run: |
+          set -euo pipefail
+          version="$(node scripts/lib/host-version.mjs pkg/package.json)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: npm install -g "@deepseek-ai/dsh@${{ steps.host.outputs.version }}"
       - name: Run behavior smoke
         run: bash scripts/smoke-dsh.sh "$PWD/pkg"
