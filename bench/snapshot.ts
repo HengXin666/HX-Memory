@@ -8,6 +8,7 @@
 // 用法:
 //   node --experimental-strip-types bench/snapshot.ts --write    # 写快照
 //   node --experimental-strip-types bench/snapshot.ts --check    # 比对 (CI)
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +30,22 @@ interface CaseFile {
 
 function recallAt(ranked: string[], gold: Set<string>, k: number): number {
   return gold.size ? ranked.slice(0, k).filter((x) => gold.has(x)).length / gold.size : 0;
+}
+
+/**
+ * 语料的内容指纹 (不含 exportedAt / source.root 这类每次导出都会变的元数据)。
+ *
+ * 为什么要它: 快照的指标同时受**代码**与**输入语料**影响, 而语料在 gitignore 里 ——
+ * 它是本机真实记忆的导出, 会随使用而变化。没有指纹时, 两种情况都只能报"指标漂移",
+ * 而它们的处置完全相反: 语料变了要重新导出快照, 代码变了要解释清楚改了什么。
+ */
+function corpusFingerprint(corpus: Corpus): string {
+  // 只取参与检索的字段, 且排序固定 (导出顺序不该影响身份)。
+  const canonical = corpus.entries
+    .map((e) => [e.id, e.content, e.kind, e.scope, e.project ?? "", e.entities.join(","), e.relations.map((r) => r.type + ">" + r.to + ":" + r.weight).join(",")].join("\u0000"))
+    .sort()
+    .join("\u0001");
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
 }
 
 /** 只保留**与远端系统无关**的臂: 本仓库的确定性变体 (不依赖 LLM/嵌入服务), CI 才能跑。 */
@@ -94,17 +111,22 @@ function main(): number {
     console.log("  本地首次使用: node --experimental-strip-types bench/lib/corpus.ts");
     return 0;
   }
+  const corpus = JSON.parse(readFileSync(CORPUS, "utf8")) as Corpus;
+  // 快照断言的是**某一份语料上**的指标, 所以必须先判"是不是同一份语料" —— 否则漂移
+  // 红得没有解释力: 实测把 HEAD 与它的父提交各跑一次, 数字一模一样 (都是 0.635),
+  // 而快照里记的是 0.6411。缺了这一步, 人只能靠猜"是代码变了还是语料变了"。
+  const fingerprint = corpusFingerprint(corpus);
   if (!existsSync(SNAPSHOT)) {
     console.error("bench-snapshot: 缺少快照文件 " + SNAPSHOT);
     return 1;
   }
-  const corpus = JSON.parse(readFileSync(CORPUS, "utf8")) as Corpus;
   const cases = JSON.parse(readFileSync(CASES, "utf8")) as CaseFile;
   const now = measure(corpus, cases);
 
   if (process.argv.includes("--write")) {
-    writeFileSync(SNAPSHOT, JSON.stringify({ k: K, tolerance: TOLERANCE, metrics: now }, null, 2) + "\n");
-    console.log("快照已写入: " + SNAPSHOT);
+    const snapshot = { k: K, tolerance: TOLERANCE, corpus: fingerprint, metrics: now };
+    writeFileSync(SNAPSHOT, JSON.stringify(snapshot, null, 2) + "\n");
+    console.log("快照已写入: " + SNAPSHOT + " (语料指纹 " + fingerprint + ")");
     for (const [k, v] of Object.entries(now)) console.log("  " + k.padEnd(26) + v);
     return 0;
   }
@@ -112,7 +134,17 @@ function main(): number {
   const saved = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as {
     metrics: Record<string, number>;
     tolerance?: number;
+    corpus?: string;
   };
+  // 语料身份对不上 → 这不是"实现漂移", 是"输入换了"。两者处置相反, 必须分开报:
+  // 混在一起说"指标漂移", 人就只能猜到累了为止 (实测这个 gate 从诞生起就一直这么红)。
+  if (saved.corpus !== undefined && saved.corpus !== fingerprint) {
+    console.error("bench-snapshot: 语料已变 (快照记的是 " + saved.corpus + ", 当前是 " + fingerprint + ")。");
+    console.error("  指标差异可能全部来自输入而不是实现。要在这份语料上继续用, 重新导出快照:");
+    console.error("    node --experimental-strip-types bench/snapshot.ts --write");
+    console.error("  若确实实现了行为变更, 同一次提交里也要同步 docs/memory-benchmark-report.md 的表格。");
+    return 1;
+  }
   const tol = saved.tolerance ?? TOLERANCE;
   const drift: string[] = [];
   for (const [key, was] of Object.entries(saved.metrics)) {
