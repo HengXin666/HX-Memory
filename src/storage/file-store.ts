@@ -16,6 +16,8 @@ import type {
   VerifyReport,
 } from "../kernel/ports.ts";
 import { FtsIndex } from "./fts-index.ts";
+import { IndexMaintenance } from "./index-maintenance.ts";
+import { IndexStatus } from "./index-status.ts";
 import {
   DAILY_DIR,
   DIGEST_DIR,
@@ -61,6 +63,10 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   private readonly reader: IndexReader;
   /** 索引写入侧 (SQL 行 + FTS 行; 治理闸门在那里, 见 index-writer.ts)。 */
   private readonly writer: IndexWriter;
+  /** 派生索引的回填与自述 (FTS / 实体倒排); 见 index-maintenance.ts。 */
+  private readonly maintenance: IndexMaintenance;
+  /** 只读自述面 (能力/自检/FTS 状态); 见 index-status.ts。 */
+  private readonly status: IndexStatus;
 
   constructor(config: FileBackendConfig) {
     this.root = config.root;
@@ -90,6 +96,8 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     this.fts = new FtsIndex(this.db);
     this.reader = new IndexReader(this.db, this.fts);
     this.writer = new IndexWriter(this.db, this.fts);
+    this.maintenance = new IndexMaintenance(this.db, this.reader, this.writer, this.fts);
+    this.status = new IndexStatus(this.fts);
     // 索引丢了但真相还在 → 自动重建, 否则记忆会"静默消失"。
     const rows = this.db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number };
     if (rows.n === 0 && this.hasTruthFiles()) this.rebuildFromFiles();
@@ -97,8 +105,15 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     // 全文索引: 建表 + 分词版本校验 + 缺失回填。
     // 版本不一致时 ensure() 会清表并返回 true —— 混用两种分词的索引 = 静默召回失真。
     const needsRebuild = this.fts.ensure(rows.n);
-    if (this.fts.available && (needsRebuild || this.fts.count() !== this.countMemories())) {
-      this.repopulateFts();
+    if (needsRebuild || this.maintenance.needsFtsRebuild(this.countMemories())) {
+      this.maintenance.repopulateFts();
+    }
+
+    // 实体倒排: 与 FTS 同理, 它是**派生物**, 可能比 memories 晚一代 (老库升级 / 新增这张表)。
+    // 判定信号必须是**能被记住的东西** —— "entities 表为空"会永远为真 (纯中文陈述型条目
+    // 一条实体都抽不出), 于是每次打开都全量重算。因此按抽取器版本水位判定 (见 index-maintenance.ts)。
+    if (this.countMemories() > 0 && this.maintenance.needsEntityRebuild()) {
+      this.maintenance.repopulateEntities();
     }
   }
 
@@ -112,23 +127,22 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
    * 上游仍然是真相文件 (memories 表本身可从文件重建), 所以这一步永远可重复执行。
    */
   repopulateFts(): number {
-    return this.writer.repopulateFts(this.reader.allIds(), (id) => this.reader.get(id));
+    return this.maintenance.repopulateFts();
   }
 
-  /**
-   * 引擎能力自述 (RetrievalSource.capabilities): 检索层据此决定降级策略。
-   * 注意 semantic:false 是**诚实**的 —— 目前没有 embedding 通道, 不要假装有语义检索。
-   */
+  /** 重建实体倒排 (memories → entities); 幂等。 */
+  repopulateEntities(): number {
+    return this.maintenance.repopulateEntities();
+  }
+
+  /** 实体倒排可观测面 (rows/entries/version)。 */
+  entityStatus(): { rows: number; entries: number; version: string } {
+    return this.maintenance.entityStatus();
+  }
+
+  /** 引擎能力自述 (实现见 index-status.ts; 检索层据此决定降级策略)。 */
   capabilities(): RetrievalCapabilities {
-    const s = this.ftsStatus();
-    return {
-      engine: s.available ? "sqlite-fts5+cjk" : "sqlite-like",
-      fullText: s.available,
-      cjk: s.available,
-      semantic: false,
-      graph: "relations",
-      multiProcess: true,
-    };
+    return this.status.capabilities();
   }
 
   /**
@@ -146,29 +160,9 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return n;
   }
 
-  /**
-   * 一致性自检: 索引行数必须等于真相文件里的条目数, 全文索引行数必须等于 memories 行数。
-   * 不追求"逐字段 diff"(那是 conformance 的事), 只给运维一眼可见的"有没有漂移"。
-   */
+  /** 一致性自检 (实现见 index-status.ts): 真相 ↔ 索引 ↔ 全文 的行数必须一致。 */
   verify(): VerifyReport {
-    const problems: string[] = [];
-    const truth = this.countTruthEntries();
-    const index = this.countMemories();
-    const fullText = this.fts.available ? this.fts.count() : undefined;
-    if (truth !== index) {
-      problems.push(`truth/index mismatch: ${truth} truth entries vs ${index} index rows`);
-    }
-    if (fullText !== undefined && fullText !== index) {
-      problems.push(`index/fulltext mismatch: ${index} rows vs ${fullText} fulltext rows`);
-    }
-    for (const w of this.skipped.slice(0, 10)) problems.push("parse warning: " + w);
-    return {
-      ok: problems.length === 0,
-      truth,
-      index,
-      ...(fullText === undefined ? {} : { fullText }),
-      problems,
-    };
+    return this.status.verify(this.countTruthEntries(), this.countMemories(), this.skipped);
   }
 
   /** 真相文件里的条目数 (不依赖索引; 解析警告会累加到 this.skipped)。 */
@@ -205,14 +199,8 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
 
   /** 检索能力自述 (降级必须可观测: 面板/日志/测试都能看到"现在是 LIKE 而不是 FTS")。 */
   ftsStatus(): { available: boolean; degraded: string | null; indexed: number; expected: number } {
-    return {
-      available: this.fts.available,
-      degraded: this.fts.degradation,
-      indexed: this.fts.count(),
-      expected: this.countMemories(),
-    };
+    return this.status.ftsStatus(this.countMemories());
   }
-
   /** 建表 + 补列 (DDL 与迁移策略见 index-schema.ts)。 */
   private initSchema(): void {
     initSchema(this.db);
@@ -327,6 +315,14 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return this.reader.traverse(fromId, relationType);
   }
 
+  /**
+   * 实体反查 (实体倒排; RetrievalSource.byEntities)。
+   * 没有它是**静默**少一个通道 —— 检索器只在能力存在时才启用实体通道, 所以这里必须如实暴露。
+   */
+  byEntities(keys: readonly string[], limit = 50): MemoryEntry[] {
+    return this.reader.byEntities(keys, limit);
+  }
+
   update(id: string, patch: Partial<MemoryEntry>): void {
     const existing = this.reader.get(id);
     if (!existing) throw new Error("not found: " + id);
@@ -377,5 +373,3 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return join(this.root, INDEX_NAME);
   }
 }
-
-

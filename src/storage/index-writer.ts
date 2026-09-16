@@ -9,6 +9,7 @@ import type { MemoryEntry } from "../kernel/types.ts";
 import { searchableText } from "../kernel/cjk.ts";
 import type { FtsIndex } from "./fts-index.ts";
 import { extractTags, fileFor, isConfirmed } from "./entry-normalize.ts";
+import { entityKeysOf } from "../kernel/entity.ts";
 
 export class IndexWriter {
   // 显式字段 + 赋值 (不用 TS 参数属性): 见 index-reader.ts 的同类注释。
@@ -73,26 +74,46 @@ export class IndexWriter {
     for (const tag of e.tags?.length ? e.tags : extractTags(e.content)) {
       this.db.prepare("INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?, ?)").run(e.id, tag);
     }
+    this.indexEntities(e);
     // 全文索引 (派生): 正文 + 摘要 + 要点 + 标签 + 实体。
     this.fts.upsert(e.id, searchableText(e));
     return true;
   }
 
-  /** 删掉某条的关系/标签行 (重新建索引之前调用)。 */
+  /**
+   * 写实体倒排行 (显式字段优先, 缺失时用确定性抽取兜底; 见 kernel/entity.ts 的 entitiesOf)。
+   * 兜底放在**索引侧**而不是写回真相文件 —— 实体是派生物, 换抽取器只需重建索引。
+   * 返回写入的实体键数 (0 表示这条记忆没有可反查的实体)。
+   */
+  indexEntities(e: Pick<MemoryEntry, "id" | "entities" | "content">): number {
+    const keys = entityKeysOf(e);
+    for (const key of keys) {
+      this.db
+        .prepare("INSERT OR IGNORE INTO entities (memory_id, entity) VALUES (?, ?)")
+        .run(e.id, key);
+    }
+    return keys.length;
+  }
+
+  /** 删掉某条的关系/标签/实体行 (重新建索引之前调用)。 */
   clearRelationsAndTags(id: string): void {
     this.db.prepare("DELETE FROM relations WHERE from_id = ?").run(id);
     this.db.prepare("DELETE FROM tags WHERE memory_id = ?").run(id);
+    this.db.prepare("DELETE FROM entities WHERE memory_id = ?").run(id);
   }
 
   /** 清空全部索引行 (重建前调用)。 */
   clearAll(): void {
-    this.db.exec("DELETE FROM memories; DELETE FROM relations; DELETE FROM tags;");
+    this.db.exec(
+      "DELETE FROM memories; DELETE FROM relations; DELETE FROM tags; DELETE FROM entities;",
+    );
   }
 
   /** 彻底删除一条 (allowTruthDelete 路径; FTS 行也一并删)。 */
   deleteEntry(id: string): void {
     this.db.prepare("DELETE FROM relations WHERE from_id = ?").run(id);
     this.db.prepare("DELETE FROM tags WHERE memory_id = ?").run(id);
+    this.db.prepare("DELETE FROM entities WHERE memory_id = ?").run(id);
     this.db.prepare("DELETE FROM memories WHERE id = ?").run(id);
     this.fts.remove(id);
   }
@@ -118,5 +139,4 @@ export class IndexWriter {
     }
     return n;
   }
-
 }

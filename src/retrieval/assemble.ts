@@ -24,8 +24,10 @@ export interface AssembleOptions {
   mmrLambda: number;
   /** 图候选的补位配额 (0 = 不追加)。 */
   graphTierQuota: number;
-  /** 图候选 id (来自第二梯队通道)。 */
-  tier2Ids: readonly string[];
+  /** 实体反查候选的配额 (0 = 不追加)。与图配额分开 —— 两个通道的候选质量不同。 */
+  entityQuota: number;
+  /** 第二梯队候选 (不与主榜单竞争分数; 各自占独立配额)。channel 决定它吃哪份配额。 */
+  tier2: ReadonlyArray<{ id: string; channel: string }>;
   /** 词集缓存 (MMR 的多样性用)。 */
   tokensOf: (e: MemoryEntry) => ReadonlySet<string>;
   /** 解析 id → 当前版本条目 (演化链上溯); 返回 null 表示不可用。 */
@@ -71,20 +73,29 @@ export function assembleHits(
 
   const primary = budgeted.kept.slice().sort((a, b) => b.score - a.score);
 
-  // ---- 图候选作为尾巴追加 (第二梯队) ----
+  // ---- 第二梯队作为尾巴追加 (图扩展 / 实体反查) ----
   // 只在主榜单没填满时补位, 不参与上面的打分竞争。重复项与演化链上溯后的重复项都跳过。
+  // **配额按通道分别计**: 两个通道的候选质量不同 (实体反查的精度高于实体共现的图边),
+  // 合成一份配额会让一个通道的长列表把另一个挤掉。
+  const quotaLeft = new Map<string, number>([
+    ["graph", opts.graphTierQuota],
+    ["entity", opts.entityQuota],
+  ]);
   const extras: RetrievalHit[] = [];
-  for (const id of opts.tier2Ids.slice(0, opts.graphTierQuota)) {
+  for (const { id, channel } of opts.tier2) {
     if (primary.length + extras.length >= opts.limit) break;
+    const left = quotaLeft.get(channel) ?? 0;
+    if (left <= 0) continue;
     if (primary.some((h) => h.entry.id === id)) continue;
     if (extras.some((h) => h.entry.id === id)) continue;
     const current = opts.resolve(id);
     if (!current || primary.some((h) => h.entry.id === current.id)) continue;
     if (extras.some((h) => h.entry.id === current.id)) continue;
+    quotaLeft.set(channel, left - 1);
     extras.push({
       entry: current,
       score: GRAPH_TIER_SCORE,
-      channels: ["graph"],
+      channels: [channel as RetrievalHit["channels"][number]],
       why: opts.whyOf(id),
     });
   }

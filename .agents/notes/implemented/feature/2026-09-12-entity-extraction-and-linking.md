@@ -24,8 +24,12 @@ Status: implemented
 - `CapturePipeline.run` 在落盘前调用新增的 `withStructuralLinks`: 读既有条目, 按
   `planStructuralLinks` 规划共现边并合并去重。
 - 新增 `PipelineOptions.maxStructuralLinks` (默认 3, 0 = 关闭), 与 Facade 的默认一致。
-- 启发式兜底**刻意不产 entities** (与不产 conclusion 同理): 规则没法可靠判断专名,
+- 启发式兜底**不产 entities** (与不产 conclusion 同理): 规则没法可靠判断专名,
   错的实体会把不相关的记忆连成一团, 比没有边更糟。
+  边界收窄 (2026-09-13): 该结论只对**捕获期的启发式结构化器**成立 ——
+  它判定的是"这条记忆该不该有实体边"。检索期的索引兜底 (`kernel/entity.ts`) 抽的是
+  **标识符形状的专名** (路径/驼峰/缩写), 不猜泛指词, 只进索引不写真相, 详见
+  [实体反查](../2026-09-13-entity-reverse-lookup.md)。
 
 ## Alternatives considered
 

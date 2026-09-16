@@ -142,6 +142,12 @@ export interface Query {
   kind?: MemoryKind;
   scope?: MemoryScope;
   tag?: string;
+  /**
+   * 实体过滤 (与 tag 同一档的**结构化条件**, 走实体倒排)。
+   * 与检索期的实体通道分工: 这里回答"提到 X 的条目有哪些" (确定性筛选),
+   * 通道回答"这条查询该不该顺实体扩大召回" (相关性判断)。
+   */
+  entity?: string;
   /** Slice at a validity instant; answers "what was true at T". */
   at?: string;
   /** Filter by owning project (only meaningful with scope:project). */
@@ -159,6 +165,15 @@ export interface GeneralizationProposal {
   confidence: number;
   suggestedAction: "confirm" | "rewrite" | "reject";
   generatedAt: string;
+  /**
+   * true = **启发式占位草稿** (这一簇没有走 AI 抽象)。
+   *
+   * 为什么必须逐条记, 而不是由批次报告的 usedLlm 代替: 报告只描述**最近一次**批次,
+   * 而审阅队列是跨批次的 (队列里同时躺着 AI 提炼的提议与更早批次的草稿)。草稿的规则文本
+   * 只是"该主题有 N 条实例"的提示, 不含任何可确认的内容 —— 人审时必须能一眼区分,
+   * 否则用户面对一整屏形状相同的"经验: … 已沉淀"只能靠猜该不该确认 (实测真实困扰)。
+   */
+  drafted?: boolean;
 }
 
 export type ProposalStatus = "proposed" | "confirmed" | "rejected";

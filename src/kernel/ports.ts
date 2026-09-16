@@ -138,7 +138,15 @@ export type { GeneralizationProposal };
 // ---------------------------------------------------------------------------
 
 /** 召回通道: why 的可读来源, 也是权重配置的键。 */
-export type Channel = "rules" | "bm25" | "vector" | "graph" | "tag" | "recency";
+export type Channel = "rules" | "bm25" | "vector" | "graph" | "tag" | "entity" | "recency";
+
+/** 实体通道的调参面 (标定出来的, 见 Agent Note; 默认值由实测选定)。 */
+export interface EntityChannelOptions {
+  /** 进榜上限: 实体候选的精度低, 长列表会在 RRF 里累积出足以挤掉词面命中的分数。 */
+  maxIds: number;
+  /** 至少共享几个种子实体才进榜 (1 = 任意共享; 提高到 2 只保留强连接)。 */
+  minShared: number;
+}
 
 /** 检索源: 引擎必须能提供的最小能力 (存储实现按需扩展)。 */
 export interface RetrievalSource {
@@ -149,6 +157,11 @@ export interface RetrievalSource {
   get(id: string): MemoryEntry | null;
   /** 关系遍历 (图扩展的基础)。 */
   traverse(fromId: string, relationType: string): MemoryEntry[];
+  /**
+   * 实体反查 (实体倒排; 可选能力, 引擎没有就少一个通道)。
+   * 存在理由见 docs/benchmark-review.md §二之二: "字面不可达但共享实体"只能靠它, 写入期建边无解。
+   */
+  byEntities?(keys: readonly string[], limit?: number): MemoryEntry[];
   /** 可选: 引擎自述能力 (检索器据此决定降级策略与 degraded 说明)。 */
   capabilities?(): RetrievalCapabilities;
 }

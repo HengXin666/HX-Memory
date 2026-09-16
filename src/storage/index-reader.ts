@@ -22,6 +22,7 @@ import { normalizeFeedback } from "../kernel/feedback.ts";
 import type { IndexDoc } from "../kernel/ports.ts";
 import type { FtsIndex } from "./fts-index.ts";
 import { finiteOrUndefined, jsonStrings } from "./entry-normalize.ts";
+import { entityKey } from "../kernel/entity.ts";
 
 /** 索引行形状 (与 memories 表列一一对应)。 */
 export interface RowLike {
@@ -150,8 +151,7 @@ export class IndexReader {
 
   get(id: string): MemoryEntry | null {
     const row = this.db.prepare("SELECT * FROM memories WHERE id = ?").get(id) as
-      | RowLike
-      | undefined;
+      RowLike | undefined;
     return row ? this.hydrate(row) : null;
   }
 
@@ -180,6 +180,11 @@ export class IndexReader {
     if (q.tag) {
       clauses.push("id IN (SELECT memory_id FROM tags WHERE tag = ?)");
       params.push(q.tag);
+    }
+    // 实体过滤走倒排表; 键必须先规范化 —— 否则「HX-Memory」与「hx-memory」会查出两个不同的集合。
+    if (q.entity) {
+      clauses.push("id IN (SELECT memory_id FROM entities WHERE entity = ?)");
+      params.push(entityKey(q.entity));
     }
     if (q.text) {
       const escaped = escapeLike(q.text);
@@ -218,8 +223,7 @@ export class IndexReader {
       if (seen.has(id) || picked.length >= cap) return;
       seen.add(id);
       const row = this.db.prepare("SELECT * FROM memories WHERE id = ?" + visible).get(id) as
-        | RowLike
-        | undefined;
+        RowLike | undefined;
       if (row) picked.push(this.hydrate(row));
     };
     if (this.fts.available) {
@@ -243,6 +247,54 @@ export class IndexReader {
   /** 全量条目 (不截断): warmUp/重建等需要完整集合的调用点。 */
   all(): MemoryEntry[] {
     return this.query({ limit: Number.MAX_SAFE_INTEGER });
+  }
+
+  /**
+   * 实体反查: **按实体键**取回提到它的条目 (倒排表命中, 不扫 memories)。
+   *
+   * 为什么需要它 (实测依据, docs/benchmark-review.md §二之二): 写入期建边再怎么调都解决不了
+   * "字面不可达但共享实体"的查询 —— 把共享实体的**全部**配对建边 (442 条, 现状的 3.3 倍)
+   * 只能把命中从 19/104 提到 22/104。真瓶颈在检索期: 种子实体反查出的候选池平均 12.9 条,
+   * 而目标在池中平均排第 8 —— 写入期必须在**不知道查询**时猜"哪几条相关", 反查不必猜。
+   *
+   * 可见性口径与 query() 一致 (默认排除 shadow/merged/expired; 反查是召回, 不该回放已撤回的)。
+   */
+  byEntities(keys: readonly string[], limit = 50): MemoryEntry[] {
+    const wanted: string[] = [];
+    const seenKey = new Set<string>();
+    for (const k of keys) {
+      const key = entityKey(k);
+      if (!key || seenKey.has(key)) continue;
+      seenKey.add(key);
+      wanted.push(key);
+    }
+    if (!wanted.length) return [];
+    const placeholders = wanted.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        "SELECT m.* FROM memories m JOIN entities e ON e.memory_id = m.id" +
+          " WHERE e.entity IN (" +
+          placeholders +
+          ") AND m.status NOT IN (" +
+          HIDDEN +
+          ") ORDER BY m.valid_at DESC, m.rowid DESC LIMIT ?",
+      )
+      .all(...wanted, limit) as unknown as RowLike[];
+    return rows.map((r) => this.hydrate(r));
+  }
+
+  /** 有实体键的条目数 (与 countEntityRows 一起构成覆盖率读数)。 */
+  countWithEntities(): number {
+    const row = this.db.prepare("SELECT COUNT(DISTINCT memory_id) AS n FROM entities").get() as {
+      n: number;
+    };
+    return row.n;
+  }
+
+  /** 实体索引行数 (供重建/自检判断"倒排是否已补齐")。 */
+  countEntityRows(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM entities").get() as { n: number };
+    return row.n;
   }
 
   /** 关系遍历: 只返回存活 (非 shadow) 的邻居, 与 query 的可见性一致。 */
@@ -323,8 +375,7 @@ export class IndexReader {
   externalRevision(): number {
     try {
       const row = this.db.prepare("PRAGMA data_version").get() as
-        | { data_version?: number }
-        | undefined;
+        { data_version?: number } | undefined;
       const value = row?.data_version;
       return typeof value === "number" && Number.isFinite(value) ? value : 0;
     } catch {

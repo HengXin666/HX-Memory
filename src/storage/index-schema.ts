@@ -45,6 +45,15 @@ const DDL = `
         tag TEXT NOT NULL,
         PRIMARY KEY (memory_id, tag)
       );
+      -- 实体倒排 (派生): 与 tags 对称, 但**键是规范化后的小写** (kernel/entity.ts 的 entityKey)。
+      -- 为什么不能直接扫 memories.entities 的 JSON: 反查发生在每轮预步的热路径上,
+      -- 表扫描是 O(全部条目) 而这里是索引命中等价 (实测差异见 agent note)。
+      CREATE TABLE IF NOT EXISTS entities (
+        memory_id TEXT NOT NULL,
+        entity TEXT NOT NULL,
+        PRIMARY KEY (memory_id, entity)
+      );
+      CREATE INDEX IF NOT EXISTS idx_entities_entity ON entities(entity);
       CREATE INDEX IF NOT EXISTS idx_memories_kind ON memories(kind);
       CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
       CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_id);

@@ -10,9 +10,15 @@
 //   - vector: **不做**字面覆盖率过滤 —— "字面不重合但语义相近"正是它存在的意义;
 //   - tag: 显式标签命中, 不做覆盖率过滤;
 //   - graph: **不做**文本过滤 —— "结构相关但字面不相关"正是图通道的意义, 噪声由 perSeedCap 控制。
-import type { Channel, RetrievalCapabilities, RetrievalRequest, VectorIndex } from "../kernel/ports.ts";
+import type {
+  Channel,
+  RetrievalCapabilities,
+  RetrievalRequest,
+  VectorIndex,
+} from "../kernel/ports.ts";
 import type { MemoryEntry, RelationType } from "../kernel/types.ts";
 import { termStreams } from "../kernel/cjk.ts";
+import { entityKeysOf } from "../kernel/entity.ts";
 import { voiceVariants } from "../kernel/voice.ts";
 import type { RankedList } from "../kernel/ranking.ts";
 
@@ -75,11 +81,15 @@ export interface ChannelDeps {
     searchText: (text: string, limit: number) => MemoryEntry[];
     get: (id: string) => MemoryEntry | null;
     traverse: (fromId: string, type: string) => MemoryEntry[];
+    /** 实体反查 (可选: 引擎没有实体倒排时该通道直接不出现)。 */
+    byEntities?: (keys: readonly string[], limit?: number) => MemoryEntry[];
   };
   caps: RetrievalCapabilities;
   channelLimit: number;
   coverageFloor: number;
   graphHops: number;
+  /** 实体通道的上限与强度门槛 (标定项; 见 ports.ts 的 EntityChannelOptions)。 */
+  entityChannel: { maxIds: number; minShared: number; mode: "main" | "tier2" };
   vectorIndex?: VectorIndex;
   enabled: (channel: Channel) => boolean;
   weightOf: (channel: Channel) => number;
@@ -100,13 +110,16 @@ export function gatherChannels(
   candidateWindow: number,
 ): { ranked: RankedList[]; degraded: string[]; tier2: RankedList[] } {
   const ranked: RankedList[] = [];
-  // 第二梯队: 不与主榜单竞争分数的通道 (目前只有图扩展)。见文件末尾的说明。
+  // 第二梯队: 不与主榜单竞争分数的通道 (图扩展 / 实体反查)。见文件末尾的说明。
   const tier2: RankedList[] = [];
   const degraded: string[] = [];
 
   // ---- 通道 1: 已确认的跨项目规则 (保底通道; 不受覆盖率过滤影响) ----
   if (deps.enabled("rules")) {
-    const rules = deps.source.query({ kind: "rule" }).filter((r) => r.scope === "global").filter(deps.keep);
+    const rules = deps.source
+      .query({ kind: "rule" })
+      .filter((r) => r.scope === "global")
+      .filter(deps.keep);
     const scored = rules
       .map((r) => {
         const rel = terms.weighted.length ? coverage(deps.textOf(r), terms.weighted) : 0.5;
@@ -232,6 +245,59 @@ export function gatherChannels(
       // 两个读数方向相反, 因此不是"开/关"的取舍, 而是**分层**:
       // 主榜单先按相关性排好, 图候选作为尾巴追加, 占独立配额 (见 hybrid.ts 的 graphTierQuota)。
       tier2.push({ channel: "graph", ids: graphIds, weight: deps.weightOf("graph") });
+    }
+  }
+
+  // ---- 通道 5: 实体反查 (种子 = 字面命中的条目) ----
+  //
+  // 为什么它必须有, 而图扩展不够 (实测依据, docs/benchmark-review.md §二之二):
+  //   entity_only case 的桥是"共享实体", 而 **104 条里只有 4 条把实体写在查询里** ——
+  //   其余 100 条必须先从字面命中拿到种子, 再用种子的实体反查。这正是写入期建边做不到的:
+  //   建边必须在不知道查询的情况下预先决定"哪几条相关", 而反查知道这一问命中了哪些实体。
+  //   实测把共享实体的**全部**配对都建边 (442 条, 现状 3.3 倍) 也只把命中从 19/104 提到 22/104;
+  //   瓶颈是检索期的图配额 (候选池平均 12.9 条、目标平均排第 8, 而配额只有 3)。
+  //
+  // 位置: 在图扩展**之后**、但进**主榜单** (ranked) 而不是第二梯队。
+  //   - 在图之后: 图通道的种子口径因此完全不变 (它的种子取自 rules/bm25/vector/tag), 行为可对照;
+  //   - 进主榜单: 尾巴配额够不到的排位 (第 8), 只有参与主排序才拿得到 —— 本轮改动的目的就在这里。
+  //   代价是它可能挤掉词面命中, 因此权重是**标定出来的** (见 hybrid.ts 的 channelWeights 与 Agent Note)。
+  if (deps.enabled("entity") && deps.source.byEntities && terms.terms.length) {
+    const seeds = ranked
+      .flatMap((l) => l.ids.slice(0, 5))
+      .filter((id, i, arr) => arr.indexOf(id) === i)
+      .slice(0, 5);
+    // 种子 → 实体键。种子条目可能自己没抽到实体 (纯中文陈述型), 那它对反查就没有贡献。
+    const seedKeys = new Set<string>();
+    for (const seedId of seeds) {
+      const seed = deps.source.get(seedId);
+      if (!seed) continue;
+      for (const key of entityKeysOf(seed)) seedKeys.add(key);
+    }
+    if (seedKeys.size) {
+      const shared = new Map<string, number>();
+      for (const candidate of deps.source.byEntities([...seedKeys], candidateWindow)) {
+        if (!deps.keep(candidate)) continue;
+        deps.remember(candidate);
+        // 命中几个种子实体 = 相关性; RRF 只吃排名, 所以顺序必须由这个计数决定。
+        const hit = entityKeysOf(candidate).filter((k) => seedKeys.has(k)).length;
+        if (hit > 0) shared.set(candidate.id, hit);
+      }
+      const { maxIds, minShared, mode } = deps.entityChannel;
+      // 决定性排序: 共享实体多者在前, 同分按 id —— 不得依赖 SQL 返回顺序 (它是实现细节)。
+      const ordered = [...shared.entries()]
+        .filter(([, hit]) => hit >= minShared)
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+      if (ordered.length) {
+        const ids = ordered.slice(0, maxIds).map(([id]) => id);
+        for (const id of ids) deps.addReason(id, "entity:shared-" + (shared.get(id) ?? 0));
+        // **必须截断**: 实测不截断时该通道的 RRF 质量足以把词面命中的金牌挤下去
+        // (主 case H@1 0.807 → 0.509), 而它自己的收益只有 +0.09。
+        // 两个出口: "main" = 与词面竞争主排序; "tier2" = 独立配额的尾巴 (与图通道同一修法)。
+        // 选哪个是**测出来的**, 不是偏好 —— 见 Agent Note 的对照表。
+        const list = { channel: "entity", ids, weight: deps.weightOf("entity") };
+        if (mode === "tier2") tier2.push(list);
+        else ranked.push(list);
+      }
     }
   }
 

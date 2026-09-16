@@ -13,11 +13,16 @@ import { searchableText, termStreams } from "../kernel/cjk.ts";
 import { coverage, gatherChannels, queryTerms } from "./channels.ts";
 import { compositeScore, rrfFuse } from "../kernel/ranking.ts";
 import { assembleHits } from "./assemble.ts";
+import {
+  DEFAULT_ENTITY_MAX_IDS,
+  DEFAULT_ENTITY_MIN_SHARED,
+  DEFAULT_ENTITY_MODE,
+  DEFAULT_ENTITY_QUOTA,
+} from "./tuning.ts";
 import type {
   Channel,
   IndexableSource,
   RetrievalCapabilities,
-  RetrievalHit,
   RetrievalRequest,
   RetrievalResult,
   RetrievalSource,
@@ -58,6 +63,14 @@ export interface HybridRetrieverOptions {
   capabilities?: RetrievalCapabilities;
   /** 向量索引 (有则启用语义召回通道; 实现可换 sqlite-vec/LanceDB/Qdrant)。 */
   vectorIndex?: VectorIndex;
+  /** 实体通道进榜上限 (默认 DEFAULT_ENTITY_MAX_IDS)。 */
+  entityMaxIds?: number;
+  /** 实体通道的共享实体门槛 (默认 DEFAULT_ENTITY_MIN_SHARED)。 */
+  entityMinShared?: number;
+  /** 实体候选的出口: "tier2" (独立配额的尾巴, 默认) 或 "main" (与词面竞争主排序)。 */
+  entityMode?: "main" | "tier2";
+  /** 走 tier2 时给实体候选的配额 (默认 DEFAULT_ENTITY_QUOTA)。 */
+  entityQuota?: number;
 }
 
 const DEFAULT_CAPS: RetrievalCapabilities = {
@@ -80,6 +93,8 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
   private readonly coverageFloor: number;
   private readonly graphHops: 0 | 1 | 2;
   private readonly graphTierQuota: number;
+  private readonly entityChannel: { maxIds: number; minShared: number; mode: "main" | "tier2" };
+  private readonly entityQuota: number;
   private readonly rrfK: number;
   private readonly mmrLambda: number;
   private readonly now: () => string;
@@ -98,6 +113,13 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     this.coverageFloor = opts.coverageFloor ?? 0.5;
     this.graphHops = opts.graphHops ?? 1;
     this.graphTierQuota = Math.max(0, opts.graphTierQuota ?? 3);
+    // 实体通道: 默认来自实测标定 (见 Agent Note 的对照表); 显式配置可覆盖。
+    this.entityChannel = {
+      maxIds: Math.max(0, opts.entityMaxIds ?? DEFAULT_ENTITY_MAX_IDS),
+      minShared: Math.max(1, opts.entityMinShared ?? DEFAULT_ENTITY_MIN_SHARED),
+      mode: opts.entityMode ?? DEFAULT_ENTITY_MODE,
+    };
+    this.entityQuota = Math.max(0, opts.entityQuota ?? DEFAULT_ENTITY_QUOTA);
     this.rrfK = opts.rrfK ?? 60;
     this.mmrLambda = opts.mmrLambda ?? 0.7;
     this.now = opts.now ?? (() => new Date().toISOString());
@@ -262,11 +284,19 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
           searchText: (t, l) => this.source.searchText(t, l),
           get: (id) => this.source.get(id),
           traverse: (id, t) => this.source.traverse(id, t),
+          // 可选能力: 引擎没有实体倒排时该通道自然不出现 (capabilities 会如实说明)。
+          ...(this.source.byEntities
+            ? {
+                byEntities: (keys: readonly string[], l?: number) =>
+                  this.source.byEntities!(keys, l),
+              }
+            : {}),
         },
         caps: this.caps,
         channelLimit: this.channelLimit,
         coverageFloor: this.coverageFloor,
         graphHops: hops,
+        entityChannel: this.entityChannel,
         ...(this.vectorIndex ? { vectorIndex: this.vectorIndex } : {}),
         enabled,
         weightOf,
@@ -305,22 +335,20 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     }
     // 收尾 (去冗余 / 预算 / 图候选补位 / 返回顺序) 抽到 retrieval/assemble.ts ——
     // 它与"取数与融合"的变化原因不同, 混在一个文件里会把两者都撑破。
-    const result = assembleHits(
-      resolved,
-      {
-        limit,
-        tokenBudget,
-        mmrLambda: this.mmrLambda,
-        graphTierQuota: this.graphTierQuota,
-        tier2Ids: gathered.tier2.flatMap((l) => l.ids),
-        tokensOf,
-        resolve: (id) => {
-          const e = byId.get(id);
-          return e ? this.resolveCurrent(e) : null;
-        },
-        whyOf: (id) => (reasons.get(id) ?? ["graph"]).join(", "),
+    const result = assembleHits(resolved, {
+      limit,
+      tokenBudget,
+      mmrLambda: this.mmrLambda,
+      graphTierQuota: this.graphTierQuota,
+      entityQuota: this.entityChannel.mode === "tier2" ? this.entityQuota : 0,
+      tier2: gathered.tier2.flatMap((l) => l.ids.map((id) => ({ id, channel: l.channel }))),
+      tokensOf,
+      resolve: (id) => {
+        const e = byId.get(id);
+        return e ? this.resolveCurrent(e) : null;
       },
-    );
+      whyOf: (id) => (reasons.get(id) ?? ["graph"]).join(", "),
+    });
     result.degraded = degraded;
     return result;
   }

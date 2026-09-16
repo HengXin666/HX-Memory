@@ -5,6 +5,7 @@
 import { FileBackend } from "../storage/file-store.ts";
 import { EpisodeStore } from "../storage/episode-store.ts";
 import { HybridRetriever } from "../retrieval/hybrid.ts";
+import { DEFAULT_CHANNEL_WEIGHTS } from "../retrieval/tuning.ts";
 import { LexicalEmbedder } from "../retrieval/embedding-lexical.ts";
 import { LinearVectorIndex } from "../retrieval/vector.ts";
 import { ProjectedVectorIndex } from "../retrieval/vector-projected.ts";
@@ -39,6 +40,14 @@ export interface OpenMemoryOptions {
   embedder?: Embedder | null;
   /** 关闭自动演化 (取代/冲突标记)。 */
   autoEvolve?: boolean;
+  /** 实体通道进榜上限 (见 HybridRetriever 的标定说明)。 */
+  entityMaxIds?: number;
+  /** 实体通道的共享实体门槛。 */
+  entityMinShared?: number;
+  /** 实体候选的出口: "tier2" (默认) 或 "main"。 */
+  entityMode?: "main" | "tier2";
+  /** tier2 模式下实体候选的配额。 */
+  entityQuota?: number;
 }
 
 export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): MemoryStack {
@@ -65,8 +74,17 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
   // 词面通道权重 2: 实测 (166 case) 词面在精度上稳定强于向量, 而向量在同义改写上补召回;
   // 让词面主导的配比在 R@1/R@10 上同时优于等权。见 docs/memory-benchmark-report.md。
   const retriever = new HybridRetriever(store, {
-    channelWeights: { bm25: 2 },
+    // 权重表来自 retrieval/tuning.ts (单一事实源): 评测变体与线上组装必须是同一份默认值,
+    // 否则"评测里生效的配比"与"用户实际拿到的"会悄悄分叉。
+    channelWeights: { ...DEFAULT_CHANNEL_WEIGHTS },
     ...(vectorIndex ? { vectorIndex } : {}),
+    // 实体通道的标定项必须**从这里透传**: 它们此前只存在于检索器的构造参数里,
+    // 而所有生产路径都经 openMemoryStack 组装 —— 不透传等于这些设置永远不生效
+    // (实测踩到: 扫描多组配置得到完全相同的读数, 因为每一组都跑的是默认值)。
+    ...(opts.entityMaxIds === undefined ? {} : { entityMaxIds: opts.entityMaxIds }),
+    ...(opts.entityMinShared === undefined ? {} : { entityMinShared: opts.entityMinShared }),
+    ...(opts.entityMode === undefined ? {} : { entityMode: opts.entityMode }),
+    ...(opts.entityQuota === undefined ? {} : { entityQuota: opts.entityQuota }),
   });
   const facade = new MemoryFacade(
     { store, retriever },
