@@ -58,7 +58,7 @@ export async function main(argv: string[]): Promise<number> {
   const root = flags["root"];
   if (!root) {
     console.error(
-      "usage: hx-memory <sync|rules|stats|digest|export|import|verify|rebuild|consolidate|normalize|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
+      "usage: hx-memory <sync|rules|stats|digest|export|import|verify|rebuild|consolidate|normalize|maintain|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
     );
     return 1;
   }
@@ -115,6 +115,40 @@ export async function main(argv: string[]): Promise<number> {
     console.log(JSON.stringify(report, null, 2));
     stack.close();
     return report.errors.length ? 1 : 0;
+  }
+
+  if (cmd === "maintain") {
+    // P3 后台维护的**子进程入口** (由 DSH 调度器在空闲窗内启动)。
+    //
+    // 为什么这个命令必须自己做事、而不是再委托给别人: 它**就是**那个隔离进程。
+    // 维护是批量改写真相文件的工作, 因此签名里没有任何交互式输出; 结果以 JSON 打到 stdout,
+    // 由父进程记进环形缓冲 (失败时 stdout 的那一行就是证据)。
+    // 保留期由调用方 (DSH 调度器) 显式传入: 本命令是**子进程**, 拿不到用户在面板里配的值,
+    // 而 EpisodeStore 的缺省是 "0 = 永久" —— 不传就等于清理永远不生效 (静默 no-op, 踩过)。
+    // 缺省仍按 0 处理: 手动跑 maintain 时不该意外删掉用户的 episode 日志。
+    const retentionRaw = flags["episode-retention-days"];
+    const retention = retentionRaw === undefined ? 0 : Number(retentionRaw);
+    if (!Number.isInteger(retention) || retention < 0) {
+      console.error("--episode-retention-days 必须是非负整数");
+      return 1;
+    }
+    const stack = openMemoryStack(root, { episodeRetentionDays: retention });
+    try {
+      // 约定与 consolidate 一致: 必须显式 --dry-run=true 才只报告
+      const report = await stack.consolidate.run({ dryRun: flags["dry-run"] === "true" });
+      const prunedEpisodes = stack.episodes.prune();
+      const out = {
+        command: "maintain",
+        applied: report.applied,
+        scanned: report.scanned,
+        expiring: report.expiring.length,
+        prunedEpisodes,
+      };
+      console.log(JSON.stringify(out));
+      return 0;
+    } finally {
+      stack.close();
+    }
   }
 
   if (cmd === "digest") {
