@@ -46,6 +46,8 @@ describe("RecallService + FileBackend: 跨项目规则生效", () => {
     expect(rule).toBeTruthy();
     expect(rule!.confirmedBy).toBe("user:hengxin");
     expect(out.injected).toContain("跨项目规则");
+    // 检索结果出口**保留** id (memory_flag 按 id 操作) —— 与被动注入块刻意不同,
+    // 判据是方向: 模型主动要的结果要可引用, 我们主动塞的越短越好 (见 formatHitLine)。
     expect(out.injected).toContain(rule!.id);
   });
 

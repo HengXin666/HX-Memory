@@ -83,31 +83,36 @@ afterEach(() => {
   root = undefined;
 });
 
-function startSession(ctx: FakeCtx): { injected: string[] } {
-  const injected: string[] = [];
-  const handler = ctx.handlers.get("agent/session-start")?.[0];
-  handler?.({
+/**
+ * 走一轮"会话开始 + 首轮 pre-step", 返回两边各自发出的消息。
+ *
+ * 为什么观察点从 session-start 挪到 pre-step (2026-09): 记忆**只有 pre-step 一个注入点** ——
+ * 用户实测"别注入2次, 就只能注入一次", 而此前会话开始发指引、预步发条目, 一次会话里就是两块。
+ * 会话开始现在只登记待发指引, 因此"设置是否生效"的唯一可观察信号是首轮 pre-step 发出的那个块。
+ * `fromSessionStart` 用来钉住"会话开始不得注入"这条新契约 (它不再调用 agent.inject)。
+ */
+async function firstTurn(
+  ctx: FakeCtx,
+  header: Record<string, unknown> = { cwd: "/code/api" },
+): Promise<{ injected: string[]; fromSessionStart: string[] }> {
+  const fromSessionStart: string[] = [];
+  const session = { id: "s1", header };
+  ctx.handlers.get("agent/session-start")?.[0]?.({
     agent: {
       ctx,
-      session: { id: "s1", header: { cwd: "/code/api" } },
-      inject: (m: unknown) => injected.push(JSON.stringify(m)),
+      session,
+      inject: (m: unknown) => fromSessionStart.push(JSON.stringify(m)),
     },
   });
-  return { injected };
-}
-
-/** 用给定 header 触发 session-start (用于 subagent 过滤断言)。 */
-function startSessionWith(ctx: FakeCtx, header: Record<string, unknown>): { injected: string[] } {
-  const injected: string[] = [];
-  const handler = ctx.handlers.get("agent/session-start")?.[0];
-  handler?.({
-    agent: {
-      ctx,
-      session: { id: "s1", header },
-      inject: (m: unknown) => injected.push(JSON.stringify(m)),
-    },
-  });
-  return { injected };
+  const claim = { role: "user", content: [{ type: "text", text: "继续" }] };
+  const decision = (await ctx.handlers.get("agent/pre-step")?.[0]?.(
+    { agent: { session }, messages: [claim], step: 1 },
+    async () => ({ kind: "enter", messages: [claim] }),
+  )) as { kind: string; messages?: unknown[] } | undefined;
+  const injected = (decision?.messages ?? [])
+    .map((m) => JSON.stringify(m))
+    .filter((t) => t.includes("hx-memory"));
+  return { injected, fromSessionStart };
 }
 
 describe("DSH settings 接入", () => {
@@ -121,23 +126,26 @@ describe("DSH settings 接入", () => {
     expect(typeof installed.setSource).toBe("function");
   });
 
-  it("接住 setSource 后, 设置改动会改变插件行为", () => {
+  it("接住 setSource 后, 设置改动会改变插件行为", async () => {
     root = mkdtempSync(join(tmpdir(), "hxmem-settings-"));
     const installed: Installed = {};
     const ctx = makeCtx(installed);
     apply(ctx as never, { root });
 
-    // 默认: 注入指引
-    expect(startSession(ctx).injected.length).toBe(1);
+    // 默认: 会话开始**不注入**任何消息, 首轮 pre-step 发一个块 (库里没有条目 → 块内只有指引)。
+    const on = await firstTurn(ctx);
+    expect(on.fromSessionStart.length).toBe(0);
+    expect(on.injected.length).toBe(1);
+    expect(on.injected[0]).toContain("memory_search");
 
-    // 宿主说 injectGuidance=false → 不再注入
+    // 宿主说 injectGuidance=false → 没有条目也没有指引, 这一轮什么都不发
     let current: HxMemorySettings = { ...DEFAULT_SETTINGS, injectGuidance: false };
     installed.setSource?.(() => current);
-    expect(startSession(ctx).injected.length).toBe(0);
+    expect((await firstTurn(ctx)).injected.length).toBe(0);
 
     // 再打开 → 又注入 (证明每次读取都走 thunk, 而不是一次性快照)
     current = { ...DEFAULT_SETTINGS, injectGuidance: true };
-    expect(startSession(ctx).injected.length).toBe(1);
+    expect((await firstTurn(ctx)).injected.length).toBe(1);
   });
 
   it("lifecycle disposer 返回 thenable 并被 await (卸载时冲刷缓冲)", async () => {
@@ -191,22 +199,24 @@ describe("DSH settings 接入", () => {
     store.close();
   });
 
-  it("subagent 会话不注入指引 (rootAgentsOnly 默认 true)", () => {
+  it("subagent 会话不注入指引 (rootAgentsOnly 默认 true)", async () => {
     root = mkdtempSync(join(tmpdir(), "hxmem-settings-"));
     const ctx = makeCtx({});
     apply(ctx as never, { root });
-    expect(startSessionWith(ctx, { cwd: "/code/api", origin: "subagent" }).injected.length).toBe(0);
-    expect(startSessionWith(ctx, { cwd: "/code/api" }).injected.length).toBe(1);
+    expect((await firstTurn(ctx, { cwd: "/code/api", origin: "subagent" })).injected.length).toBe(0);
+    expect((await firstTurn(ctx, { cwd: "/code/api" })).injected.length).toBe(1);
   });
 
-  it("rootAgentsOnly=false 时 subagent 也注入", () => {
+  it("rootAgentsOnly=false 时 subagent 也注入", async () => {
     root = mkdtempSync(join(tmpdir(), "hxmem-settings-"));
     const ctx = makeCtx({});
     apply(ctx as never, { root, settings: { rootAgentsOnly: false } });
-    expect(startSessionWith(ctx, { cwd: "/code/api", origin: "subagent" }).injected.length).toBe(1);
+    expect(
+      (await firstTurn(ctx, { cwd: "/code/api", origin: "subagent" })).injected.length,
+    ).toBe(1);
   });
 
-  it("宿主只有 register (0.1.1) 时走回退路径并采纳 scope.get()", () => {
+  it("宿主只有 register (0.1.1) 时走回退路径并采纳 scope.get()", async () => {
     root = mkdtempSync(join(tmpdir(), "hxmem-settings-"));
     let baseSeen: unknown;
     let current: HxMemorySettings = { ...DEFAULT_SETTINGS, injectGuidance: false };
@@ -225,9 +235,9 @@ describe("DSH settings 接入", () => {
 
     // base 是组合配置; 读取走 scope.get()
     expect((baseSeen as HxMemorySettings).injectGuidance).toBe(true);
-    expect(startSession(ctx).injected.length).toBe(0); // 宿主说 false
+    expect((await firstTurn(ctx)).injected.length).toBe(0); // 宿主说 false
     current = { ...DEFAULT_SETTINGS, injectGuidance: true };
-    expect(startSession(ctx).injected.length).toBe(1); // 实时读取, 不是快照
+    expect((await firstTurn(ctx)).injected.length).toBe(1); // 实时读取, 不是快照
   });
 
   it("injectBindings 独立控制 pre-step 注入 (与指引开关解耦)", async () => {

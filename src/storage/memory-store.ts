@@ -11,12 +11,10 @@
 //   - 无重建概念 (它自己就是真相)。
 //
 // 治理铁律与文件实现完全一致: 未确认的 rule 一律拒绝入库 (换引擎不等于换规则)。
-import { randomUUID } from "node:crypto";
+// (randomUUID 已不需要: id 生成走 entry-normalize.ts 的 entryId(); §704)
 import type {
   MemoryEntry,
   MemoryEntryInput,
-  MemoryKind,
-  MemoryScope,
   Query,
   Relation,
   RelationType,
@@ -27,18 +25,13 @@ import type {
   RetrievalSource,
   SyncMemoryStore,
 } from "../kernel/ports.ts";
+// 可见性口径的**唯一实现** (§695): 本文件此前手写 "shadow" 比较, 与其它读路径分叉。
+import { isLiveEntry } from "../kernel/visibility.ts";
+// ⚠ 入库边界的**权威实现** (§704): 本文件此前手写了一份校验副本, 与 FileBackend 行为不一致。
+import { entryId, normalizeEntry } from "./entry-normalize.ts";
 
-const KINDS: readonly MemoryKind[] = [
-  "fact",
-  "preference",
-  "event",
-  "decision",
-  "lesson",
-  "rule",
-  "pattern",
-  "context",
-];
-const SCOPES: readonly MemoryScope[] = ["project", "agent", "global"];
+// (KINDS/SCOPES 已不需要: 校验走 entry-normalize.ts 的 normalizeEntry(); §704)
+// (SCOPES 同上)
 const RELATION_TYPES: readonly RelationType[] = [
   "relates",
   "supersedes",
@@ -52,11 +45,7 @@ const RELATION_TYPES: readonly RelationType[] = [
   "instanceOf",
   "derivedFrom",
 ];
-const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-
-function isIso(value: string): boolean {
-  return ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
-}
+// (isIso/ISO_PATTERN 已不需要: 时间戳校验走 normalizeEntry(); §704)
 
 function clone(entry: MemoryEntry): MemoryEntry {
   return structuredClone(entry);
@@ -75,39 +64,39 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
   }
 
   add(input: MemoryEntryInput): MemoryEntry {
-    if (!KINDS.includes(input.kind)) throw new Error("invalid kind: " + JSON.stringify(input.kind));
-    const scope: MemoryScope = input.scope ?? "agent";
-    if (!SCOPES.includes(scope)) throw new Error("invalid scope: " + JSON.stringify(scope));
-    const validAt = input.ts?.validAt ?? this.now();
-    const assertedAt = input.ts?.assertedAt ?? this.now();
-    if (!isIso(validAt)) throw new Error("invalid validAt: " + JSON.stringify(validAt));
-    if (!isIso(assertedAt)) throw new Error("invalid assertedAt: " + JSON.stringify(assertedAt));
-    const entry: MemoryEntry = {
-      id: input.id ?? "m" + randomUUID().replace(/-/g, "").slice(0, 16),
-      kind: input.kind,
-      content: input.content,
-      source: input.source,
-      scope,
-      ts: { validAt, assertedAt },
-      status: input.status ?? "active",
-      ...(input.project ? { project: input.project } : {}),
-      ...(input.confirmedBy ? { confirmedBy: input.confirmedBy } : {}),
-      ...(input.confirmedAt ? { confirmedAt: input.confirmedAt } : {}),
-      ...(input.tags?.length ? { tags: [...input.tags] } : {}),
-      ...(input.structured ? { structured: structuredClone(input.structured) } : {}),
-      ...(input.relations?.length ? { relations: validateRelations(input.relations) } : {}),
-      ...(input.entities?.length ? { entities: [...input.entities] } : {}),
-      ...(input.importance === undefined ? {} : { importance: input.importance }),
-      ...(input.confidence === undefined ? {} : { confidence: input.confidence }),
-      ...(input.reinforcement === undefined ? {} : { reinforcement: input.reinforcement }),
-      ...(input.lastHitAt ? { lastHitAt: input.lastHitAt } : {}),
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-      ...(input.derivedFrom?.length ? { derivedFrom: [...input.derivedFrom] } : {}),
-      ...(input.mergedFrom?.length ? { mergedFrom: [...input.mergedFrom] } : {}),
-      ...(input.feedback ? { feedback: { ...input.feedback } } : {}),
-    };
+    // ⚠ **改用 normalizeEntry** (§704): 此前这里**手写了 5 条校验** (kind/scope/两个时间戳 + 默认值),
+    // 而权威实现在 `entry-normalize.ts` 的 `normalizeEntry` (FileBackend 走的就是它)。
+    // 实测两引擎对同一批非法输入**行为不一致**:
+    //   · 非法 `status` ⇒ FileBackend 拒绝 / **本引擎接受** (而"无法识别的状态"会被
+    //     `isLiveEntry` 当成"活着" ⇒ **既无效也过滤不掉**);
+    //   · 非法 `id` ⇒ FileBackend 拒绝 / **本引擎接受**;
+    //   · 且手写版**缺归一** (CRLF→LF、单行字段、tags 类型过滤) ⇒ 两引擎存下来的数据不同形状。
+    // 现在两条路共用同一个入库边界 —— "换引擎不等于换规则"。
+    const entry = normalizeEntry({
+      ...input,
+      id: input.id ?? entryId(),
+      scope: input.scope ?? "agent",
+      ts: {
+        validAt: input.ts?.validAt ?? this.now(),
+        assertedAt: input.ts?.assertedAt ?? this.now(),
+      },
+    }) as MemoryEntry;
+    // MemoryStore 是内存实现: structured 要深拷贝一份, 免得调用方后续改动穿透进来。
+    if (entry.structured) entry.structured = structuredClone(entry.structured);
+
     if (entry.kind === "rule" && !(entry.confirmedBy && entry.confirmedAt)) {
       throw new Error("rule entries must carry a confirmation record (confirmedBy/confirmedAt)");
+    }
+    // ⚠ **空内容闸门** (§701 实测: 此前 `store.add({content: ""})` 被接受, 而它**会进 always-on** ——
+    // 一个空条目占保底预算、注入一块空白)。
+    //
+    // 而它是**第三道**防线, 不是唯一一道 —— 上游已有两道:
+    //   · `memory_save` 工具: `if (!content) return "Error: content cannot be empty."`;
+    //   · `facade.remember`: `if (!content) throw new Error("remember: content is required")`.
+    // 真库实测 **0 条空内容** ⇒ 上游足够。但在**存储层**补它是"不变量该在最低层成立"——
+    // 与上面那条 rule 闸门同一个理由: 换引擎/新调用点**绕不过**。
+    if (!entry.content.trim()) {
+      throw new Error("entry content must not be empty");
     }
     this.entries.set(entry.id, entry);
     return clone(entry);
@@ -122,7 +111,8 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     const limit = q.limit ?? 50;
     const out: MemoryEntry[] = [];
     for (const entry of this.entries.values()) {
-      if (!q.includeShadow && entry.status === "shadow") continue;
+      // ⚠ 用 isLiveEntry (§695): 此前只挡 shadow ⇒ merged/expired 会被 query 返回。
+      if (!q.includeShadow && !isLiveEntry(entry)) continue;
       if (q.kind && entry.kind !== q.kind) continue;
       if (q.scope && entry.scope !== q.scope) continue;
       if (q.project && entry.project !== q.project) continue;
@@ -143,14 +133,32 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     return this.query({ limit: Number.MAX_SAFE_INTEGER });
   }
 
+  /** 关系遍历: 源与邻居都必须存活 (与 FileBackend/IndexReader 同口径; 见 index-reader 的说明)。 */
   traverse(fromId: string, relationType: string): MemoryEntry[] {
+    // ⚠ 两端都判 isLiveEntry (§695): 注释说着"与 FileBackend/IndexReader 同口径",
+    // 而这里只挡了 shadow ⇒ merged/expired 的源与邻居都会被带出来。
     const from = this.entries.get(fromId);
-    if (!from) return [];
+    if (!from || !isLiveEntry(from)) return [];
     const out: MemoryEntry[] = [];
     for (const relation of from.relations ?? []) {
       if (relation.type !== relationType) continue;
       const target = this.entries.get(relation.toId);
-      if (target && target.status !== "shadow") out.push(clone(target));
+      if (target && isLiveEntry(target)) out.push(clone(target));
+    }
+    return out;
+  }
+
+  /** 反向遍历 (入边): 找出所有指向 toId 的存活条目。见 IndexReader.traverseIncoming。 */
+  traverseIncoming(toId: string, relationType: string): MemoryEntry[] {
+    // ⚠ 两端都判 isLiveEntry (§695, 与 traverse 对称): 此前只挡 shadow。
+    const dst = this.entries.get(toId);
+    if (!dst || !isLiveEntry(dst)) return [];
+    const out: MemoryEntry[] = [];
+    for (const entry of this.entries.values()) {
+      if (!isLiveEntry(entry)) continue;
+      if ((entry.relations ?? []).some((r) => r.toId === toId && r.type === relationType)) {
+        out.push(clone(entry));
+      }
     }
     return out;
   }
@@ -185,8 +193,9 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     if (!needle) return [];
     const scored: Array<{ entry: MemoryEntry; score: number }> = [];
     for (const entry of this.entries.values()) {
-      if (entry.status === "shadow" || entry.status === "merged" || entry.status === "expired")
-        continue;
+      // ⚠ 用 isLiveEntry 而不是手写三态 (§698): 语义本来就对 (三态齐全), 但那是**第四种写法** ——
+      // 而"新增第四种状态时是否记得改这一处"没有任何机制保证。统一到权威实现。
+      if (!isLiveEntry(entry)) continue;
       const haystack = (entry.content + " " + (entry.structured?.summary ?? "")).toLowerCase();
       let score = 0;
       for (const token of needle.split(/\s+/).filter(Boolean)) {

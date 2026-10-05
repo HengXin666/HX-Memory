@@ -73,6 +73,8 @@ export async function resolveNeighbors(
       .retrieveSync({
         text: draft.content,
         purpose: "recall",
+        // 候选生成: 退回全词表算覆盖率 (读路径的精度门槛会把真实的同义重述挡在门外)。
+        coverageMode: "candidate",
         limit: deps.neighborLimit,
         kinds: [draft.kind],
         expand: { graph: 0 },

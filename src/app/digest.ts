@@ -116,6 +116,7 @@ export function heuristicDigestBuilder(opts: HeuristicDigestOptions = {}): Diges
         decision: 0,
         lesson: 0,
         rule: 0,
+        doc: 0,
         pattern: 0,
         context: 0,
       };

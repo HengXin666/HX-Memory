@@ -139,10 +139,47 @@ export interface FacadeOptions {
   /** 摘要构建器 (可选): 默认确定性启发式; 宿主有模型时可换成 LLM 润色版。 */
   digestBuilder?: DigestBuilder;
   /**
+   * episode 原文源 (可选): 提供给"证据链"下钻用。
+   *
+   * 为什么是可选的: 真相层里有 episode 日志 (ADR-018), 但 facade 此前完全不持有它 ——
+   * 于是 `derivedFrom` 里存了 id 却没有任何路径能换回原文, 产品层"可溯源"不可执行。
+   * 缺省时 evidenceChain 返回 traceable:false 并说明原因 (能力可降级, 但不假装成功)。
+   */
+  evidence?: EvidenceSource;
+  /**
    * 推广服务 (可选): 唯一用途是"坏评超标的记忆"产出人审提议。
    * 缺省时标注照常落盘, 只是不产生提议 (治理能力可降级, 数据不丢)。
    */
   generalizer?: GeneralizerBridge;
+}
+
+/**
+ * 证据源的**最小契约**: 只依赖"按 id 批量取原文"这一个方法。
+ *
+ * 为什么不直接依赖 EpisodeStore: 证据链只需要这一跳, 而 facade 不应该因此硬依赖
+ * 存储实现 (换引擎/换宿主时不该改业务代码)。`EpisodeStore` 天然满足它。
+ */
+export interface EvidenceSource {
+  byIds(ids: readonly string[]): Awaitable<Array<{ id: string; role: string; text: string; at: string; turn: number; session: string }>>;
+}
+
+/** 一条记忆的完整证据链 (结论 → 出处 → 原话)。 */
+export interface EvidenceChain {
+  entryId: string;
+  /** 该结论当前的正文 (真相源要回答的是"现在什么成立")。 */
+  content: string;
+  /** 来源字段 (session / 文件 / URL)。 */
+  source: string;
+  /** derivedFrom 里的 episode id。 */
+  episodeIds: string[];
+  /** 取回的原始对话轮次 (按时间升序; 找不到的 id 缺席)。 */
+  episodes: Array<{ id: string; role: string; text: string; at: string; turn: number }>;
+  /**
+   * 是否**完整**可溯源: 有 derivedFrom 且全部 id 都取到了原文。
+   * 为 false 时 reasons 说明缺在哪 (历史数据没记血缘 / 原文被保留期清理 / 未接证据源)。
+   */
+  traceable: boolean;
+  reasons: string[];
 }
 
 /** 只依赖 Facade 需要的那一个方法 (避免 app 层硬依赖 generalize 的实现细节)。 */

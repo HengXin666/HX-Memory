@@ -65,6 +65,11 @@ kernel 不该有第二份。传空 = 明确地"没有项目上下文", 行为可
 "没传 project"从"尽量给"变成"明确不给" —— 调用点漏传会表现为"没有项目记忆"
 (更响的失败, 而不是静默泄漏)。
 
+**后续 (2026-09-27)**: 同一条保底通道上又发现一个 **scope 判据短路 kind 白名单**的缺陷 ——
+`scope === "project"` 分支的提前 `return` 让 kind 白名单对所有项目内条目失效 (实测混进 348 条 lesson)。
+本篇的"项目隔离"决策未被推翻, 但 scope 判据的**写法**被重构为与 kind 判据正交, 见
+[保底通道的 kind 白名单被 lineage 绕过](2026-09-27-alwayson-kind-whitelist-and-determinism.md)。
+
 ## Verification
 
 - `tests/s2/trigger-cache-project.test.ts`: 先热 api 再热 web, 两边各拿到自己那份;

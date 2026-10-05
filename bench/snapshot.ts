@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openMemoryStack } from "../src/app/stack.ts";
 import { LexicalEmbedder } from "../src/retrieval/embedding-lexical.ts";
+// 词集口径走 kernel/cjk 的权威实现 —— 分层判据不在这里另写一份分词 (§608)。
+import { tokenSet } from "../src/kernel/cjk.ts";
 import type { Corpus } from "./lib/corpus.ts";
 
 const HERE = import.meta.dirname;
@@ -76,8 +78,53 @@ function measure(corpus: Corpus, cases: CaseFile): Record<string, number> {
       });
     }
     let r1 = 0, r10 = 0, h10 = 0, n = 0;
+    /** 分层计数: 碎片探针 (f*) 与自然提问 (n*)。见下面的说明。 */
+    let fr1 = 0, fr10 = 0, fn = 0, nr1 = 0, nr10 = 0, nn = 0;
+    /**
+     * **第二个分层维度: 词面可解 vs 需语义**。
+     *
+     * 为什么需要它 (2026-09-18, §608 —— 补 `docs/eval-audit.md` 待办 2):
+     * 那个维度**当时做过实验** (该文档 §7 的分层归因: 词面可解层召回 0.486 / 需语义层 **0.100**),
+     * 但那是**一次性脚本** (`.tmp/bench/layer-attrib.ts`, 不入版本库) —— 于是它**不进任何常规报告**,
+     * 后续改动会不会伤到"需语义层"**无人盯**。
+     *
+     * 判据: 查询与**任一 gold 条目**的正文有共同词 ⇒ 词面可解; 一条都没有 ⇒ 需语义。
+     * (用 `tokenSet` 的权威口径, 不在这里另写分词。)
+     *
+     * ⚠ **必须叠 `fragment` 维度** (§611 实测): 直接按"有无共同词"分时, "需语义"那
+     * 36 条里 **34 条是代码碎片** (形如 `ng_model_id),` / `nManager` —— 后者是
+     * `SessionManager` 被截断, 于是它与 gold 没有**完整词**交集)。
+     * 只看自然提问 (426 条): **词面可解 424 / 需语义 2**。
+     * **⇒ "需语义"这一层在自然提问上几乎不存在 (0.5%)** —— 不加 fragment 维度会把
+     * "碎片没有共同词"误读成"语义层表现差"。
+     */
+    const goldText = new Map<string, string>();
+    /** "需语义"层的**最小可信样本量** —— 低于它就不报 (见下面的说明)。 */
+    const MIN_LITERAL_UNSOLVABLE_N = 20;
+    for (const e of corpus.entries) goldText.set(e.id, e.content);
+    let sr1 = 0, sr10 = 0, sn = 0, mr1 = 0, mr10 = 0, mn = 0;
+    // 弃权: 库外问题 (expect 为空) 必须返回**空**, 而不是"最像的 10 条"。
+    //
+    // 为什么必须进快照 (2026-09-17 实测): 这个指标此前**完全没被测量** —— 上面的循环
+    // 用 `if (!c.expect.length) continue` 把弃权 case 直接跳过了, 于是"检索器永远能返回
+    // 10 条"这件事没有任何数字盯着。实测修复前 5 条弃权 case **全部返回 10 条** (0/5),
+    // 而工具描述里写着"没返回东西说明确实没有记录" —— 那句话在旧实现下永远不成立。
+    // 弃权不是"召回率的一个角落", 它是"模型能不能知道自己不知道"的开关。
+    let abstained = 0, abstentionN = 0;
     for (const c of cases.cases) {
-      if (!c.expect.length) continue;
+      if (!c.expect.length) {
+        // ⚠ 失效样本不计入 (2026-09-18, §424): 见 Case.exclude 的说明 ——
+        // 库增长后某些"库外主题"变成了库内主题, 那种样本"不弃权"才是**正确**的。
+        // 旧版照样把它们算进弃权率 ⇒ 指标被系统性低估。
+        if (c.exclude) continue;
+        abstentionN++;
+        const res = stack.retriever.retrieveSync({
+          text: c.query, limit: K, tokenBudget: 1_000_000, purpose: "recall",
+          ...(embedder ? {} : { channels: { vector: { enabled: false } } }),
+        });
+        if (!res.hits.length) abstained++;
+        continue;
+      }
       const gold = new Set(c.expect);
       const res = stack.retriever.retrieveSync({
         text: c.query, limit: K, tokenBudget: 1_000_000, purpose: "recall",
@@ -88,10 +135,52 @@ function measure(corpus: Corpus, cases: CaseFile): Record<string, number> {
       r10 += recallAt(ids, gold, K);
       if (ids.slice(0, K).some((x) => gold.has(x))) h10++;
       n++;
+      // ⚠ 分层: **代码碎片探针**与**自然提问**必须分开报 (2026-09-18, §448)。
+      //
+      // 为什么: 实测 872 条正样本里 **448 条 (51%)** 的 query 是从条目里截取的代码碎片
+      // (形如 `ng_model_id),`)。它们对"字面探针"这个用途有效, 但**不代表真实负载** ——
+      // 实测碎片上 R@10 = 0.8951 而非碎片上 = **0.9693**, 总体指标被拉低 6 个百分点。
+      // 只看总体会把"真实提问上的表现"**系统性低估**。
+      if (c.fragment) { fr1 += recallAt(ids, gold, 1); fr10 += recallAt(ids, gold, K); fn++; }
+      else { nr1 += recallAt(ids, gold, 1); nr10 += recallAt(ids, gold, K); nn++; }
+      // 第二个分层维度: 词面可解 vs 需语义 —— **只对自然提问统计** (§611)。
+      // 碎片必须排除: 它们是**被截断的代码片段**, 与 gold 天然没有完整词交集, 而那不代表"需语义"。
+      const qTokens = tokenSet(c.query);
+      let literalSolvable = false;
+      for (const gid of c.expect) {
+        const body = goldText.get(gid);
+        if (body === undefined) continue;
+        for (const t of tokenSet(body)) {
+          if (qTokens.has(t)) { literalSolvable = true; break; }
+        }
+        if (literalSolvable) break;
+      }
+      const a1 = recallAt(ids, gold, 1);
+      const a10 = recallAt(ids, gold, K);
+      if (!c.fragment) {
+        if (literalSolvable) { sr1 += a1; sr10 += a10; sn++; }
+        else { mr1 += a1; mr10 += a10; mn++; }
+      }
     }
     out[label + " R@1"] = Number((r1 / n).toFixed(4));
     out[label + " R@10"] = Number((r10 / n).toFixed(4));
+    // 分层读数 (碎片 / 自然提问) —— 那才是"真实负载"的读数
+    if (fn) out[label + " [碎片] R@10"] = Number((fr10 / fn).toFixed(4));
+    if (nn) out[label + " [自然提问] R@1"] = Number((nr1 / nn).toFixed(4));
+    if (nn) out[label + " [自然提问] R@10"] = Number((nr10 / nn).toFixed(4));
+    // 第二个分层维度 (词面可解 / 需语义) —— 见上面 goldText 的说明。
+    if (sn) out[label + " [词面可解] R@1"] = Number((sr1 / sn).toFixed(4));
+    // ⚠ 只报**样本量够**的层: 实测自然提问里"需语义"只有 **2 条** (§611) ——
+    // 那个 R@1 会恒为 0 而**没有统计意义** (n=2 上"0/2"与"1/2"的差别全是噪声)。
+    // 报一个 n=2 的指标进 CI 快照 = 给未来留一个"动一下它就红"的假警报。
+    // 而层本身**不是不存在** —— 它有 2 条, 那两句查询确实与 gold 无任何共同词。
+    // 只是**样本量不足以支撑一个被 CI 守住的数字**。
+    if (mn >= MIN_LITERAL_UNSOLVABLE_N) {
+      out[label + " [需语义] R@1"] = Number((mr1 / mn).toFixed(4));
+      out[label + " [需语义] R@10"] = Number((mr10 / mn).toFixed(4));
+    }
     out[label + " H@10"] = Number((h10 / n).toFixed(4));
+    out[label + " 弃权率"] = abstentionN ? Number((abstained / abstentionN).toFixed(4)) : 0;
     stack.close();
     rmSync(root, { recursive: true, force: true });
   }

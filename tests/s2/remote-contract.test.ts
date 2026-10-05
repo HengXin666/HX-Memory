@@ -132,9 +132,13 @@ describe("真实 gateway: 宿主能发现的就是声明的那 19 个", () => {
 
 describe("装配根真的接上了这道校验", () => {
   // 少了这一步, 上面就只是"库函数测试", 挡不住"接线漏了"。
-  const source = readFileSync(resolve(repoRoot, "src/adapters/dsh/index.ts"), "utf8");
+  //
+  // ⚠ 探测点从 index.ts 迁到 gateway-mount.ts (2026-09-20, §795): 装配块因 index.ts 触及
+  // 400 行上限被抽成独立模块, **判据不变** —— 仍然是"装配 gateway 之后必须调用校验"。
+  // (若只在 index.ts 里搜, 抽出之后这个测试会**假红**, 而它想守的东西并没有坏。)
+  const source = readFileSync(resolve(repoRoot, "src/adapters/dsh/gateway-mount.ts"), "utf8");
 
-  it("index.ts 在装配 gateway 后调用 assertRemoteContract(remoteContract(gateway, HXMEM_REMOTE_METHODS))", () => {
+  it("装配处在构造 gateway 后调用 assertRemoteContract(remoteContract(gateway, HXMEM_REMOTE_METHODS))", () => {
     expect(source).toMatch(
       /assertRemoteContract\(\s*remoteContract\(\s*gateway\s*,\s*HXMEM_REMOTE_METHODS\s*\)\s*\)/,
     );

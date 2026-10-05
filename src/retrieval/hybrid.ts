@@ -10,10 +10,16 @@
 //   - 全部为纯逻辑 + 窄端口, S1 可用假 source 测。
 import type { MemoryEntry } from "../kernel/types.ts";
 import { searchableText, termStreams } from "../kernel/cjk.ts";
-import { coverage, gatherChannels, queryTerms } from "./channels.ts";
+import { gatherChannels, queryTerms } from "./channels.ts";
+import { qualifiesCandidate, shouldAbstain, ABSTAIN_REASON } from "./gate.ts";
+import { isLiveEntry, resolveCurrentEntry } from "./lifecycle.ts";
+import { negotiateCapabilities } from "./capabilities.ts";
 import { compositeScore, rrfFuse } from "../kernel/ranking.ts";
+import { projectEntryVisible } from "../kernel/project-lineage.ts"; // 项目可见性偏序 (与 selectAlwaysOn 同源)
 import { assembleHits } from "./assemble.ts";
 import {
+  DEFAULT_COVERAGE_FLOOR,
+  DEFAULT_RRF_K,
   DEFAULT_ENTITY_MAX_IDS,
   DEFAULT_ENTITY_MIN_SHARED,
   DEFAULT_ENTITY_MODE,
@@ -73,15 +79,6 @@ export interface HybridRetrieverOptions {
   entityQuota?: number;
 }
 
-const DEFAULT_CAPS: RetrievalCapabilities = {
-  engine: "unknown",
-  fullText: true,
-  cjk: true,
-  semantic: false,
-  graph: "relations",
-  multiProcess: false,
-};
-
 /** 关系类型的默认图扩展权重 (越"强关联"的边权重越高)。 */
 /**
  * 默认检索器。同步实现 (SQLite 类引擎足够快), 因此同时满足 Retriever 与 SyncRetriever ——
@@ -110,7 +107,7 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     this.source = source;
     this.channelLimit = opts.channelLimit ?? 30;
     this.channelWeights = opts.channelWeights ?? {};
-    this.coverageFloor = opts.coverageFloor ?? 0.5;
+    this.coverageFloor = opts.coverageFloor ?? DEFAULT_COVERAGE_FLOOR;
     this.graphHops = opts.graphHops ?? 1;
     this.graphTierQuota = Math.max(0, opts.graphTierQuota ?? 3);
     // 实体通道: 默认来自实测标定 (见 Agent Note 的对照表); 显式配置可覆盖。
@@ -120,17 +117,12 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       mode: opts.entityMode ?? DEFAULT_ENTITY_MODE,
     };
     this.entityQuota = Math.max(0, opts.entityQuota ?? DEFAULT_ENTITY_QUOTA);
-    this.rrfK = opts.rrfK ?? 60;
+    this.rrfK = opts.rrfK ?? DEFAULT_RRF_K;
     this.mmrLambda = opts.mmrLambda ?? 0.7;
     this.now = opts.now ?? (() => new Date().toISOString());
     this.vectorIndex = opts.vectorIndex;
-    // 能力来源优先级: 显式配置 > 引擎自述 > 保守默认 (宁可少宣称能力, 也不要谎报)。
-    // 有向量索引时才宣称 semantic —— 能力自述必须与真实行为一致 (conformance 会断言)。
-    const declared = opts.capabilities ?? source.capabilities?.() ?? DEFAULT_CAPS;
-    this.caps =
-      opts.vectorIndex && !opts.capabilities
-        ? { ...declared, semantic: true, engine: declared.engine + "+vec" }
-        : declared;
+    // 能力协商: 优先级与"宁可少宣称也不要谎报"的理由见 retrieval/capabilities.ts。
+    this.caps = negotiateCapabilities(opts, source);
   }
 
   capabilities(): RetrievalCapabilities {
@@ -192,7 +184,13 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     if (!this.caps.fullText) degraded.push("fullText:like-fallback (无 BM25 排序)");
 
     const text = req.text ?? "";
-    const terms = queryTerms(text);
+    // 候选生成路径 (写入期近邻查找) 要召回, 读路径要精度 —— 见 ports.ts 的 coverageMode。
+    const terms = queryTerms(text, { keepFunctionWords: req.coverageMode === "candidate" });
+    // 资格门槛 (qualifies) 用**全词表**: 它的职责是"别把可能相关的候选挡在门外", 召回优先。
+    // 精度由收尾的弃权闸门负责 (见下方 abstain) —— 两者职责不同, 不能共用一份词表:
+    // 实测用剔虚词后的词表当门槛, 会让"上线前做回归测试 / 部署前跑全量回归校验"这对
+    // 真实同义重述只剩一个共享词, 近邻查找直接找不到对方 (语义去重静默失效)。
+    const gateTerms = req.coverageMode === "candidate" ? terms : queryTerms(text, { keepFunctionWords: true });
     // recall = 显式搜索/面板浏览/意图召回: 规则保底通道默认关闭 (要的是"最相关")。
     // 显式传 channels.rules.enabled 仍可覆盖 —— 目的是改默认, 不是禁掉该通道。
     const recall = req.purpose === "recall";
@@ -240,13 +238,11 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     const inScope = (e: MemoryEntry): boolean => {
       if (at && e.ts.validAt > at) return false;
       if (req.kinds?.length && !req.kinds.includes(e.kind)) return false;
-      if (
-        req.scope?.project !== undefined &&
-        e.project !== undefined &&
-        e.project !== req.scope.project &&
-        e.scope === "project"
-      )
+      // 可见性判据抽在 kernel/project-lineage (与 selectAlwaysOn/绑定同源), 含"agent 侧要求范围"
+      // 的缺省差异 (scopeRequired) —— 判据只有一处, 不在检索主流程里另写一遍。
+      if (e.scope === "project" && !projectEntryVisible(e.project, req.scope, { required: req.scopeRequired })) {
         return false;
+      }
       if (req.scope?.global === false && e.scope === "global") return false;
       return true;
     };
@@ -258,15 +254,9 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     const confirmedRule = (e: MemoryEntry): boolean =>
       e.kind !== "rule" || Boolean(e.confirmedBy && e.confirmedAt);
     const keep = (e: MemoryEntry): boolean => visible(e) && inScope(e) && confirmedRule(e);
-    /** 候选资格: 词数门槛 + 覆盖率门槛 (规则通道豁免)。 */
-    const qualifies = (e: MemoryEntry): boolean => {
-      if (!terms.terms.length) return true;
-      const text = textOf(e);
-      const cov = coverage(text, terms.weighted.length ? terms.weighted : terms.terms);
-      const matched = terms.weighted.filter((t) => text.toLowerCase().includes(t)).length;
-      if (cov >= this.coverageFloor) return true;
-      return matched >= 2 && cov >= 0.15;
-    };
+    // 候选资格: 判据抽在 retrieval/gate.ts (与弃权闸门成对演进, 两者职责相反)。
+    const qualifies = (e: MemoryEntry): boolean =>
+      qualifiesCandidate(textOf(e), gateTerms.weighted, gateTerms.terms, this.coverageFloor);
 
     const hops = req.expand?.graph ?? this.graphHops;
     const reasons = new Map<string, string[]>();
@@ -284,6 +274,10 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
           searchText: (t, l) => this.source.searchText(t, l),
           get: (id) => this.source.get(id),
           traverse: (id, t) => this.source.traverse(id, t),
+          // 反向遍历是**可选能力**: SyncSource 可能没有 (内存 store 与索引后端都有, 但端口不强制)。
+          ...(this.source.traverseIncoming
+            ? { traverseIncoming: (id: string, t: string) => this.source.traverseIncoming!(id, t) }
+            : {}),
           // 可选能力: 引擎没有实体倒排时该通道自然不出现 (capabilities 会如实说明)。
           ...(this.source.byEntities
             ? {
@@ -350,6 +344,24 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       whyOf: (id) => (reasons.get(id) ?? ["graph"]).join(", "),
     });
     result.degraded = degraded;
+    // ---- 弃权闸门: "库里确实没有"必须能被说出来 ----
+    // 判据的**唯一权威说明**在 retrieval/gate.ts (shouldAbstain 的头注): 那里写了三条并列判据
+    // (字面支持 / 语义支持 / rules 通道不参与判定) 以及它们各自的实测由来。
+    // 此处刻意不再复述判据 —— 同一套判据在两处描述必然分叉 (本项目已踩过: 索引与查询
+    // 各写一份分词口径, 静默失配)。
+    // 只在此声明**调用点**的约束: 仅在读路径生效, 候选生成 (写入期近邻查找) 要召回, 不能弃权。
+    // 弃权判定用 **gateTerms** (与候选资格闸门同一份词表), 不用 terms (剔虚词后的窄表)。
+    //
+    // 为什么必须同表 (2026-09-18 实测): 候选资格闸门用全词表放行候选, 而弃权闸门此前用窄表判定 ——
+    // 窄表里长查询的实词会被剔除 (实测 "账号/换号" 被分词器切成单字 "账/号/换", 单字又被当虚词滤掉),
+    // 于是闸门只剩 "莫名其妙/是不是" 两个词可判, 把**正确的召回** (库里明写 "永不自动换号")
+    // 判成"支持不足"并清空。基准 17/166 条被这样误杀, R@1 掉 5 个点。
+    // 两处口径分叉是本项目反复强调的教训 (索引与查询必须共用同一分词函数), 这里同理。
+    if (req.coverageMode !== "candidate" && gateTerms.weighted.length && shouldAbstain(result.hits, gateTerms.weighted)) {
+      result.degraded = [...degraded, ABSTAIN_REASON];
+      result.hits = [];
+      result.tokens = 0;
+    }
     return result;
   }
 
@@ -372,28 +384,16 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     this.vectorIndex.upsert(candidates.map((e) => ({ id: e.id, content: e.content })));
   }
 
-  /** 可见性+范围判定 (抽出来给"无全量投影"的降级路径复用)。 */
+  /** 可见性判定 (抽出来给"无全量投影"的降级路径复用); 判据见 retrieval/lifecycle.ts。 */
   private keepEntry(entry: MemoryEntry): boolean {
-    const status = entry.status ?? "active";
-    if (status === "shadow" || status === "merged" || status === "expired") return false;
-    return true;
+    return isLiveEntry(entry);
   }
 
   /**
    * 命中演化链上的旧版本时, 返回链上最新的 active 版本 (注入最新, 历史仍可查)。
-   * 无链/链尾仍是非 active → 返回原条目 (由 visible() 决定去留)。
+   * 实现抽到 retrieval/lifecycle.ts (纯函数: 只依赖一个 traverse 回调, 因此可单独测)。
    */
   private resolveCurrent(entry: MemoryEntry): MemoryEntry | null {
-    if ((entry.status ?? "active") === "active") return entry;
-    if (entry.status === "shadow" || entry.status === "expired") return null;
-    let current = entry;
-    for (let hop = 0; hop < 10; hop++) {
-      const next = this.source.traverse(current.id, "supersededBy")[0];
-      if (!next) break;
-      current = next;
-    }
-    const status = current.status ?? "active";
-    if (status === "shadow" || status === "expired") return null;
-    return current;
+    return resolveCurrentEntry(entry, (id, type) => this.source.traverse(id, type));
   }
 }

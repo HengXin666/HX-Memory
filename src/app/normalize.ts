@@ -18,7 +18,7 @@ import type { MemoryEntry, MemoryEntryInput, Query } from "../kernel/types.ts";
 import { FORMAT_VERSION, normalizeEntry } from "../storage/entry-normalize.ts";
 import { blockFormat, frontmatterHeadOf } from "../storage/frontmatter.ts";
 import { readFileParts } from "../storage/markdown-codec.ts";
-import { walkMd } from "../storage/markdown-parse.ts";
+import { sweepAtomicTemps, walkMd } from "../storage/markdown-parse.ts";
 
 /** 规范化需要的存储面 (窄端口: 适配层只依赖这四项)。 */
 export interface NormalizerStore {
@@ -65,6 +65,13 @@ export interface NormalizeReport {
   dryRun: boolean;
   toFormat: number;
   changes: NormalizeChange[];
+  /**
+   * 顺手清扫的**原子写孤儿临时文件**数量 (见 storage/markdown-parse 的 sweepAtomicTemps)。
+   *
+   * dryRun 时它是"待清扫数", 真跑时是"已清扫数" —— 两者共用一个字段,
+   * 因为它们的判据相同 (只差一个 delete 开关), 分开会让报告与行为有分叉。
+   */
+  sweptTemps: number;
 }
 
 /** 参与"形态"比较的字段 (顺序固定, 便于稳定输出与测试)。 */
@@ -150,6 +157,12 @@ export class MemoryNormalizer {
    */
   run(opts: NormalizeOptions = {}): NormalizeReport {
     const dryRun = opts.dryRun ?? false;
+    // 顺手清扫原子写留下的孤儿临时文件 (见 sweepAtomicTemps 的说明)。
+    //
+    // **dryRun 时必须跳过** —— 这个整理入口的语义是"先看清单, 再决定是否落盘",
+    // 而删除是不可逆的。dryRun 下只**报告**有多少待清扫, 不动它们。
+    // dryRun 传 `false` 给 sweep 的"真删"参数 ⇒ 只统计不删除, 与真删共用同一判据。
+    const temps = sweepAtomicTemps(this.root, { delete: !dryRun }).length;
     // 含 shadow: 撤回的条目也要保持形态一致 (否则迁移后会留下两代格式)。
     const entries = this.store.query({ includeShadow: true, limit: Number.MAX_SAFE_INTEGER });
     const disk = this.diskFormats(opts.dirs);
@@ -163,6 +176,7 @@ export class MemoryNormalizer {
       dryRun,
       toFormat: FORMAT_VERSION,
       changes: [],
+      sweptTemps: temps,
     };
 
     for (const entry of entries) {

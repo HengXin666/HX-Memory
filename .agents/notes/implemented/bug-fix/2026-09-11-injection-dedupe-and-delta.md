@@ -22,11 +22,15 @@ Status: implemented
 
 注入行带**稳定 id 标记**, 判重与注入都以"条目 id 集合"为准:
 
-- `kernel/injection-format.ts`: 注入行形如 `- 内容 <!--hx-memory:id=id-->`。
+- `kernel/injection-format.ts`: 注入行形如 `- [kind] 内容 <!--hx-memory:id=id-->`。
   标记做成行尾注释 —— 人读是可忽略的注记, 代码解析是稳定接口。
   修正 (2026-09-15): 行首的 `[id] ` 句柄已删除 (实测几乎从未被模型使用, 却占注入块 19% 字符),
   行尾标记不变 —— 判重仍以"条目 id 集合"为准。见
   [注入行去掉行首 id 句柄](../simplification/2026-09-15-drop-injected-id-handle.md)。
+  修正 (2026-09-27): 行首改为 **kind 标记** `[rule]` / `[decision]` 等 —— 与上面那个 `[id]` 不同性质:
+  它给模型的是"这条例子的效力等级"(框架句承诺"标记为 rule 的是已确认跨项目约束"), 不是给机器的句柄。
+  判重不受影响 (仍只认行尾标记)。见
+  [保底通道的 kind 白名单与确定性排序](2026-09-27-alwayson-kind-whitelist-and-determinism.md)。
 - `Binder.injectFor(project, text, injectedIds)` 增加第三个参数: 本会话**已注入过的条目 id**,
   由调用方 (pre-step) 从会话日志解析后传入。召回结果减去已注入集合 = 本轮该给的东西。
 - 召回结果按 **always-on 组 / 新召回组** 切分 (`splitTriggerGroups`): 前者是常驻不变量,

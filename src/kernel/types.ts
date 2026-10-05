@@ -2,7 +2,23 @@
 // harness (DSH/Codex) or storage driver. Violations are architecture bugs.
 
 export type MemoryKind =
-  "fact" | "preference" | "event" | "decision" | "lesson" | "rule" | "pattern" | "context";
+  | "fact"
+  | "preference"
+  | "event"
+  | "decision"
+  | "lesson"
+  | "rule"
+  | "pattern"
+  | "context"
+  /**
+   * **本地知识库条目** (2026-09-20, §795): 从外部 Markdown 文档 (如 `ai-docs/`) 按小节切出来的切片。
+   *
+   * 为什么不复用 `fact`: 保底注入通道 (`always-on`) 的兜底分支会放行**任何** `fact`
+   * —— 于是知识库切片会**冒充"跨项目关键事实"**混进常驻注入 (实测: 一条 34715 字的文档
+   * 被预算闸门挡住, 但比预算小的会**挤占保底通道**)。语义上也该分开:
+   * 知识库是**可查的参考**, 不是"每条对话都该看见的不变量"。
+   */
+  | "doc";
 
 export type MemoryStatus =
   | "active"

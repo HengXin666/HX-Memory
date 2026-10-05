@@ -115,6 +115,18 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
     },
   },
   {
+    name: "memory_evidence",
+    description:
+      "Trace a memory back to the untouched user/assistant turns that produced it. " +
+      "Returns raw conversation text (never a summary); if the lineage is missing it says so explicitly " +
+      "instead of returning an empty success.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Memory id (from search results)." } },
+      required: ["id"],
+    },
+  },
+  {
     name: "memory_forget",
     description:
       "Retract a memory (persistent shadow: hidden from search, kept in the truth files for audit). Never a physical delete.",
@@ -292,6 +304,25 @@ export async function callTool(
           .map((e) => `[${e.ts.validAt}] [${e.status ?? "active"}] ${e.id}: ${e.content}`)
           .join("\n"),
       );
+    }
+    case "memory_evidence": {
+      const id = str(args.id);
+      if (!id) return textResult("Error: id is required.", true);
+      const chain = await facade.evidenceChain(id);
+      if (!chain) return textResult("No memory entry with id " + id);
+      const out = [
+        "[entry " + chain.entryId + "] " + chain.content,
+        "source: " + chain.source,
+        "traceable: " + (chain.traceable ? "yes" : "no"),
+      ];
+      for (const r of chain.reasons) out.push("reason: " + r);
+      if (chain.episodes.length) {
+        out.push("--- raw turns (untouched) ---");
+        for (const e of chain.episodes) {
+          out.push("[" + e.role + " turn=" + e.turn + " " + e.at + "] " + e.text);
+        }
+      }
+      return textResult(out.join("\n"));
     }
     case "memory_forget": {
       const id = str(args.id);

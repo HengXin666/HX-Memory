@@ -11,6 +11,7 @@ import { TriggerPolicy, type TriggerDecision } from "../trigger/policy.ts";
 import { formatEntryLine } from "./injection-format.ts";
 import { estimateTokens } from "./ranking.ts";
 import type { RetrievalRequest, RetrievalWarmup, SyncMemoryStore, SyncRetriever } from "./ports.ts";
+import { normalizeScopeArg, type ProjectScopeArg } from "./project-lineage.ts";
 
 /** 每个绑定: 查询条件 + 权重 + 条数预算 + 可选信号词门控。 */
 export interface MemoryBinding {
@@ -83,7 +84,8 @@ export function resolveBinding(
  */
 export function formatBoundEntries(heading: string, entries: MemoryEntry[]): string {
   if (!entries.length) return "";
-  return "【" + heading + "】\n" + entries.map((e) => formatEntryLine(e.id, e.content)).join("\n");
+  // 传 kind: 框架句承诺"标记为 rule 的是已确认跨项目约束", 不带标记则那句话指代不到对象 (理由见 injection-format 头注)。
+  return "【" + heading + "】\n" + entries.map((e) => formatEntryLine(e.id, e.content, e.kind)).join("\n");
 }
 
 /** always-on 组 (常驻不变量) 与新召回组 (按本轮相关性) 的切分。 */
@@ -145,12 +147,13 @@ export interface TriggerSource {
   /**
    * always-on 条目的 id (只用于判定"有没有", 空数组 = 无保底内容)。
    *
-   * 必须带 project: always-on 里有**项目内**的事实/决策, 不区分项目就会把 A 项目的私有记忆
-   * 注入给 B 项目 (实测泄漏)。"不知道是哪个项目"时传空串 —— 那时只该给跨项目规则。
+   * 必须带工作区范围: 不区分项目就会把 A 项目的私有记忆注入给 B 项目 (实测泄漏)。
+   * 字符串 = 单值等价 (老调用点); 对象 = 带祖先链 (子仓库也能看到父工程, 见 kernel/project-lineage)。
+   * "不知道是哪个工作区"时传 undefined —— 那时只该给跨项目规则。
    */
-  alwaysOn(project: string): readonly string[];
+  alwaysOn(scope?: ProjectScopeArg): readonly string[];
   /** 按触发决策召回条目 (实现方决定用哪些通道/预算)。 */
-  recallFor(text: string, decision: TriggerDecision, project: string): MemoryEntry[];
+  recallFor(text: string, decision: TriggerDecision, scope?: ProjectScopeArg): MemoryEntry[];
   /** 当前时间 (ISO)。 */
   now(): string;
   /**
@@ -165,7 +168,7 @@ export interface TriggerSource {
    * prestep 会在注入前先 `binder.warm()` —— 这是"第一轮就有 always-on 保底"的关键,
    * 否则首轮会因为没有缓存而完全无记忆 (而那正是最需要保底的时刻)。
    */
-  warm?(project?: string): Promise<void>;
+  warm?(scope?: ProjectScopeArg): Promise<void>;
 }
 
 export class Binder {
@@ -210,25 +213,37 @@ export class Binder {
     this.triggerPolicy = triggerPolicy ?? new TriggerPolicy();
   }
 
-  /** 取某项目声明的绑定 (无则空)。 */
-  bindingsFor(project: string): MemoryBinding[] {
-    const cfg = this.configs().find((c) => c.project === project);
-    return cfg ? cfg.bindings : [];
+  /**
+   * 取某工作区声明的绑定 (无则空)。匹配用**祖先链**: 此前严格相等, 于是配在父工程上的绑定
+   * 在子仓库里完全不生效, 而用户看不出哪里错了 (面板照常显示已保存)。现在祖先链命中即生效,
+   * 越具体越优先 (就近覆盖)。
+   */
+  bindingsFor(scope?: ProjectScopeArg): MemoryBinding[] {
+    const s = normalizeScopeArg(scope);
+    if (!s) return [];
+    const lineage = s.lineage?.length ? s.lineage : s.project ? [s.project] : [];
+    const configs = this.configs();
+    // 先找精确匹配 (最具体), 再逐级向上找祖先声明的绑定 —— 越具体越优先, 与"就近覆盖"一致。
+    for (const name of lineage) {
+      const cfg = configs.find((c) => c.project === name);
+      if (cfg) return cfg.bindings;
+    }
+    return [];
   }
 
   /**
    * 注入前热身 (可选): 异步嵌入器的向量投影需要在后台补齐才有语义召回。
    * 带硬时限, 永不阻塞 —— 没补齐就降级 (结果里会说明), 补多少算多少。
    */
-  async warm(deadlineMs = 50, query?: string, project?: string): Promise<void> {
+  async warm(deadlineMs = 50, query?: string, scope?: ProjectScopeArg): Promise<void> {
     // 两条都要热: ①向量投影 (异步嵌入器); ②always-on 缓存 (存储查询是异步的)。
     const warmups: Promise<unknown>[] = [];
     const retriever = this.retriever as Partial<RetrievalWarmup> | undefined;
     if (retriever && typeof retriever.warm === "function") {
       warmups.push(retriever.warm(deadlineMs, query));
     }
-    // project 必须透传: 否则热的是"不属于本项目"的那份缓存, 而查的是本项目那份 (永远缓存不中)。
-    if (this.triggerSource?.warm) warmups.push(this.triggerSource.warm(project));
+    // 范围必须透传: 否则热的是"不属于本工作区"的那份缓存, 而查的是本工作区那份 (永远缓存不中)。
+    if (this.triggerSource?.warm) warmups.push(this.triggerSource.warm(scope));
     if (!warmups.length) return;
     // 硬时限: 超时不报错 (宁可首轮没有 always-on, 也不能阻塞对话)。
     let timer: NodeJS.Timeout | undefined;
@@ -256,9 +271,9 @@ export class Binder {
    *   只会让同一条记忆出现 N 次并烧掉预算。因此"这一轮该给什么"= 召回结果 − 已注入集合。
    *   传 undefined/空数组 = 不启用差量 (会话开始那次注入就是这样, 它要建立基线)。
    */
-  injectFor(project: string, text: string, injectedIds?: readonly string[]): string {
+  injectFor(scope: ProjectScopeArg | undefined, text: string, injectedIds?: readonly string[]): string {
     const excluded = new Set(injectedIds ?? []);
-    const bindings = this.bindingsFor(project);
+    const bindings = this.bindingsFor(scope);
     const blocks: string[] = [];
     const sentIds = new Set<string>();
     const selectedIds = new Set<string>();
@@ -288,7 +303,7 @@ export class Binder {
       return text2;
     }
     // 通用通道 (无绑定时的兜底): 由触发策略决定是否注入, 逻辑见 trigger/policy.ts。
-    return this.injectWithTrigger(project, text, excluded);
+    return this.injectWithTrigger(scope, text, excluded);
   }
 
   /** 最近一次注入实际发出的条目 id (空 = 本轮没有可注入的内容)。 */
@@ -303,7 +318,7 @@ export class Binder {
 
   /** 通用触发通道 (无项目绑定时的保底): 用注入回调拿 always-on 与意图召回的条目。 */
   private injectWithTrigger(
-    project: string,
+    scope: ProjectScopeArg | undefined,
     text: string,
     excluded: ReadonlySet<string>,
   ): string {
@@ -312,7 +327,7 @@ export class Binder {
       this.lastChannel = "none";
       return "";
     }
-    const alwaysOnIds = this.triggerSource.alwaysOn(project);
+    const alwaysOnIds = this.triggerSource.alwaysOn(scope);
     const hasAlwaysOn = alwaysOnIds.length > 0;
     const decision = this.triggerPolicy.decide({
       text,
@@ -333,7 +348,7 @@ export class Binder {
     // 注意: always-on 与意图召回是**两条独立通道**, 不是二选一 ——
     // always-on 给"不变量", 意图召回给"这件事的具体历史"; 只给前者会让用户问"上次怎么解决的"
     // 时拿不到那条 lesson (真实踩过)。recallFor 的实现方负责合并两者并按预算去重。
-    const entries = this.triggerSource.recallFor(text, decision, project);
+    const entries = this.triggerSource.recallFor(text, decision, scope);
     if (!entries.length) return "";
     // 差量注入: 常驻组只该在会话开始时进一次, 之后只补"本会话还没出现过"的条目。
     const groups = splitTriggerGroups(entries, alwaysOnIds);

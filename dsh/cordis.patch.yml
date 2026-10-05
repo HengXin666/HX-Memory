@@ -1,9 +1,30 @@
+# HX-Memory —— 挂载到 profile 的补丁层 (宿主 0.1.7 适配版)。
+#
+# ## 为什么 runtime 条目的 id 必须**正好**是 `hx-memory` (2026-09-29 实测)
+#
+# 0.1.7 把设置命名空间从"插件自己注册的名字"改成了 **profile 条目的 entry id**:
+# `SettingsForms.describe()` 遍历 `configEditor.entries()` (顶层 profile 条目),
+# 对每个条目产出 `{ ns: entry.options.id, schema: entry.fiber.runtime.Config, ... }`;
+# `settings.update(ns, ...)` 也是拿 ns 去 `.find(row => row.options.id === ns)`。
+#
+# 于是 `src/adapters/dsh/settings.ts` 里的 `MEMORY_SETTINGS_NAMESPACE = "hx-memory"` 不再
+# 决定任何东西 —— 它只是"我们期望的 ns"。真正生效的是这里的 `id`。叫 `hx-memory-runtime`
+# 时插件一切正常 (RPC/注入/工具全在), 只有设置面整块消失: 面板上找不到这个命名空间,
+# 客户端那张「记忆注入」卡 (它 bind 的是 `hx-memory`) 也永远等不到数据 —— 静默无报错。
+#
+# 另外两条硬约束:
+#   - **不能和组条目的 id 重名**: `configEditor.entries()` 会丢掉出现次数 ≠ 1 的 id
+#     (两条同名 → 两条一起消失)。所以组条目改名 `hx-memory-group`。
+#   - 改回 `hx-memory` 还顺手修好一件事: 旧 `settings.yaml` 里遗留的 `hx-memory:` 段
+#     (用户之前存的 `injectMode: first`) 迁移时就是因为"找不到该 id 的条目"而被留在
+#     `settings.yaml.imported` 里没导进来。
 - insert:
-    - id: hx-memory
+    - id: hx-memory-group
       name: "@deepseek-ai/cordis-plugin-group"
       group: true
       config:
-        - id: hx-memory-runtime
+        # 顺序有意义: runtime 先起 (服务/工具/注入), client 后挂 (面板读服务)。
+        - id: hx-memory
           name: "@hengxin666/hx-memory/dsh"
         - id: hx-memory-client
           name: "@hengxin666/hx-memory"

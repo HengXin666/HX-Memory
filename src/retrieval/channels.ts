@@ -18,6 +18,7 @@ import type {
 } from "../kernel/ports.ts";
 import type { MemoryEntry, RelationType } from "../kernel/types.ts";
 import { termStreams } from "../kernel/cjk.ts";
+import { discriminativeTerms } from "../kernel/function-words.ts";
 import { entityKeysOf } from "../kernel/entity.ts";
 import { voiceVariants } from "../kernel/voice.ts";
 import type { RankedList } from "../kernel/ranking.ts";
@@ -40,11 +41,24 @@ export const GRAPH_EDGE_WEIGHT: Partial<Record<RelationType, number>> = {
 export interface QueryTerms {
   /** 去重后的查询词 (词流 + bigram 流)。 */
   terms: string[];
-  /** 用于覆盖率计算的重词 (优先词流; 无词流时用 bigram)。 */
+  /**
+   * 用于覆盖率计算的重词 (优先词流; 无词流时用 bigram), **已剔除虚词与单字碎片**。
+   *
+   * 为什么必须剔除 (2026-09-17 实测, 本机真实库 109 条): 覆盖率的分母是查询词总数,
+   * 而"的/用/写/一个"这类词在任何条目里都出现 —— 它们命中不构成"相关"的证据, 却和
+   * "rust"/"clash" 一样占满一格。实测一条完全无关的 HX-Sagasu 工作日志在
+   * "如何用 Rust 写一个 WebSocket 服务器" 上得到 cov=0.63 (命中 用/写/一个/服务)。
+   * 后果是**弃权永不发生**: 任何查询都能找到"高覆盖"条目, 模型拿到 10 条噪声却以为是证据。
+   * 判据与理由见 kernel/function-words.ts (封闭类词表, 不是话题词表)。
+   */
   weighted: string[];
 }
 
-export function queryTerms(text: string): QueryTerms {
+/**
+ * @param opts.keepFunctionWords 覆盖率词表是否保留虚词与单字碎片。
+ *   默认 false (读路径要精度); 写入期的近邻候选生成传 true (要召回, 见 ports.ts 的 coverageMode)。
+ */
+export function queryTerms(text: string, opts: { keepFunctionWords?: boolean } = {}): QueryTerms {
   // 语音容错: 原形与归一形**都**进检索词 —— 记忆里存的可能是错写, 也可能是规范写法,
   // 只取一边就会漏召回 (实测语料里有 "绘话"/"密等" 这类词)。
   const all: string[] = [];
@@ -62,7 +76,12 @@ export function queryTerms(text: string): QueryTerms {
     all.push(t);
   }
   // 词流是"真正的词", 覆盖率以它为主; 没有词流 (纯 CJK 被切碎) 时退回 bigram。
-  const weighted = words.length ? words : all;
+  const base = words.length ? words : all;
+  // 虚词与单字碎片不参与覆盖率 (见 QueryTerms.weighted 的说明)。
+  // 过滤后为空时必须**退回原词表**: 单字查询 ("卡") 过滤后为空, 而"没有区分度的词"
+  // 与"没有词"是两件事 —— 前者仍应参与匹配, 后者才该短路。
+  const discriminative = opts.keepFunctionWords ? base : discriminativeTerms(base);
+  const weighted = discriminative.length ? discriminative : base;
   return { terms: all.slice(0, 64), weighted: weighted.slice(0, 32) };
 }
 
@@ -81,6 +100,13 @@ export interface ChannelDeps {
     searchText: (text: string, limit: number) => MemoryEntry[];
     get: (id: string) => MemoryEntry | null;
     traverse: (fromId: string, type: string) => MemoryEntry[];
+    /**
+     * 反向遍历 (入边) —— 可选能力。见 IndexReader.traverseIncoming 的说明。
+     *
+     * 为什么是可选: 引擎没有关系索引时该能力自然缺失, 而图的**出边**扩展仍然可用 ——
+     * 两者是独立能力, 不该因为缺一个就全关。
+     */
+    traverseIncoming?: (toId: string, type: string) => MemoryEntry[];
     /** 实体反查 (可选: 引擎没有实体倒排时该通道直接不出现)。 */
     byEntities?: (keys: readonly string[], limit?: number) => MemoryEntry[];
   };
@@ -222,7 +248,20 @@ export function gatherChannels(
     for (const seedId of seeds) {
       let perSeed = 0;
       for (const type of edges) {
-        for (const neighbor of deps.source.traverse(seedId, type)) {
+        // 出边 + **入边** (2026-09-18 加)。
+        //
+        // 为什么需要入边 (实测): 语义边只有「抽象 → 实例」一个方向, 而**用户的提问方向是反的**
+        // ("这个具体的坑, 对应哪条通用规则?")。离线模拟: 4 条从实例细节提问、gold 是短抽象的
+        // 用例上, 只走出边命中 **0/4**; 加入边后 **3/4**。
+        //
+        // ⚠ 必须仍走**第二梯队**: 见下方 "图扩展进第二梯队" 的长注释 ——
+        // 图候选按同权重参与主榜竞争时, 全体 R@1 会从 0.684 掉到 0.630 (已有实测)。
+        // 反向边同样是"结构相关但字面不相关"的候选, 适用同一分层理由。
+        const neighborhood = [
+          ...deps.source.traverse(seedId, type),
+          ...(deps.source.traverseIncoming?.(seedId, type) ?? []),
+        ];
+        for (const neighbor of neighborhood) {
           if (!deps.keep(neighbor) || perSeed >= perSeedCap) continue;
           deps.remember(neighbor);
           if (!graphIds.includes(neighbor.id)) {

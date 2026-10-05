@@ -12,12 +12,16 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Episode, EpisodeInput } from "../kernel/types.ts";
 import type { EpisodeStore as EpisodeStorePort } from "../kernel/ports.ts";
+// 时间戳判据的**唯一实现** (§707): 本文件此前抄了一份逐字相同的副本。
+import { isIso, nowIso } from "./entry-normalize.ts";
 
 export const EPISODES_DIR = "episodes";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+// ⚠ **ISO_PATTERN 与 isIso 已不再在此定义** (§707): 它们与 `entry-normalize.ts` 的**逐字相同**——
+// 而那条判据有两个使用方 (解析与写入), 分叉会让"写进去的能读出来"这个前提失效。
+// 统一用 `entry-normalize.ts` 的导出 (那是唯一实现, 由 verify-structure 的 SINGLETON_FUNCS 守住)。
 
 export interface EpisodeStoreConfig {
   root: string;
@@ -25,13 +29,9 @@ export interface EpisodeStoreConfig {
   retentionDays?: number;
 }
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
+// (nowIso 的唯一实现在 entry-normalize.ts —— 见 §707; 此处不再定义副本。)
 
-function isIso(value: string): boolean {
-  return ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
-}
+// (isIso 已改为从 entry-normalize.ts 导入 —— 见文件头部的说明。)
 
 function episodeId(): string {
   return "ep" + randomUUID().replace(/-/g, "").slice(0, 16);
@@ -99,6 +99,21 @@ export class EpisodeStore implements EpisodeStorePort {
 
   bySession(session: string): Episode[] {
     return this.all().filter((e) => e.session === session);
+  }
+
+  /**
+   * 按 id 批量取原文 (溯源链的最后一跳)。
+   *
+   * 实现说明: 复用 all() 后按 id 过滤 —— 日志按天分文件, 没有全局 id 索引; 而 derivedFrom
+   * 至多几条, 建索引的收益不抵维护风险 (索引必须与真相一致, 而 episode 是追加写、永不改写、
+   * 还会被 retain 清理, 任何索引都要处理跨天追加与 prune)。
+   * 返回顺序按 at 升序 (与对话发生顺序一致), 调用方据此还原"用户问→助手答"的次序。
+   * 缺失的 id 静默缺席 —— 原文可能已被保留期清理, 此时**不能**用其它内容顶替。
+   */
+  byIds(ids: readonly string[]): Episode[] {
+    const want = new Set(ids.filter((x) => typeof x === "string" && x.length > 0));
+    if (!want.size) return [];
+    return this.all().filter((e) => want.has(e.id));
   }
 
   count(): number {

@@ -40,6 +40,12 @@ Status: implemented
 
 同时按 MCP 工具设计的最佳实践改写了指引与 `memory_search` 描述: 明确写出**什么样的提问该去查**(问理由/问上次/问约定/问既有做法), 并说明"查不到就是真的没有, 不要编造"。代码通道给通用保底, 意识引导给精度, 两条并行。
 
+修正 (2026-09-27): always-on 的 kind 边界被重新钉死 —— 判据抽成 **`isAlwaysOnKind`** 并放在 filter 最前
+(此前它是 filter 末尾的一行枚举兜底, 且被 `scope === "project"` 分支的提前 return **整个绕过**,
+实测在真实库混进 348 条 lesson / 50 条 context)。同时排序补上 id tiebreak 以保证**确定性**
+(此前结果依赖输入数组顺序, 两个入口会选出不同集合)。见
+[保底通道的 kind 白名单被 lineage 绕过](2026-09-27-alwayson-kind-whitelist-and-determinism.md)。
+
 ## Alternatives considered
 
 **只靠工具调用 (让模型自觉)。** 市面多数方案的做法 (mem0 SDK、Graphiti、claude-mem、Basic Memory、LangMem、MCP memory server)。实现最省事, 但可靠性交给概率判断 —— 实测对照中旧线 10 轮只有 6 轮命中。保留工具作为"精度增强", 但不作为唯一通道。

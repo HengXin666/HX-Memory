@@ -9,7 +9,7 @@
 //   - 不 close 就每轮漏一个 SQLite 句柄 + 叠加 WAL 争用, 最终 "database is locked";
 //   - close 不幂等就会在反复 dispose 时抛 (node:sqlite 对已关连接会报错)。
 import type { Context } from "@deepseek-ai/cordis";
-import type { FileBackend } from "../../storage/file-store.js";
+import type { MemoryOperations } from "../../kernel/ports.ts";
 
 export interface LifecycleDeps {
   ctx: Context;
@@ -21,8 +21,14 @@ export interface LifecycleDeps {
   loop: { start: () => void; stop: () => void };
   /** 冲刷未落盘的缓冲; 卸载时必须 await (可能含一次最长 15s 的 LLM 调用)。 */
   flushAll: () => Promise<unknown>;
-  /** 存储层句柄。 */
-  store: Pick<FileBackend, "close">;
+  /**
+   * 存储层句柄 —— **只要 `close` 这一项**, 且从**端口** (`MemoryOperations`) 取而不是具体类。
+   *
+   * 为什么 (2026-09-18, §460): 此前写 `Pick<FileBackend, "close">` —— 那是"借具体类要能力",
+   * 会让**换存储引擎必须改适配层**, 违背"换引擎 = 接线"的目标 (见 ports.ts 的 MemoryOperations
+   * 头注与 verify-structure 的端口纯度检查)。端口上已有 `close?(): void`, 所以这是纯收紧。
+   */
+  store: Pick<MemoryOperations, "close">;
   /** store 是插件自己建的才关 —— 注入进来的属于调用方 (谁创建谁关闭)。 */
   ownsStore: boolean;
 }
@@ -54,9 +60,11 @@ export function wireLifecycle(deps: LifecycleDeps): void {
       try {
         await flushAll();
       } finally {
+        // `close` 在端口上是**可选**的 ("不具备的引擎不必假装支持" —— ports.ts 的设计原则),
+        // 所以这里判空。自建的 FileBackend 一定实现它, 但适配层只该依赖端口契约。
         if (ownsStore && !closed) {
           closed = true;
-          store.close();
+          store.close?.();
         }
       }
     };

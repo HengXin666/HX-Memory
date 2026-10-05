@@ -46,6 +46,50 @@ describe("captureTurn: kind inference", () => {
     expect(r.entries).toHaveLength(0);
     expect(r.signal).toContain("no-signal");
   });
+
+  // ---- 祈使式禁令 (2026-09-18 新增) ----
+  // 为什么单独一组: 判据此前只有"以后都要/规则/不变量"这些**名词式**信号, 而真实对话里
+  // 约束更常以**祈使句**给出。实测真库的丢弃样本里 "不要每次都在本桌面启动浏览器!" 这类
+  // 用户直接下达的行为边界全部落进 context 兜底被丢掉 —— 而它们正是下次做同类任务时
+  // 最需要的约束 (丢掉 = 让助手重复犯同一个错)。下列用例取自真实丢弃样本。
+  it("识别祈使式禁令 (不要每次都…)", () => {
+    const r = captureTurn({ ...base, text: "all 不要每次都在本桌面启动浏览器!" });
+    expect(r.entries).toHaveLength(1);
+    expect(r.entries[0]!.kind).toBe("pattern");
+  });
+
+  it("识别句首祈使纠正 (别接入写错了)", () => {
+    const r = captureTurn({ ...base, text: "别接入写错了, 这是另一个项目" });
+    expect(r.entries).toHaveLength(1);
+    expect(r.entries[0]!.kind).toBe("pattern");
+  });
+
+  it("识别标点后的祈使约束 (不要猜端点、字段名)", () => {
+    const r = captureTurn({
+      ...base,
+      text: "动手前先读接入文档, 不要猜端点、字段名或枚举值",
+    });
+    expect(r.entries).toHaveLength(1);
+    expect(r.entries[0]!.kind).toBe("pattern");
+  });
+
+  it("识别约定式统一表述 (统一设为)", () => {
+    const r = captureTurn({ ...base, text: "日志格式统一用 JSON, 方便机器解析" });
+    expect(r.entries).toHaveLength(1);
+  });
+
+  // 反向风险: 放宽判据后不能把普通叙述里的"不要"也当成约束。
+  it("正文里的 '不要' 不算约束 (不引入噪声)", () => {
+    // 描述代码行为, 不是在给助手下约束
+    const r = captureTurn({ ...base, text: "那段测试片段现在不要了, 已经删掉" });
+    expect(r.entries).toHaveLength(0);
+  });
+
+  it("继续/确认类短指令仍不捕获 (不因放宽而捡回噪声)", () => {
+    for (const t of ["next", "继续啊", "yes", "run", "结论说中文"]) {
+      expect(captureTurn({ ...base, text: t }).entries).toHaveLength(0);
+    }
+  });
 });
 
 describe("captureTurn: scoping + dedupe", () => {

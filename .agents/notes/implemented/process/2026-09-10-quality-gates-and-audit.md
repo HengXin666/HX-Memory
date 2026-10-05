@@ -18,7 +18,7 @@ Status: implemented
 ### 1. 审计文档化
 新增 `docs/quality-audit.md`: 用可复核的命令给出拓展性/可维护性结论 + 实测清单 + DSH 约束体系对照 + 建议闸门排序。**结论要能被复核, 不是主观感受**。
 
-### 2. 四道新闸门 (全部挂进 `scripts/verify.sh`)
+### 2. 闸门清单 (`scripts/verify.sh`, 现共 **12 项** —— 见该脚本结尾的"覆盖总结")
 
 - **`pnpm run lint`** (oxlint, 19 条规则): 只开高价值且低噪声的 —— `no-unused-vars` (刚抓到真 bug)、`no-unsafe-optional-chaining`、`no-useless-escape`、`prefer-const`、`no-unreachable` 等。**不照搬 DSH 的全量 type-aware 规则集**: 那需要 tsgolint 与显著的运行成本, 而我们的痛点是具体的几类。
 - **`verify-structure.ts`** 四条约束:
@@ -26,7 +26,16 @@ Status: implemented
    [400 行约束与拆分](2026-09-11-400-line-limit-and-split.md) 收紧并按职责拆完;
   2. 重复率 ≤ 1% (jscpd 机器可读输出; 当前 0.45%);
   3. **端口纯度**: 适配层不得值导入具体存储实现 —— **组装根白名单** (`dsh/index.ts`、`codex/cli.ts`) 是唯一例外 (总得有人 `new FileBackend` 把实现接起来); 白名单之外一律拒绝, 新增组装点必须改脚本 (改动可见, 不会被悄悄绕过);
-  4. **单一事实源**: `tokenSet`/`fnv1a32`/`l2Normalize`/`contentFingerprint`/`termStreams` 各自只允许一处定义, 且必须在指定文件。
+  4. **单一事实源**: `tokenSet`/`fnv1a32`/`l2Normalize`/`contentFingerprint`/`termStreams`/`readFileTags`/`tagProvenance` 各自只允许一处定义, 且必须在指定文件 (后两项的属主在 `scripts/lib/tag-provenance.ts`, 故该检查的扫描面含 `scripts/lib/`)。
+
+**其余闸门** (2026-09-18 补充, 各自解决一类"检查器看不到"的问题):
+
+- **`verify-client-contract`**: 面板渲染的字段必须在**全服务端面**有声明 —— 它守的是**跨层契约**, 因为两侧类型各自声明, tsc 挡不住"客户端读了一个服务端没有的字段"。⚠ 它只查"有没有声明", **不查"值是否恒为空"** (后者归测试)。
+- **`verify-docs`**: 文档里的路径引用必须可达 (实测抓过多次把数据文件写成 markdown 链接)。
+- **`verify-bench-snapshot`**: 报告里的数字必须与当前实现一致 (防"改了行为但报告没改")。
+- **`verify-agent-note-classification` / `format`**: Note 的生命周期结构与文件格式。
+- **`verify-agent-note-coverage`**: "非平凡改动必须带 Note"。⚠ **它的判据是整体判定** (改动里**有任一** Note 即通过), 因此**它不保证"每个改动主题都有 Note"** —— 那是人/agent 的自觉 (§583 实测过空心覆盖)。
+- **`deploy-state.sh`** (**不在 `verify.sh`**, 它是诊断工具): dist 是否最新 + 宿主是否加载了它。⚠ 它**必须同时看服务端与客户端两个产物** —— 只查服务端会让"只跑一半构建"报绿 (§586)。
 
 ### 3. 修掉审计发现的全部问题
 
@@ -51,7 +60,7 @@ Status: implemented
 ## Consequences
 
 四类劣化入口现在都有机械拦截: 死代码/无效选项、重复实现 (尤其分词口径分叉)、端口泄漏、规模失控。
-代价: ①新增一条跨文件共用的工具函数时, 若它属于"全局口径", 必须登记到 `SINGLE_SOURCE` 清单 (否则闸门报"多处定义"); ②组装根白名单意味着新增宿主入口要改一次脚本; ③行数上限的作用是"把该拆了变成会拦人的规则": 它当初在 1400 拦下 `file-store.ts`,
+代价: ①新增一条跨文件共用的工具函数时, 若它属于"全局口径", 必须登记到 `verify-structure.ts` 的 `SINGLETON_FUNCS` 清单 (否则闸门报"多处定义"); ②组装根白名单意味着新增宿主入口要改一次脚本; ③行数上限的作用是"把该拆了变成会拦人的规则": 它当初在 1400 拦下 `file-store.ts`,
 再次收紧到 400 后促成了按职责的拆分 (见 [400 行约束与拆分](2026-09-11-400-line-limit-and-split.md))。
 
 ## Testing

@@ -3,15 +3,26 @@
 // 经 build-client.mjs 打成宿主可加载的包 (模块 id = 包名, 见 scripts/lib/wrap-client-bundle.mjs)。
 import { BindingsPage, type BindingRpc } from "./bindings-page.js";
 import { ReviewPage, type ReviewRpc } from "./review-page.js";
+import { FilesPage, type FilesRpc } from "./files-page.js";
 import { InjectionModeCard } from "./injection-card.js";
 import { CARD_LOCALE_NAMESPACE, registerInjectionCard } from "./register-card.js";
-import { bindingEn, bindingZh, cardEn, cardZh, reviewEn, reviewZh } from "./locale.js";
+import {
+  bindingEn,
+  bindingZh,
+  cardEn,
+  cardZh,
+  filesEn,
+  filesZh,
+  reviewEn,
+  reviewZh,
+} from "./locale.js";
 import { styles } from "./styles.js";
 import type { HxMemoryRpcCaller } from "./rpc.js";
 
 const NS = "hx-memory.review";
 const CARD_NS = CARD_LOCALE_NAMESPACE;
 const BIND_NS = "hx-memory.bindings";
+const FILES_NS = "hx-memory.files";
 
 interface ClientContext {
   /**
@@ -49,6 +60,10 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(
     () => ctx.locale.register(CARD_NS, { en: cardEn, zh: cardZh }),
     "hxMemory.injectionLocale()",
+  );
+  ctx.effect(
+    () => ctx.locale.register(FILES_NS, { en: filesEn, zh: filesZh }),
+    "hxMemory.filesLocale()",
   );
   const t = (key: keyof Dictionary, vars?: Record<string, unknown>) => {
     const raw = ctx.locale.bind(NS)(String(key)) || key;
@@ -102,6 +117,25 @@ export function apply(ctx: ClientContext): void {
       ReviewPage,
     ),
   );
+  // 真相文件视图 (§795): 只读列出 <root>/{daily,digest,rules}/*.md。
+  // order 42 = 排在绑定 (41) 之后: 它是"看现状"的入口, 不是配置项。
+  const tFiles = (key: keyof typeof filesEn, vars?: Record<string, unknown>) => {
+    const raw = ctx.locale.bind(FILES_NS)(String(key)) || String(key);
+    if (!vars) return raw;
+    return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(vars[name] ?? ""));
+  };
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "hx-memory-files",
+        order: 42,
+        label: () => ctx.locale.bind(FILES_NS)("nav"),
+        inject: () => ({ rpc, t: tFiles }),
+      },
+      FilesPage,
+    ),
+  );
 }
 
-export type { ReviewRpc, BindingRpc };
+export type { ReviewRpc, BindingRpc, FilesRpc };

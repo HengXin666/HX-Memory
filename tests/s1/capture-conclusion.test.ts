@@ -28,14 +28,31 @@ describe("isInterrogative: 只判形态", () => {
 });
 
 describe("hasConclusionSignal: 落地/采纳信号", () => {
-  it("识别采纳与确认", () => {
+  // ⚠ 2026-09-18 收紧 (独立盲审指出 + 我方复现): 原用例把"纯确认词"也当作结论信号,
+  // 而实测真库里 content 与某条用户提问完全相等的自动捕获条目有 29 条 (18%) —— 这条过宽
+  // 正是主要来源。下列用例已按新判据更新, 并补上被误判的反例。
+  it("识别采纳 (真实采纳句式)", () => {
     expect(hasConclusionSignal("那就用你这个方案吧, 采用")).toBe(true);
-    expect(hasConclusionSignal("好的")).toBe(true);
+    expect(hasConclusionSignal("决定采用 pnpm 作为包管理器")).toBe(true);
     expect(hasConclusionSignal("就这样")).toBe(true);
   });
-  it("识别落地", () => {
-    expect(hasConclusionSignal("已经修好了")).toBe(true);
-    expect(hasConclusionSignal("跑通了")).toBe(true);
+  it("**纯确认词不再是结论** (无可沉淀内容)", () => {
+    // 实测旧判据下 "好的"/"可以"/"没问题" 单句即落 decision, content 就是这两个字。
+    expect(hasConclusionSignal("好的")).toBe(false);
+    expect(hasConclusionSignal("可以")).toBe(false);
+    expect(hasConclusionSignal("没问题")).toBe(false);
+  });
+  it("需求描述里的 '采用' 不算采纳 (T1 反例)", () => {
+    expect(hasConclusionSignal("刷新请采用局部更新")).toBe(false);
+  });
+  it("落地语需要与实质产出共现 (T2)", () => {
+    // 单独一句 "已经修好了" 与"描述别的东西"同形 → 不算结论
+    expect(hasConclusionSignal("已经修好了")).toBe(false);
+    expect(hasConclusionSignal("跑通了")).toBe(false);
+    // 有实质产出 (含路径/根因) 时才算
+    const rich =
+      "已经修好了: 根因是 gateway.ts:368 的形参名与协议面不一致, 已改为 id。docs/x.md 已同步。".padEnd(320, " 补充。");
+    expect(hasConclusionSignal("已经修好了", rich)).toBe(true);
   });
   it("纯提问没有结论信号", () => {
     expect(hasConclusionSignal("这个要怎么改?")).toBe(false);

@@ -26,27 +26,44 @@ interface Registration {
   component: unknown;
 }
 
-/** 宿主桩: withSettingsScope=false 模拟"没装 ui-settings"。 */
-function makeHost(options: { withSettingsScope?: boolean } = {}) {
+/**
+ * 宿主桩。两代宿主的服务面都提供, 用来验证"按能力探测"的分支:
+ *   - `configForms.get(entryId)` → 0.1.7+ 的表单控制器;
+ *   - `settingsScope.bind({ namespace })` → <= 0.1.6 的作用域。
+ * `withScope=false` 模拟"承载服务的插件还没加载完/根本没有", 此时两者都返回 undefined。
+ */
+function makeHost(options: { withScope?: boolean } = {}) {
   const registrations: Registration[] = [];
   const bound: string[] = [];
+  const requested: string[] = [];
   const scope = {
     getSnapshot: () => ({ status: "ready", value: { injectMode: "every-turn" }, writable: true }),
     subscribe: () => () => {},
     set: async () => {},
     unset: async () => {},
   };
-  let available = options.withSettingsScope !== false;
+  let available = options.withScope !== false;
   const ctx = {
-    get: (name: string) =>
-      name === "settingsScope" && available
-        ? {
-            bind: (spec: { namespace: string }) => {
-              bound.push(spec.namespace);
-              return scope;
-            },
-          }
-        : undefined,
+    get: (name: string) => {
+      if (!available) return undefined;
+      if (name === "configForms") {
+        return {
+          get: (entryId: string) => {
+            requested.push(entryId);
+            return scope;
+          },
+        };
+      }
+      if (name === "settingsScope") {
+        return {
+          bind: (spec: { namespace: string }) => {
+            bound.push(spec.namespace);
+            return scope;
+          },
+        };
+      }
+      return undefined;
+    },
     slots: {
       inject: (_slot: string, register: () => void) => register(),
       register: (spec: Registration, component: unknown) => {
@@ -59,7 +76,8 @@ function makeHost(options: { withSettingsScope?: boolean } = {}) {
     ctx,
     registrations,
     bound,
-    /** 模拟宿主插件后来才加载完成 (apply 时还没有 ui-settings)。 */
+    requested,
+    /** 模拟承载服务的插件后来才加载完成 (apply 时还没有)。 */
     lateMount: () => {
       available = true;
     },
@@ -70,36 +88,63 @@ const component = () => null;
 const t = (key: string) => key;
 
 describe("记忆注入卡接在宿主设置面板上", () => {
-  it("用 settings.plugin.item + key=设置命名空间 认领 (key 错 = 面板里看不到开关)", () => {
-    const { ctx, registrations, bound } = makeHost();
+  it("用 settings.plugin.item + key=设置命名空间 认领 (旧宿主 <= 0.1.6)", () => {
+    const { ctx, registrations, bound, requested } = makeHost();
     registerInjectionCard(ctx as never, { component, t });
     const card = registrations.find((r) => r.name === "settings.plugin.item");
     expect(card, "必须注册 settings.plugin.item 卡片").toBeDefined();
     expect(card!.key).toBe(MEMORY_SETTINGS_NAMESPACE);
     expect(card!.locale).toBe(CARD_LOCALE_NAMESPACE);
     expect(card!.component).toBe(component);
-    // 卡片拿到的是宿主 settingsScope (写权威值), 不是自家 RPC。
+    // 卡片拿到的是宿主配置作用域 (写权威值), 不是自家 RPC。
     const injected = card!.inject?.() as { scope?: unknown; t?: unknown };
     expect(injected.scope).toBeDefined();
     expect(typeof injected.t).toBe("function");
-    expect(bound).toEqual([MEMORY_SETTINGS_NAMESPACE]);
+    // 两代宿主都按**同一个命名空间**取作用域: 0.1.7+ 走 configForms.get(entryId),
+    // 旧宿主走 settingsScope.bind({ namespace }) —— 前者优先, 故这里按能力断言哪个被问到。
+    expect(requested.length > 0 || bound.length > 0, "必须按命名空间取作用域").toBe(true);
+    expect(requested.every((id) => id === MEMORY_SETTINGS_NAMESPACE)).toBe(true);
+    expect(bound.every((ns) => ns === MEMORY_SETTINGS_NAMESPACE)).toBe(true);
   });
 
-  it("注册时 ui-settings 还没加载完 → 仍然注册, 渲染时才解析 (避免卡片静默消失)", () => {
-    // 真实风险: 客户端插件之间没有声明依赖, apply 完全可能与 ui-settings 的加载交错。
-    // 若在 apply 时就要求 scope 存在, 那时拿到 undefined 的插件会**永远**没有卡片 —— 且无报错。
-    const { ctx, registrations, lateMount } = makeHost({ withSettingsScope: false });
+  it("0.1.7+ 走 plugins.bundle.config + key=包名 (旧槽位/new 槽位双注册)", () => {
+    // 实证 (2026-09-29): 0.1.7 里 `settings.plugin.item` 与 `settingsScope` 全仓零命中,
+    // 换成 `plugins.bundle.config` (keyed by 包名) + `configForms.get(entryId)`。
+    // 两条同时注册是刻意的: 哪代宿主的槽位存在, 就在哪里出现一张卡。
+    const { ctx, registrations } = makeHost();
     registerInjectionCard(ctx as never, { component, t });
-    expect(registrations.some((r) => r.name === "settings.plugin.item")).toBe(true);
-    const card = registrations.find((r) => r.name === "settings.plugin.item")!;
-    // 渲染前宿主才就位 → inject 这一刻必须能拿到 scope。
+    const bundleCard = registrations.find((r) => r.name === "plugins.bundle.config");
+    expect(bundleCard, "0.1.7 必须注册 plugins.bundle.config 卡片").toBeDefined();
+    expect(bundleCard!.key).toBe("@hengxin666/hx-memory");
+    expect(bundleCard!.locale).toBe(CARD_LOCALE_NAMESPACE);
+    expect(bundleCard!.component).toBe(component);
+  });
+
+  it("0.1.7+ 的作用域来自 configForms.get(entryId), 与旧 settingsScope 同形", () => {
+    const { ctx } = makeHost();
+    const scope = resolveSettingsScope(ctx as never);
+    expect(scope, "configForms 优先于 settingsScope").toBeDefined();
+    // 卡片只依赖这四个方法 —— 两代作用域在此交集上一致, 所以组件不用分支。
+    for (const m of ["getSnapshot", "subscribe", "set", "unset"]) {
+      expect(typeof (scope as never as Record<string, unknown>)[m], "缺方法: " + m).toBe("function");
+    }
+  });
+
+  it("注册时承载服务的插件还没加载完 → 仍然注册, 渲染时才解析 (避免卡片静默消失)", () => {
+    // 真实风险: 客户端插件之间没有声明依赖, apply 完全可能与承载服务的插件加载交错。
+    // 若在 apply 时就要求 scope 存在, 那时拿到 undefined 的插件会**永远**没有卡片 —— 且无报错。
+    const { ctx, registrations, lateMount } = makeHost({ withScope: false });
+    registerInjectionCard(ctx as never, { component, t });
+    expect(registrations.some((r) => r.name === "plugins.bundle.config")).toBe(true);
+    const card = registrations.find((r) => r.name === "plugins.bundle.config")!;
+    // 渲染前服务才就位 → inject 这一刻必须能拿到 scope。
     lateMount();
     const injected = card.inject?.() as { scope?: unknown };
-    expect(injected.scope, "迟到的 ui-settings 也必须被认到").toBeDefined();
+    expect(injected.scope, "迟到的服务也必须被认到").toBeDefined();
   });
 
-  it("宿主始终没有 ui-settings → scope 解析为 null (卡片不在任何地方被渲染)", () => {
-    const { ctx } = makeHost({ withSettingsScope: false });
+  it("宿主始终没有这两个服务 → scope 解析为 null (卡片不在任何地方被渲染)", () => {
+    const { ctx } = makeHost({ withScope: false });
     expect(resolveSettingsScope(ctx as never)).toBeNull();
   });
 });

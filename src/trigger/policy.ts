@@ -15,7 +15,6 @@
 //      "为什么没注入" 必须和 "注入了什么" 一样可查。
 //
 // 纯函数 + 可注入时钟, 无 IO (S1 可测)。
-import type { MemoryEntry } from "../kernel/types.ts";
 // 词集统一走 kernel/cjk 的权威实现: 此前这里另写了一份"只取 bigram"的版本,
 // 与检索/去重的口径不一致 —— 同一对文本会在"话题漂移"与"去重裁决"里得出不同相似度。
 import { tokenSet } from "../kernel/cjk.ts";
@@ -24,8 +23,6 @@ import { normalizeVoice } from "../kernel/voice.ts";
 // 意图库与判定已拆到 intents.ts (policy.ts 只留决策与预算)。
 // import 进来自己用 + re-export 出去, 对外 API 完全不变 (调用方仍从 policy.ts 取)。
 import { DEFAULT_INTENTS, detectIntent, type TriggerIntent } from "./intents.ts";
-// 占位草稿判据与生成方同源 (generalize/service.ts 用同一个模板产出)。
-import { isHeuristicRulePlaceholder } from "../kernel/rule-shape.ts";
 export { DEFAULT_INTENTS, detectIntent };
 export type { TriggerIntent };
 
@@ -220,79 +217,9 @@ export class TriggerPolicy {
   }
 }
 
-/**
- * always-on 选择的入参。
- *
- * `ruleBudgetRatio` (2026-09): 规则组最多占预算的比例, 其余留给项目事实。
- * 为什么必须分仓: 修复前规则按 (score 100 + importance) 全排在前面, 6 条规则约 300 token
- * 会吃光 400 token 预算 —— 真正随任务变化的"架构决策/项目约定"一条都注入不进来 (实测确认)。
- * 规则是**不变量**, 但不该是**全部**。只在规则与其它两组都有候选时启用上限。
- */
-export interface AlwaysOnOptions {
-  project?: string;
-  budgetTokens?: number;
-  estimate: (text: string) => number;
-  /** 规则组预算占比 (默认 0.6)。传 1 可恢复"规则优先填满"的旧行为。 */
-  ruleBudgetRatio?: number;
-}
-
-/** 从条目里挑 always-on 内容: 已确认规则 + 项目关键事实/偏好 (受预算约束)。 */
-export function selectAlwaysOn(
-  entries: readonly MemoryEntry[],
-  opts: AlwaysOnOptions,
-): MemoryEntry[] {
-  const budget = opts.budgetTokens ?? 400;
-  const ratio = Math.min(1, Math.max(0, opts.ruleBudgetRatio ?? 0.6));
-  const scored = entries
-    .filter((e) => {
-      if ((e.status ?? "active") !== "active") return false;
-      if (e.kind === "rule") {
-        // 机器生成的占位草稿 ("经验: <主题> 相关的 N 条实例已沉淀") 不进常驻通道。
-        // 为什么必须在这里挡: 规则在下面得分为 100 + importance, 永远排在事实/决策之前,
-        // 而占位草稿**不含任何可执行约束** —— 实测 10 条草稿把 400 token 的保底预算吃光,
-        // 真正的架构决策一条都注入不进来 (保底通道因此只剩噪声)。判据见 kernel/rule-shape。
-        if (isHeuristicRulePlaceholder(e.content)) return false;
-        return e.scope === "global" && Boolean(e.confirmedBy && e.confirmedAt);
-      }
-      // 非规则: 项目内关键事实/偏好/决策 (lesson 由意图通道按需召回, 不常驻)。
-      // scope:"agent" 的关键事实/偏好是**跨工作区共享层**: 不属于任何项目, 对每个项目都常驻候选。
-      if (e.scope === "agent") return e.kind === "fact" || e.kind === "preference";
-      // 项目内的条目**必须**匹配当前项目 —— 判据不能挂在 `opts.project &&` 之下:
-      // 调用方没传 project 时 (例如会话还没有工作区) 那个短路会让**所有项目**的
-      // 事实/决策一起通过, 于是别的项目的私有记忆被当成"本项目关键事实"注入 (实测泄漏:
-      // 一次无 project 的调用返回了 HX-Memory/Freebuff 等 8 个项目的条目)。
-      // 不知道是哪个项目时, 正确的答案是"一条项目内条目都不给", 而不是"全都给"。
-      if (e.scope === "project" && e.project !== opts.project) return false;
-      return e.kind === "fact" || e.kind === "preference" || e.kind === "decision";
-    })
-    .map((e) => ({
-      entry: e,
-      // 规则优先级最高 (跨项目不变量), 其次偏好/决策, 最后事实; importance 作为微调。
-      score:
-        (e.kind === "rule" ? 100 : e.kind === "preference" ? 30 : e.kind === "decision" ? 20 : 10) +
-        (e.importance ?? 5),
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  const rules = scored.filter((s) => s.entry.kind === "rule");
-  const others = scored.filter((s) => s.entry.kind !== "rule");
-  // 两组都有候选时才切分预算; 只有一组时用满, 不让分仓变成浪费。
-  const ruleCap = rules.length > 0 && others.length > 0 ? Math.floor(budget * ratio) : budget;
-
-  const out: MemoryEntry[] = [];
-  const taken = new Set<string>();
-  let used = 0;
-  const fill = (group: typeof scored, cap: number): void => {
-    for (const item of group) {
-      if (taken.has(item.entry.id)) continue;
-      const cost = opts.estimate(item.entry.content) + 8;
-      if (used + cost > cap) continue;
-      used += cost;
-      taken.add(item.entry.id);
-      out.push(item.entry);
-    }
-  };
-  fill(rules, ruleCap);
-  fill(others, budget);
-  return out;
-}
+// ---- always-on 选取已拆到 trigger/always-on.ts (职责不同, 见那个文件的头注) ----
+// re-export 出去, 对外 API 不变 (调用方仍从 policy.ts 取)。
+import { selectAlwaysOn, selectAlwaysOnDetailed, isAlwaysOnKind, type AlwaysOnOptions, type AlwaysOnSelection, type BudgetBlocked }
+  from "./always-on.ts";
+export { selectAlwaysOn, selectAlwaysOnDetailed, isAlwaysOnKind };
+export type { AlwaysOnOptions, AlwaysOnSelection, BudgetBlocked };
