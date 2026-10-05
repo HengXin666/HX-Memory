@@ -185,12 +185,15 @@ describe("真实 apply() 下的后台维护接线", () => {
   it("设置 schema 接受新增两个键, 且拒绝负周期 (否则会出现恒不触发的配置)", async () => {
     const { Config } = await import("../../src/adapters/dsh/settings.ts");
     expect(MEMORY_SETTINGS_NAMESPACE).toBeTruthy();
+    // ⚠ 0.1.7 起这两个字段是 **volatile** (面板可改、改完当轮生效), 解析结果是引用对象
+    // `{ get() }` 而不是裸值 —— 宿主 loader 正是靠这个引用做原地更新 (见 settings.ts 顶部)。
+    // 所以断言要读 `.get()`, 直接断言数字会得到 "[object Object]" 而失败。
     const parsed = Config({ maintenanceIntervalHours: 3, maintenanceIdleMinutes: 5 }) as {
-      maintenanceIntervalHours: number;
-      maintenanceIdleMinutes: number;
+      maintenanceIntervalHours: { get(): number };
+      maintenanceIdleMinutes: { get(): number };
     };
-    expect(parsed.maintenanceIntervalHours).toBe(3);
-    expect(parsed.maintenanceIdleMinutes).toBe(5);
+    expect(parsed.maintenanceIntervalHours.get()).toBe(3);
+    expect(parsed.maintenanceIdleMinutes.get()).toBe(5);
     expect(() => Config({ maintenanceIntervalHours: -1 })).toThrow();
   });
 });

@@ -27,6 +27,11 @@ Status: implemented
 - 按 id 操作的能力不删, 只是不再"预支"给每一次注入: `memory_search` 的结果行
   仍带 id (那是模型主动检索后才需要它的场景)。
 
+⚠ **后续演进 (2026-09-29)**: 行尾的 `<!--hx-memory:id=…-->` 标记**也已移出正文**, 改随
+消息 `source.entryIds` 同行 —— 正文里从此没有任何机器注记。judgement 与本次一致 (机器句柄
+不该占上下文), 只是更彻底: 本次省的是行首 180 字符, 那次省的是行尾 88 token。
+见 [注入块瘦身](2026-09-29-injection-payload-slimming.md)。
+
 ## Alternatives considered
 
 **连行尾标记一起删掉 (真正做到"零元数据")。** 会使差量注入失去判据, 退回"整块文本判重",

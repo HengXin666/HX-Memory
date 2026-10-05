@@ -21,10 +21,13 @@ import {
   openSync,
   readFileSync,
   readSync,
+  renameSync,
   rmSync,
   statSync,
   truncateSync,
   writeFileSync,
+  writeSync,
+  fsyncSync,
 } from "node:fs";
 import { dirname } from "node:path";
 import type { MemoryEntry } from "../kernel/types.ts";
@@ -126,6 +129,43 @@ export function readFileParts(file: string, skipped?: string[]): FileParts {
   return { preamble, blocks };
 }
 
+/**
+ * 原子写: 先写同目录的临时文件, `fsync` 落盘后再 `rename` 覆盖目标。
+ *
+ * 为什么需要它 (2026-09-18 实测): 此前 `writeFileParts` 直接 `writeFileSync` **原地覆盖** ——
+ * 若进程在写入中途崩溃/断电, 文件会被**截断到写入进度**, 后面的块全部丢失。
+ *
+ * 与 `appendBlockToFile` 的对比 (风险面不同):
+ *   · `appendBlockToFile` (O(1) 快路径): 崩溃只丢**末尾一个换行**, 不影响解析;
+ *   · `writeFileParts` (整文件重写): 崩溃会**丢整段内容** ← 这才是真风险。
+ *
+ * 为什么必须同目录: `rename` 只在**同一文件系统内**是原子的 —— 跨盘会退化成"复制+删除"。
+ *
+ * 顺带解决跨进程丢更新 (盲审遗留第 2 条): 两个进程各自读-改-写时,
+ * 此前是"后写者覆盖先写者的中间态"; 现在是"最后完成 rename 的胜出",
+ * **不会产生半文件**, 但**仍会丢一方的更新** —— 那是读-改-写的固有问题,
+ * 需要跨进程锁才能根治 (不在本次范围)。
+ */
+function writeFileAtomic(file: string, content: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = file + ".tmp-" + process.pid + "-" + Date.now().toString(36);
+  const fd = openSync(tmp, "w");
+  try {
+    writeSync(fd, content);
+    // fsync 是必要的: 没有它, rename 可能先于数据落盘 —— 断电后会得到一个**空的**目标文件。
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    renameSync(tmp, file);
+  } catch (error) {
+    // rename 失败时清掉临时文件, 避免留下垃圾 (它带 .tmp- 前缀, 不干扰真相文件的读取)。
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
 /** 写回文件结构 (没有块也没有前言 → 删除文件)。 */
 export function writeFileParts(file: string, parts: FileParts): void {
   const segments = [parts.preamble.trimEnd(), parts.blocks.join("\n\n")].filter(
@@ -135,8 +175,7 @@ export function writeFileParts(file: string, parts: FileParts): void {
     if (existsSync(file)) rmSync(file);
     return;
   }
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, segments.join("\n\n") + "\n", "utf8");
+  writeFileAtomic(file, segments.join("\n\n") + "\n");
 }
 
 /**

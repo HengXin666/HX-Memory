@@ -125,14 +125,15 @@ export function extractEntities(text: string, opts: ExtractEntityOptions = {}): 
  * 而真相文件是人的资产、由重建路径重放。把它当 tags 一样"索引里补"意味着换抽取器时
  * 只要重建索引即可, 不需要迁移任何人的文件 —— 见 agent note 里的取舍记录。
  */
-export function entitiesOf(entry: Pick<MemoryEntry, "entities" | "content">): string[] {
+export function entitiesOf(entry: Pick<MemoryEntry, "entities"> & { content?: string }): string[] {
   const explicit = (entry.entities ?? []).map((e) => String(e).trim()).filter(Boolean);
   if (explicit.length) return explicit;
-  return extractEntities(entry.content);
+  // content 可选: 调用方只关心"已知实体"时不必提供正文 (此时等同于 entitiesOf 的空兜底)。
+  return entry.content ? extractEntities(entry.content) : [];
 }
 
 /** 实体键集合 (匹配用; 去重)。 */
-export function entityKeysOf(entry: Pick<MemoryEntry, "entities" | "content">): string[] {
+export function entityKeysOf(entry: Pick<MemoryEntry, "entities"> & { content?: string }): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
   for (const name of entitiesOf(entry)) {

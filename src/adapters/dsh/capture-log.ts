@@ -65,6 +65,17 @@ export interface CaptureRecord {
   episodeMs: number;
   /** 结构化器耗时 (调用方传入的真实 LLM 时间; 启发式兜底约 0)。 */
   enrichMs: number;
+  /**
+   * 本轮的结构化**是否来自"能出结论的实现"** (`TurnStructurer.canConclude`)。
+   *
+   * 为什么记它 (2026-09-18): 只有 `enrichMs` 时,"结构化器的 10 秒时限该不该调"
+   * **无法判定** —— 看得出"调了多久", 看不出"超时回退后沉淀质量是否变差"。
+   * 有了它, `enrichMs` (耗时) + 本字段 (路径) + `outcome` (结果) 三者才能算
+   * "某时限下多少轮被截断、其中多少仍沉淀"。
+   *
+   * 缺省 `undefined` = 本轮**未走 enrich 路径** (例如连条目都没有), 与 `false` 不同。
+   */
+  concludeCapable?: boolean;
   /** 建结构关联边耗时 (要读全库做共现比较)。 */
   linkMs: number;
   /** 存储写入耗时。 */
@@ -221,6 +232,9 @@ export function parseCaptureRecord(line: string): CaptureRecord | null {
       storeMs: num(raw.storeMs),
       totalMs: num(raw.totalMs),
       ...(typeof raw.detail === "string" ? { detail: raw.detail } : {}),
+      // 旧记录没有这个字段 ⇒ 保持 undefined (而不是填 false) ——
+      // "当时没记"与"当时明确走了启发式"是两件事。
+      ...(typeof raw.concludeCapable === "boolean" ? { concludeCapable: raw.concludeCapable } : {}),
     };
   } catch {
     return null;

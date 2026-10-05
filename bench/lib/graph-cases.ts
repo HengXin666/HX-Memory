@@ -50,16 +50,39 @@ function main(): number {
   const cases: Array<Record<string, unknown>> = [];
   const rejected: string[] = [];
 
+  // ⚠ 2026-09-18 修三条硬伤 (见 docs/capture-audit §385 —— 那批 4 条 case 不可用):
+  //   ① **同一个 query 三个不同 expect**: 旧版按 source 取探针, 于是同一 seed 的 5 条边
+  //      产出 5 个**完全相同的 query** 却各带不同 expect。一个查询不可能同时以三条互为竞争
+  //      关系的条目为"标准答案" ⇒ 现在**每个 seed 只取一个探针, 且该 seed 只产一条 case**。
+  //   ② **超出补位配额**: seed 的语义边可达 5 条, 而 graphTierQuota = 3 ⇒ 必然有 2 条拿不到,
+  //      那 2 条会把"没拿到"误记成"图通道失效"。⇒ 每 seed 上限 min(边数, GRAPH_TIER_QUOTA)。
+  //   ③ **n 太小**: 语料本身只有 6 个源带语义边 (共 13 条), 所以上限就是 **10 条** ——
+  //      这是**语料约束, 不是生成器的**。本文件只能做到"不浪费额度", 无法凭空造出样本。
+  //      因此这批 case 的结论**只能当定向信号, 不能当统计依据** (n<10 时 1 条 = 10 个百分点)。
+  //
+  // ⚠⚠ **进一步核实后发现根因不可修 (2026-09-18, §388)**: 那些 seed 的正文只有 **19~41 字**,
+  //   而探针只需 6 字 —— 于是**同一个探针必然同时适用于该 seed 的所有边目标**。
+  //   这不是生成器的缺陷, 是**语料的性质**: 短条目无法为它指向的多个目标提供区分性查询。
+  //   ⇒ 结论: **在当前语料上, "图通道"无法被单独可靠测量**。
+  //      要真正评测它, 前提是**先有长正文的实例条目** (实例长、抽象短, 探针才落在实例上) ——
+  //      而本仓库的语料恰好相反 (抽象规则短, 目标长)。这是一个**语料-指标错配**, 不是 bug。
+  const GRAPH_TIER_QUOTA = 3;
+  const MAX_PER_SEED = Math.min(3, GRAPH_TIER_QUOTA); // 保守取 3: 一条 query 最多对应一条 gold
   for (const source of corpus.entries) {
-    for (const rel of source.relations) {
-      if (!MEANINGFUL.has(rel.type)) continue;
+    const meaningful = source.relations.filter((r) => MEANINGFUL.has(r.type));
+    if (!meaningful.length) continue;
+    // 每 seed **只取一个**探针 (硬伤①的修法)
+    const probe = uniqueProbe(source.content, allText.replace(source.content, ""));
+    if (!probe) { rejected.push(source.id + ": 无唯一探针"); continue; }
+    let used = 0;
+    for (const rel of meaningful) {
+      if (used >= MAX_PER_SEED) break; // 硬伤②的修法
       const target = byId.get(rel.to);
       if (!target) continue;
-      const probe = uniqueProbe(source.content, allText.replace(source.content, ""));
-      if (!probe) { rejected.push(source.id + ": 无唯一探针"); continue; }
       // 关键前置条件: 目标与 query 必须字面不重合, 否则不构成"图专属"case
       const ov = overlap(probe, target.content);
       if (ov > 0.15) { rejected.push(source.id + "→" + target.id + ": 字面重合 " + ov.toFixed(2)); continue; }
+      used++;
       cases.push({
         id: "c-graphonly-" + String(cases.length).padStart(4, "0"),
         type: "graph_only",
@@ -67,7 +90,10 @@ function main(): number {
         expect: [target.id],
         seed: source.id,
         edge: rel.type,
-        note: rel.type + " 边: query 字面只指向 seed, 目标需靠边才能拿到 (重合 " + ov.toFixed(2) + ")",
+        // 同一 seed 的多条 case 共用一个 query ⇒ 它们**互为竞争关系**, 一起判才算公平。
+        sibling: meaningful.length > 1,
+        note: rel.type + " 边: query 字面只指向 seed, 目标需靠边才能拿到 (重合 " + ov.toFixed(2) +
+          (meaningful.length > 1 ? "; 该 seed 共 " + meaningful.length + " 条语义边, 只用前 " + MAX_PER_SEED + " 条" : "") + ")",
       });
     }
   }

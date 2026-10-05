@@ -6,7 +6,7 @@
 // 请求, 无 agent、无工具、无会话事件)。这里采用同一形态。
 import type { Context } from "@deepseek-ai/cordis";
 import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
-import { MEMORY_PLUGIN_SOURCE } from "./guidance.js";
+import { memoryMessageSource } from "./guidance.js";
 
 export interface AgentCallOptions {
   /** 任务描述 (显示/审计用)。 */
@@ -140,7 +140,7 @@ export async function agentSummarize(ctx: Context, opts: AgentCallOptions): Prom
       messages: [
         createUserMessage({
           content: [{ type: "text", text: opts.input }],
-          source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
+          source: memoryMessageSource("instructions"),
         }),
       ],
     });

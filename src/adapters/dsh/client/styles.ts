@@ -9,6 +9,33 @@
 // 无 emoji (仓库约定)。
 
 export const styles = `
+/* 真相文件视图 (§795): 只读浏览 —— 全是读操作, 因此没有按钮主色, 只有层级与可点区域。 */
+.hxmem-files { display: flex; flex-direction: column; gap: var(--hxmem-s2, 8px); }
+.hxmem-files-hint { color: var(--dsw-alias-text-secondary, #666); font-size: 12px; line-height: 1.6; margin: 0; }
+.hxmem-files-bar { display: flex; align-items: center; gap: var(--hxmem-s2, 8px); flex-wrap: wrap; }
+.hxmem-files-bar button {
+  background: transparent; color: inherit; cursor: pointer; font-size: 12px;
+  border: 1px solid var(--dsw-alias-line, #ddd); border-radius: 6px; padding: 2px 10px;
+}
+.hxmem-files-bar button.on { background: var(--dsw-alias-bg-hover, rgba(0,0,0,.06)); font-weight: 600; }
+.hxmem-files-sum { color: var(--dsw-alias-text-secondary, #666); font-size: 12px; margin-left: auto; }
+.hxmem-files-err { color: var(--dsw-alias-danger, #c33); font-size: 12px; margin: 0; }
+.hxmem-files-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.hxmem-files-list > li > button {
+  display: flex; align-items: center; gap: var(--hxmem-s2, 8px); width: 100%; text-align: left;
+  background: transparent; color: inherit; cursor: pointer; font-size: 12px;
+  border: 1px solid transparent; border-radius: 6px; padding: 4px 8px;
+}
+.hxmem-files-list > li > button:hover { background: var(--dsw-alias-bg-hover, rgba(0,0,0,.04)); }
+.hxmem-files-list > li > button.on { border-color: var(--dsw-alias-line, #ddd); }
+.hxmem-files-meta { color: var(--dsw-alias-text-secondary, #666); margin-left: auto; white-space: nowrap; }
+/* 原文用 pre: 真相文件的换行与空白**就是内容的一部分**, 不能被 HTML 折叠。 */
+.hxmem-files-text {
+  max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  background: var(--dsw-alias-bg-code, rgba(0,0,0,.03)); border-radius: 6px;
+  padding: var(--hxmem-s2, 8px); margin: 4px 0 8px; font-size: 12px; line-height: 1.6;
+}
+
 .hxmem-review, .hxmem-bindings {
   --hxmem-s1: 4px;
   --hxmem-s2: 8px;

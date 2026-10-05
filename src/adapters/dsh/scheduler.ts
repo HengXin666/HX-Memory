@@ -27,7 +27,7 @@
  * (只认第一个位置参数) —— episode 清理从未执行, 而进程 exit 0、记录写"成功"。
  * 现在这个列表只用于**展示与记录** ("这次维护覆盖了什么"), 不参与调用约定。
  */
-export type MaintenanceTaskName = "consolidate" | "digest" | "prune";
+export type MaintenanceTaskName = "consolidate" | "digest" | "prune" | "relink";
 
 export interface MaintenancePolicyConfig {
   /** 维护周期 (ms); 0 = 关闭。 */
@@ -38,7 +38,14 @@ export interface MaintenancePolicyConfig {
   tasks: readonly MaintenanceTaskName[];
 }
 
-export const DEFAULT_MAINTENANCE_TASKS: readonly MaintenanceTaskName[] = ["consolidate", "prune"];
+// relink 也纳入默认维护: 建边只发生在写入时, 因此判据改进后**存量条目会永久落后** ——
+// 实测真实库曾出现"可建 401 条边而库里只有 20 条"。靠用户手动跑一次等于缺口长期存在。
+// 注: 这个列表只用于**展示与记录**, 真实调用是 CLI 的 maintain 命令 (见本文件头注)。
+export const DEFAULT_MAINTENANCE_TASKS: readonly MaintenanceTaskName[] = [
+  "consolidate",
+  "relink",
+  "prune",
+];
 
 export interface MaintenanceDecision {
   run: boolean;

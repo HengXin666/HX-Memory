@@ -4,18 +4,21 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 // 端口缺口已补 (MemoryOperations.recent): 不再需要 Pick<FileBackend> 这种"借具体类要能力"的写法。
-import type { MemoryOperations } from "../../kernel/ports.ts";
-import type { MemoryFacade } from "../../app/facade.ts";
-import type { BindingStore } from "../../bindings/store.ts";
 import type { BindingConfig } from "../../kernel/binder.ts";
-import type { GeneralizerService, ProposalStatus } from "../../generalize/service.ts";
+import type { ProposalStatus } from "../../generalize/service.ts";
 import type { GeneralizationRunReport, GeneralizationStatus } from "../../kernel/types.ts";
-import type { MemoryNormalizer, NormalizeReport } from "../../app/normalize.ts";
-import type { InvocationLog } from "./invocations.js";
+import type { NormalizeReport } from "../../app/normalize.ts";
+import {
+  projectCaptureReview,
+  projectEvidenceChain,
+  projectPanelSearch,
+  resolveCaptureReview,
+  type CaptureReviewView,
+} from "./gateway-memory.ts";
+import { handleAlwaysOnPreview, type AlwaysOnPreview } from "./gateway-injection.ts";
+// 真相文件视图 (§795): 只读列举/读取 —— 让"真相在文件"在人侧也看得见。
+import { listTruthFiles, readTruthFile, type TruthFileInfo } from "./truth-files.ts";
 import type { LlmInvocationRecord } from "./llm-agent.js";
-import type { ScheduleLog } from "./schedule-log.js";
-import type { CaptureLog } from "./capture-log.js";
-import type { MaintenanceLog } from "./maintenance-log.js";
 import {
   projectCaptureLog,
   projectMaintenance,
@@ -35,64 +38,9 @@ import {
 // 视图形状仍从 gateway 转出: 宿主与既有测试 import 的是 gateway (契约面不搬家)。
 export type { FlaggedMemoryView, ReviewEntryView, ReviewQueueView } from "./gateway-review.js";
 
-/** Gateway 依赖的最小端口 (可插拔: 便于测试注入, 也便于换实现)。 */
-export interface HxMemoryGatewayDeps {
-  /** 面板只需要端口能力 (含可选的 recent; 未实现时退回 query)。 */
-  store: Pick<MemoryOperations, "query" | "get" | "remove" | "recent">;
-  generalizer: Pick<
-    GeneralizerService,
-    "listQueue" | "confirm" | "reject" | "runBatch" | "runRecent" | "enqueueProposal" | "status"
-  >;
-  /** 绑定配置存储 (可选: 不注入则面板的绑定页不可用)。 */
-  bindingStore?: BindingStore;
-  /** AI 调用记录 (可选: 不注入则「调用记录」tab 不可用)。 */
-  invocations?: InvocationLog;
-  /**
-   * 主动整理 / 无损迁移 (可选: 不注入则「整理」tab 不可用)。
-   * 面板只做"看清单 + 点确认", 真正的写回在 MemoryNormalizer (与 CLI 同一条实现)。
-   */
-  normalizer?: Pick<MemoryNormalizer, "run">;
-  /**
-   * 使用层 Facade (可选但推荐): 面板的"最近沉淀/搜索/删除"与工具、MCP、CLI 共用同一套语义
-   * (检索排序 + 治理闸门 + 可见性 + 审计)。不注入时退回直连存储的旧行为 (兼容测试/旧宿主)。
-   */
-  facade?: Pick<MemoryFacade, "recent" | "forget" | "recall">;
-  /**
-   * 注入调度账本 (可选: 不注入则「调度」tab 明确说自己不可用, 而不是无声空白)。
-   *
-   * 为什么必须由服务端给: 账本是 <root>/schedule 下的文件, 浏览器侧 (面板) 碰不到文件系统。
-   */
-  schedule?: Pick<ScheduleLog, "sessions" | "recent" | "size">;
-  /**
-   * 捕获耗时账本 (可选: 不注入则「捕获耗时」区块明确说自己不可用)。
-   *
-   * 与调度账本同一个理由必须由服务端给: 数据是 <root>/capture 下的文件, 浏览器侧碰不到。
-   * 它与调度账本是**两条不同的轴**: 一个记"为什么注入/没注入", 一个记"沉淀花了多久、为什么没沉淀"。
-   */
-  capture?: Pick<CaptureLog, "stats" | "recent" | "size">;
-  /**
-   * 后台维护记录 (可选: 不注入则面板不显示维护区块)。
-   *
-   * 为什么必须由服务端给: 维护记录在插件进程的内存里 (环形缓冲), 浏览器侧拿不到。
-   * 它是**内存**而不是文件 —— 与调度账本不同, 维护只回答"它最近有没有在工作",
-   * 跨重启的历史不在它的职责内 (见 maintenance-log.ts 的取舍说明)。
-   */
-  maintenance?: Pick<MaintenanceLog, "recent" | "lastRun" | "size">;
-  /** 维护开关与周期 (面板要显示"现在是开还是关", 而不是让人去猜设置)。 */
-  maintenanceConfig?: () => {
-    intervalMs: number;
-    idleMs: number;
-    available: boolean;
-  };
-  /**
-   * 当前会话的项目键 (可选)。
-   *
-   * 为什么必须由服务端给: 面板跑在宿主 Web 里, 浏览器的 rpc 调用器**只有 call**, 拿不到
-   * 会话工作目录; 面板此前试图读 `rpc.cwd` (不存在的字段) 于是自动建行永远不生效 ——
-   * 这条能力只能是"知道会话的项目键"的一侧提供 (即 DSH 适配层)。
-   */
-  currentProject?: () => string | undefined;
-}
+// 依赖面声明搬到 gateway-deps.ts (本文件有 400 行上限; 它属"契约"不属"服务生命周期")。
+export type { HxMemoryGatewayDeps } from "./gateway-deps.ts";
+import type { HxMemoryGatewayDeps } from "./gateway-deps.ts";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -201,6 +149,36 @@ export class HxMemoryGateway extends TypertRemoteService {
   @Remote("currentProject")
   currentProject(): { project: string } {
     return { project: this.deps.currentProject?.() ?? "" };
+  }
+
+  /**
+   * 列举真相文件 (只读, §795 文件视图)。
+   *
+   * 为什么这个出口重要: ADR-002 的承诺是"真相在 Markdown 文件, 索引可重建" ——
+   * 而面板此前**每个视图都经 SQLite**。于是"真相在文件"在**人侧没有兑现**:
+   * 用户看不到 hx-memory 到底写了什么文件、写了多少、什么时候写的。
+   *
+   * 边界: 只列 `{daily,digest,rules}` 下的 `.md` (不含索引与账本); 未挂载时返回空数组
+   * (面板显示"未挂载", 而不是崩)。
+   */
+  @Remote("truthFiles")
+  truthFiles(dir?: string): TruthFileInfo[] {
+    const cfg = this.deps.truthFiles;
+    if (!cfg) return [];
+    return listTruthFiles(cfg.root, dir);
+  }
+
+  /**
+   * 读一个真相文件的原文 (只读, §795)。
+   *
+   * ⚠ **目录穿越防护在 `readTruthFile` 里** (白名单目录 + 扩展名 + 规范化后仍在 root 内);
+   * 返回 `null` 时本方法统一答"读不到" —— **不区分"不存在"与"不允许"**, 区分等于泄露路径存在性。
+   */
+  @Remote("truthFile")
+  truthFile(path: string): { path: string; text: string } | null {
+    const cfg = this.deps.truthFiles;
+    if (!cfg || typeof path !== "string") return null;
+    return readTruthFile(cfg.root, path);
   }
 
   @Remote("confirmProposal")
@@ -356,34 +334,36 @@ export class HxMemoryGateway extends TypertRemoteService {
     }
   }
 
+  // 待审裁决 (接受 / 丢弃)。形参名是协议面 (见 evidenceChain 的说明): id 与 action。
+  @Remote("resolveCaptureReview")
+  async resolveCaptureReview(id: string, action: string): Promise<{ ok: boolean; error?: string }> {
+    return await resolveCaptureReview(this.deps.facade, this.deps.captureReview, id, action);
+  }
+
+  // 注入预览: "会注入什么" + "什么因配额没进来" (形参名是协议面; 实现在 gateway-injection.ts)。
+  @Remote("alwaysOnPreview")
+  async alwaysOnPreview(project: string): Promise<AlwaysOnPreview> {
+    // 预算与 openMemoryStack 的 always-on 默认值同源 (400)。
+    return await handleAlwaysOnPreview(this.deps, project, 400);
+  }
+
+  // 捕获待审队列: 可疑候选的出口 (投影在 gateway-memory.ts; 形参名是协议面)。
+  @Remote("captureReviewQueue")
+  captureReviewQueue(limit: number): CaptureReviewView {
+    return projectCaptureReview(this.deps.captureReview, limit);
+  }
+
+  // 证据链: 面板侧"追来源"入口 (投影在 gateway-memory.ts, 与 memory_evidence 工具共用同一 Facade 方法)。
+  // 形参名是**协议面**: Typert 按名映射 args, 写成 (q: {id}) 会被宿主拒 —— 单测绕过该校验。
+  @Remote("evidenceChain")
+  async evidenceChain(id: string): Promise<unknown> {
+    return await projectEvidenceChain(this.deps.facade, id);
+  }
+
+  // 检索出口 (投影在 gateway-memory.ts: 与工具/面板共用同一语义)。
   @Remote("memoryQuery")
   async memoryQuery(q: { text?: string; kind?: string; limit?: number }): Promise<unknown[]> {
-    const limit = q.limit ?? 10;
-    // 有 Facade → 与工具/MCP/CLI 同一条检索语义 (含规则保底、覆盖率过滤、token 预算、降级说明)。
-    // purpose:"recall" —— 面板是"用户主动搜最相关的记忆", 不是"注入不变量"。
-    // 不区分的话规则保底通道会让前几条永远是那几条规则 (用户实测的第一困惑)。
-    const entries = this.deps.facade
-      ? this.deps.facade
-          .recall({
-            ...(q.text ? { text: q.text } : {}),
-            ...(q.kind ? { kinds: [q.kind as never] } : {}),
-            purpose: "recall",
-            limit,
-            tokenBudget: Math.max(400, limit * 160),
-          })
-          .hits.map((hit) => hit.entry)
-      : await this.deps.store.query({ text: q.text, kind: q.kind as never, limit });
-    return entries.map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      content: e.content,
-      scope: e.scope,
-      project: e.project,
-      source: e.source,
-      confirmedBy: e.confirmedBy,
-      confirmedAt: e.confirmedAt,
-      validAt: e.ts.validAt,
-    }));
+    return await projectPanelSearch(this.deps.facade, this.deps.store, q);
   }
 }
 

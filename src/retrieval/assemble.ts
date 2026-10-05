@@ -100,12 +100,32 @@ export function assembleHits(
     });
   }
 
-  const finalHits: RetrievalHit[] = [...primary.slice(0, opts.limit), ...extras];
+  // ⚠ 2026-09-18 修复: extras 此前**无条件追加**, 完全绕过 tokenBudget ——
+  // 实测 (真实库, tokenBudget=100): 返回的 6 条**全部来自 graph/entity**, 单条最大 1400 token
+  // (总预算的 14 倍); 而预算内的 primary **一条都没进**。注入路径因此超支 5.8 倍 (实测 4994 vs 700)。
+  //
+  // 修法: extras 只在**预算还有余量**时追加。这与既有契约**不冲突** ——
+  // 契约场景 (conformance 的"图扩展邻居被召回") 不传 tokenBudget, 走默认 1200, 余量充足;
+  // 而"预算紧张时优先保证主榜单"是预算机制的应有之义 (它此前只对 primary 生效)。
+  const extraBudget = Math.max(0, opts.tokenBudget - budgeted.tokens);
+  let extraUsed = 0;
+  const extrasWithinBudget: RetrievalHit[] = [];
+  for (const it of extras) {
+    const cost = estimateTokens(it.entry.content) + 8;
+    if (extraUsed + cost > extraBudget) break;
+    extraUsed += cost;
+    extrasWithinBudget.push(it);
+  }
+  // 被预算挡掉的 extras 记为 dropped (可观测: "它不该回收"这个判断要能被问出来)。
+  const extraDropped = extras.filter((it) => !extrasWithinBudget.includes(it));
+
+  const finalHits: RetrievalHit[] = [...primary.slice(0, opts.limit), ...extrasWithinBudget];
 
   const dropped: RetrievalResult["dropped"] = budgeted.dropped.map((d) => ({
     id: d.item.entry.id,
     reason: "budget",
   }));
+  for (const it of extraDropped) dropped.push({ id: it.entry.id, reason: "budget" });
   for (const h of diverse) {
     if (finalHits.some((f) => f.entry.id === h.entry.id)) continue;
     if (dropped.some((d) => d.id === h.entry.id)) continue;

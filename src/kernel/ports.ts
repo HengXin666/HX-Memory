@@ -23,9 +23,38 @@ export type Awaitable<T> = T | Promise<T>;
 
 export interface MemoryStore {
   add(entry: MemoryEntryInput): Awaitable<MemoryEntry>;
+  /**
+   * 按 id 取**单个**条目。
+   *
+   * ⚠ **可见性口径与列表访问器相反**: 它**不做任何状态过滤** —— `shadow` / `merged` / `expired`
+   * 一律能取到 (§783 实测)。
+   *
+   * 为什么必须如此: 治理动作**先读后写** —— `forget` 要取到条目才能把它置为 `shadow`;
+   * `revise` 要取到才能改; `link` 要取到两端才能建边。若这里也过滤 shadow,
+   * **撤回过的条目就再也治理不了** (取不到 ⇒ 改不了)。
+   *
+   * **⇒ 所以消费方要"活着的条目"时必须自己判 `isLiveEntry` (/ `status === "active"`) ——**
+   * 那与列表访问器 (`all`/`query`/`recent`/`searchText`) 的默认不同, 是这里最容易踩的一处。
+   */
   get(id: string): Awaitable<MemoryEntry | null>;
   query(q: Query): Awaitable<MemoryEntry[]>;
-  /** 全量读取 (不截断): 去重集回填等需要完整集合的调用点。 */
+  /**
+   * 全量读取: **去重集回填**等需要"扫一遍全部条目"的调用点用它。
+   *
+   * ⚠ **它不是"把库里所有行给你"** —— 实测 (2026-09-18, §680/§683):
+   *   · **排除** `shadow` (撤回的条目不参与检索, 但**真相文件里仍在**);
+   *   · **不排除** `merged` / `expired` —— 它们**会**出现在返回值里 (实测确认)。
+   *
+   * 实现是 `query({ limit: MAX_SAFE_INTEGER })` ⇒ 继承 `query` 的可见性口径
+   * (`index-reader.ts`: 默认 `status != 'shadow'`)。
+   *
+   * **⇒ 消费方必须自己判 `status === "active"`。** 已有的三处都这么做了:
+   * `always-on` (非 active 直接 false) / `consolidate` (`!== "active" && continue`) /
+   * 而 `codex export` **刻意不过滤** (导出就该含全部)。
+   *
+   * 为什么把这段话写在端口上 (而不是留给我自己记): 我在 §674/§680 两次按"`all()` = 全部"
+   * 下结论, 两次都错 —— 而契约注释当时只说了"不截断", 读起来像"完整集合"。
+   */
   all(): Awaitable<MemoryEntry[]>;
   /** Walk relations from an entry (e.g. supersedes chain expansion). */
   traverse(fromId: string, relationType: string): Awaitable<MemoryEntry[]>;
@@ -148,15 +177,32 @@ export interface EntityChannelOptions {
   minShared: number;
 }
 
-/** 检索源: 引擎必须能提供的最小能力 (存储实现按需扩展)。 */
+/**
+ * 检索源: 引擎必须能提供的最小能力 (存储实现按需扩展)。
+ *
+ * ⚠ **可见性口径在这三个方法上一致, 而在 `get(id)` 上相反** (§783 实测):
+ * `searchText` / `query` 默认排除 `shadow`/`merged`/`expired` (即 `isLiveEntry`);
+ * 而 `get(id)` **不过滤** (治理要"先读后写")。**列表与单取的口径不同, 是这里最容易踩的。**
+ */
 export interface RetrievalSource {
-  /** 全文检索 (BM25 优先, LIKE 降级), 返回顺序即相关性顺序。 */
+  /** 全文检索 (BM25 优先, LIKE 降级), 返回顺序即相关性顺序。默认排除不可见状态。 */
   searchText(text: string, limit?: number): MemoryEntry[];
-  /** 结构化条件过滤。 */
+  /** 结构化条件过滤。默认排除 `shadow`/`merged`/`expired`; 传 `includeShadow` 放行 `shadow`。 */
   query(q: Query): MemoryEntry[];
+  /** 按 id 取: **不过滤** (与 `get` 的端口契约一致 —— 治理需要能取到已撤回的条目)。 */
   get(id: string): MemoryEntry | null;
   /** 关系遍历 (图扩展的基础)。 */
   traverse(fromId: string, relationType: string): MemoryEntry[];
+  /**
+   * 关系遍历的**反向**方向 (入边): 找出所有**指向** toId 的存活条目。**可选能力**。
+   *
+   * 为什么需要它 (2026-09-18 实测): 语义边只有「抽象 → 实例」一个方向, 而**用户的提问方向
+   * 是反的** ("这个具体的坑, 对应哪条通用规则?")。离线模拟: 4 条从实例细节提问、
+   * gold 是短抽象的用例上, 只走出边命中 **0/4**; 加入边后 **3/4**。
+   *
+   * 与 `byEntities` 同为可选: 缺它时出边扩展**照常工作**, 只是少一个方向。
+   */
+  traverseIncoming?(toId: string, relationType: string): MemoryEntry[];
   /**
    * 实体反查 (实体倒排; 可选能力, 引擎没有就少一个通道)。
    * 存在理由见 docs/benchmark-review.md §二之二: "字面不可达但共享实体"只能靠它, 写入期建边无解。
@@ -196,9 +242,38 @@ export interface RetrievalRequest {
    * 调用方要回答的是"哪条记忆最相关"。仍可显式传 channels.rules.enabled 覆盖。
    */
   purpose?: "inject" | "recall";
+  /**
+   * 覆盖率词表的严格度: "precision" (默认) 或 "candidate"。
+   *
+   * 为什么需要分开 (2026-09-17 实测, 一次真实的回归): 查询侧的覆盖率词表剔除了虚词与
+   * 单字碎片 (见 kernel/function-words.ts), 这对**给模型看的结果**是对的 —— 实测
+   * "如何用 Rust 写一个 WebSocket 服务器" 在一条完全无关的条目上得到 cov=0.63, 命中的
+   * 全是 用/写/一个 这类词。但同一套门槛也被**写入期的近邻查找**复用 (app/neighbors.ts),
+   * 那里要的是"字面沾边就拿来裁决"的召回: 裁决器自己会按 coverage>=0.75 (duplicate) /
+   * >=0.5 (supersede) 严格判定。剔除虚词后, 一对真实的同义重述 (上线前做回归测试 /
+   * 部署前跑全量回归校验) 只剩一个共享词, 命中数从 2 掉到 1, 近邻查找直接找不到对方 ——
+   * 语义去重静默失效 (tests/s2/facade-evolution.test.ts 当场变红)。
+   *
+   * 结论: **读要精度, 写要召回**, 两者不能共用同一个门槛。默认 "precision" 保持读路径的
+   * 精度; 候选生成路径显式传 "candidate" 退回全词表 (即改动前的行为)。
+   */
+  coverageMode?: "precision" | "candidate";
   /** 双时态切片: "那时为真的是什么" (按 validAt 过滤)。 */
   asOf?: string;
-  scope?: { project?: string; global?: boolean };
+  scope?: { project?: string; lineage?: readonly string[]; global?: boolean };
+  /**
+   * **本调用要求项目范围**: 给了它且没有工作区上下文时, `scope:"project"` 的条目一律不可见。
+   *
+   * ⚠ 为什么需要这个开关 (2026-09-27, 真实缺陷): `projectEntryVisible` 在 **scope 缺失时
+   * 返回 true (全放行)** —— 那是给**面板 / CLI 搜索**用的语义 (它们是管理面, 用户要看全库)。
+   * 但 agent 侧检索不能这样: 实测 `memory_search` 不带 scope 时召回 **7/9 条属于别的项目**
+   * (HX-OutlookRegister / HX-Jungle / ds-test), 于是"这个项目定了什么"被别的项目的结论回答。
+   *
+   * 两者都对, 但**不能共用同一个缺省**: 因此把"我是 agent 检索, 我要项目范围"做成调用方
+   * 显式声明的开关, 而不是去改 `projectEntryVisible` 的默认值 (那会同时打断面板/CLI 的全库浏览)。
+   * 语义与 `selectAlwaysOn` 一致: **不知道是哪个工作区时, 一条项目内条目都不给**, 而不是全都给。
+   */
+  scopeRequired?: boolean;
   kinds?: MemoryKind[];
   tags?: string[];
   /** 条数上限 (与 tokenBudget 同时生效, 谁先到谁生效)。 */
@@ -274,6 +349,15 @@ export interface EpisodeStore {
   /** 只取某个时间点之后的 (增量重放)。 */
   since(iso: string): Awaitable<Episode[]>;
   bySession(session: string): Awaitable<Episode[]>;
+  /**
+   * 按 id 批量取原文 (溯源链的最后一跳: 记忆条目 → 产生它的那轮对话)。
+   *
+   * 为什么必须存在: `MemoryEntry.derivedFrom` 存了 episode id, 但此前没有任何按 id 查询的
+   * 公开路径 —— 于是"这条结论来自哪一轮对话"在产品层不可回答 (盲审 2026-09-18 指出)。
+   * 只提供**批量**形态: 一条记忆天然对应多轮 (user + assistant), 单 id 版本由调用方传单元素数组,
+   * 避免同一段逻辑写两遍。找不到的 id 直接缺席返回 (不抛错, 不拿其它内容冒充原话)。
+   */
+  byIds(ids: readonly string[]): Awaitable<Episode[]>;
   count(): Awaitable<number>;
   /** 按保留期清理; 返回删除的 episode 数 (0 = 未配置保留期, 不清理)。 */
   prune(nowIso?: string): Awaitable<number>;
@@ -302,82 +386,14 @@ export interface Rebuildable {
   /** 一致性自检 (索引 ↔ 真相)。 */
   verify(): Awaitable<VerifyReport>;
 }
-/**
- * 嵌入端口 (ADR-023 的向量侧): 把文本映射成定长向量, 用于语义相似/语义去重/向量召回。
- * 为什么先定义端口再谈引擎: 换模型 = 换一个实现 + 全量重嵌 (T3), 而不是改业务代码;
- * 索引侧必须记录 embedding 身份 (modelId + dim), 不符即重建。
- */
-export interface Embedder {
-  /** 身份串 (如 "lexical-v1" / "bge-m3@1024"): 进索引身份, 防止混用两种向量。 */
-  readonly id: string;
-  readonly dim: number;
-  /** 批量嵌入 (顺序与输入一致)。 */
-  embed(texts: readonly string[]): Awaitable<number[][]>;
-  /**
-   * 推荐的余弦下限 (**由各嵌入器按自己的分数分布标定**)。
-   * 为什么必须由嵌入器声明: 不同模型的相似度尺度完全不同 —— 词汇级嵌入的同义改写约 0.2-0.5,
-   * 而真语义模型同一对可能 0.7+; 用一个全局阈值必然有一边失效 (实测过)。
-   */
-  readonly floor?: number;
-}
-/**
- * 同步嵌入面。预步注入 (agent/pre-step) 是同步判定点, 不能等 IO ——
- * 本地实现 (哈希袋/常驻 ONNX) 可以直接满足它; 远端 API 类嵌入器做不到,
- * 那种情况走投影 (RetrieverProjection): 后台刷新向量, 预步读缓存 (见 architecture-v2 §3.3)。
- */
-export interface SyncEmbedder extends Embedder {
-  embedSync(texts: readonly string[]): number[][];
-}
-
-/** 能力探测: 只有 embedSync 存在的嵌入器才能进同步检索通道。 */
-export function asSyncEmbedder(embedder: Embedder): SyncEmbedder | null {
-  const candidate = embedder as Partial<SyncEmbedder>;
-  return typeof candidate.embedSync === "function" ? (candidate as SyncEmbedder) : null;
-}
-
-/**
- * 向量索引端口 (ADR-023 的向量侧): 近邻检索必须能"换引擎 + 全量重建"。
- * 默认实现是内存线性扫描 (LinearVectorIndex, 见 src/retrieval/vector.ts);
- * 规模上来后换成 sqlite-vec / LanceDB / Qdrant —— 只实现这个端口, 检索层不改。
- * 身份 (embedderId/dim) 必须进索引: 换模型就得重建, 不许混用 (HippoRAG 的 index_manifest 同款)。
- */
-export interface VectorIndex {
-  readonly embedderId: string;
-  readonly dim: number;
-  /** 写入/更新 (幂等: 同 id 覆盖; 内容未变时不重复嵌入)。只吃 id+content 的廉价投影。 */
-  upsert(docs: readonly IndexDoc[]): void;
-  remove(id: string): void;
-  clear(): void;
-  /** 近邻检索: 返回 id + 余弦分 (降序)。 */
-  search(query: string, limit: number): Array<{ id: string; score: number }>;
-  size(): number;
-  /**
-   * 可选: 异步补齐向量 (异步嵌入器的投影)。
-   * 同步检索 (预步注入) 只读投影; 宿主在注入前可带**硬时限**地 await 它, 没就绪就降级。
-   */
-  refresh?(): Promise<void>;
-  /**
-   * 可选: 提前登记"下一次要查的文本", 让 warm() 能在同一次限时窗口里把它一起嵌好。
-   * 没有它也能工作, 只是**第一轮**查询注定没有语义召回 (查询向量要等下一轮才就绪)。
-   */
-  prime?(query: string): void;
-  /** 可选: 投影是否已就绪 (未就绪时检索会记 degraded, 不静默)。 */
-  readonly ready?: boolean;
-}
-/** 索引同步用的最简条目投影 (只要 id + 正文, 不做 relations/tags 的二次查询)。 */
-export interface IndexDoc {
-  id: string;
-  content: string;
-}
-
-/**
- * 派生索引 (向量/FTS) 的同步面。为什么单独定义:
- * 按查询去"扫一批候选"在万级下必然漏 (这正是本项目实测到的 bug: 5000 条只索引到 519 条)。
- * 正确做法是"全量投影 + 版本号变更时才同步", 且投影必须是**廉价查询** (单条 SQL, 不 hydrate)。
- */
-export interface IndexableSource {
-  /** 全量投影 (单次查询; 必须排除 shadow, 但可包含 merged/expired 由索引层决定是否使用)。 */
-  indexDocs(): IndexDoc[];
-  /** 单调递增的写版本号: 变了才需要重新同步索引 (稳态查询零开销)。 */
-  revision(): number;
-}
+// 引擎侧端口 (嵌入 / 向量索引 / 派生索引同步面) 拆到 ports-engines.ts ——
+// 它们的读者是"要接进来的引擎", 与本文其余端口的读者 (内核编排 / 宿主适配层) 不同。
+// 这里 re-export 以保持既有 import 路径不变 (调用方无需改动)。
+export type {
+  Embedder,
+  SyncEmbedder,
+  VectorIndex,
+  IndexDoc,
+  IndexableSource,
+} from "./ports-engines.ts";
+export { asSyncEmbedder } from "./ports-engines.ts";

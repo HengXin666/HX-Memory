@@ -146,8 +146,13 @@ describe("Binder: 传入 retriever 后走混合检索", () => {
       new HybridRetriever(store),
     );
     const injected = binder.injectFor("api", "帮我看看容器并发的问题");
-    expect(injected).toContain("c1");
-    expect(injected).toContain("rule-1");
+    // ⚠ 2026-09-29: 注入正文里不再带 id (它走消息 source, 省 88 token/块) ——
+    // 因此断言改成"命中了哪条**内容**" + 用返回值取 id (这正是真实调用方的两件事)。
+    expect(injected).toContain("并发策略"); // c1 的内容 ("所有容器实际上都有并发策略问题")
+    expect(injected).toContain("先检查并发策略"); // rule-1 的内容 ("涉及容器时先检查并发策略")
+    expect(binder.lastInjectedIds()).toContain("c1");
+    expect(binder.lastInjectedIds()).toContain("rule-1");
+    expect(injected, "正文里不该再有 id 标记").not.toContain("hx-memory:id=");
   });
 
   it("信号词不命中 → 不注入 (轻量门控, 避免无关噪声)", () => {

@@ -6,10 +6,10 @@
 // (真实踩过: setSource: () => void 0)。这个类把该约定固化成可测的小对象。
 
 export interface SettingsSource<T> {
-  /** 读当前权威配置 (未接住宿主时返回组合配置)。 */
+  /** 读当前权威配置 (未接住宿主时返回组合配置)。缺字段由调用方用默认值补齐。 */
   read(): Partial<T>;
   /** 接住宿主给的 thunk (每次读取都重新求值)。 */
-  adopt(current: () => T): void;
+  adopt(current: () => Partial<T>): void;
   /** 是否已经接住宿主。 */
   readonly adopted: boolean;
 }

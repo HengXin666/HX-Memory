@@ -252,6 +252,12 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     if (full.kind === "rule" && !isConfirmed(full)) {
       throw new Error("rule entries must carry a confirmation record (confirmedBy/confirmedAt)");
     }
+    // ⚠ 空内容闸门 (§701): 与 MemoryStore 同口径 —— 两引擎的**不变量必须一致**
+    // ("换引擎不等于换规则")。上游 (memory_save / facade.remember) 已有两道判断, 真库 0 条空内容,
+    // 但在存储层补它是"不变量该在最低层成立" —— 与上面那条 rule 闸门同一个理由。
+    if (!full.content.trim()) {
+      throw new Error("entry content must not be empty");
+    }
     this.writeEntry(full);
     return full;
   }
@@ -313,6 +319,11 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   /** 关系遍历: 只返回存活 (非 shadow) 的邻居, 与 query 的可见性一致。 */
   traverse(fromId: string, relationType: string): MemoryEntry[] {
     return this.reader.traverse(fromId, relationType);
+  }
+
+  /** 反向遍历 (入边)。见 IndexReader.traverseIncoming 的说明。 */
+  traverseIncoming(toId: string, relationType: string): MemoryEntry[] {
+    return this.reader.traverseIncoming(toId, relationType);
   }
 
   /**

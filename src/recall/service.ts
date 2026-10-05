@@ -7,7 +7,7 @@
 // 诚实边界: 无语义向量, 用关键词命中评分; 后续可换 VectorBackend (可插拔存储)。
 import type { MemoryEntry, Query } from "../kernel/types.ts";
 import type { SyncMemoryStore, SyncRetriever } from "../kernel/ports.ts";
-import { formatEntryLine } from "../kernel/injection-format.ts";
+import { formatHitLine } from "../kernel/injection-format.ts";
 
 export interface RecallInput {
   /** 当前任务文本 (如用户问题/会话首条)。 */
@@ -130,13 +130,22 @@ export class RecallService {
  */
 function formatSections(rules: readonly MemoryEntry[], local: readonly MemoryEntry[]): string {
   const lines: string[] = [];
+  // kind 标记统一由 `formatHitLine` 负责 (此前这里手拼 "[" + e.kind + "] " —— 那会与
+  // 新的行首标记**双重标记**成 "- [lesson] [lesson] ...")。标记的形态只有一处定义。
+  //
+  // ⚠ 2026-09-29: 这里用 **带 id** 的 `formatHitLine` 而不是无 id 的 `formatEntryLine`。
+  // 判据是本出口的**真实消费者**: `RecallService.injected` 目前只被 codex 适配器的
+  // `memory_search` 工具返回 (adapter.ts:75) —— 那是**模型主动检索**的结果, 它要能引用
+  // (memory_flag / memory_rule_propose 都按 id 操作)。而被动注入块走 `composeMemoryBlock`,
+  // 那条路径的 id 已移到消息 source (省 88 token/块)。两条出口的判据见 formatHitLine 的说明。
+  // (codex 的 onPreStep 只把 `injected` 当**判空**用, 真正返回的是结构化 entries, 因此它不受影响。)
   if (rules.length) {
     lines.push("【跨项目规则 (已确认)】");
-    for (const r of rules) lines.push(formatEntryLine(r.id, r.content));
+    for (const r of rules) lines.push(formatHitLine(r.id, r.content, r.kind));
   }
   if (local.length) {
     lines.push("【本项目相关经验】");
-    for (const e of local) lines.push(formatEntryLine(e.id, "[" + e.kind + "] " + e.content));
+    for (const e of local) lines.push(formatHitLine(e.id, e.content, e.kind));
   }
   return lines.join("\n");
 }

@@ -6,8 +6,14 @@
 //
 // 不变量:
 //   1. 每次返回的都是**完整**条目 (relations/tags 一并 hydrate), 不给半个记忆;
-//   2. 可见性口径只有一处: 默认排除 shadow/merged/expired, includeShadow 时放行 shadow
+//   2. 可见性口径只有一处: 默认排除 **shadow / merged / expired** (即 `HIDDEN` 常量),
+//      `includeShadow` 时**只放行 shadow** (另两种仍排除 —— 它们不是"撤回", 是"已被替代/已过期");
 //      (superseded 仍可见 —— 演进链与 history 需要它);
+//
+//      ⚠ **本文件的每一条读路径都必须用 `HIDDEN`** (2026-09-18, §686 实测):
+//      `query()` 此前只写了 `status != 'shadow'` —— 与 `searchText()` / `recent()` 口径分叉,
+//      于是 TTL 过期的条目在**结构化查询**里可见而**全文检索**里不可见。
+//      权威定义在 `retrieval/lifecycle.ts` 的 `isLiveEntry` —— 新增读路径时照它写。
 //   3. LIKE 路径必须转义 %/_ (否则 query({text:"_"}) 会命中全部)。
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type {
@@ -20,9 +26,12 @@ import type {
 } from "../kernel/types.ts";
 import { normalizeFeedback } from "../kernel/feedback.ts";
 import type { IndexDoc } from "../kernel/ports.ts";
+import { visibleClause } from "../kernel/visibility.ts";
 import type { FtsIndex } from "./fts-index.ts";
 import { finiteOrUndefined, jsonStrings } from "./entry-normalize.ts";
+import { GraphReader } from "./graph-reader.ts";
 import { entityKey } from "../kernel/entity.ts";
+import { IndexEntities } from "./index-entities.ts";
 
 /** 索引行形状 (与 memories 表列一一对应)。 */
 export interface RowLike {
@@ -106,7 +115,7 @@ export function escapeLike(text: string): string {
 }
 
 /** 默认不可见的状态 (撤回/合并/过期); match 时可用 includeShadow 放行 shadow。 */
-const HIDDEN = "'shadow','merged','expired'";
+// (可见性 SQL 片段来自 kernel/visibility.ts —— 见该文件的说明; 这里不再定义副本。)
 
 /**
  * 索引读取器: 持有 db 与 fts 引用, 提供全部只读查询。
@@ -117,10 +126,19 @@ export class IndexReader {
   // (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX), 而子进程会直接 import 这些 .ts 文件。
   private readonly db: DatabaseSync;
   private readonly fts: FtsIndex;
+  /** 图遍历职责 (出边/入边)。拆出去的理由见 storage/graph-reader.ts 的头注。 */
+  private readonly graph: GraphReader;
+
+  /** 实体反查与计数 (已按职责拆到 index-entities.ts; 见那个文件的头注)。 */
+  private readonly entities: IndexEntities;
 
   constructor(db: DatabaseSync, fts: FtsIndex) {
+    // entities 与 reader 共享同一份 db 与 hydrate 逻辑 (可见性口径必须一致)。
+    this.entities = new IndexEntities({ db, hydrate: (row) => this.hydrate(row as never) });
     this.db = db;
     this.fts = fts;
+    // hydrate 以**注入**方式给 GraphReader: 它是本类的职责, 复制一份会产生两份必然分叉的口径。
+    this.graph = new GraphReader(db, (row) => this.hydrate(row));
   }
 
   /** memories 表行数 (含 shadow/merged/expired: 索引与真相必须一一对应)。 */
@@ -157,9 +175,14 @@ export class IndexReader {
 
   /** 最近捕获的 N 条 (按 assertedAt 倒序), 附 tags。供知情权面板用。 */
   recent(limit = 20): MemoryEntry[] {
+    // ⚠ **必须用 HIDDEN, 不能只写 'shadow'** (§689 —— 与 §686 同一类分叉)。
+    // `gateway.ts` 的注释早已声明了这条契约: "走 facade.recent 而不是 store.all:
+    // **可见性 (shadow/merged/expired 默认隐藏)** 与排序口径只有一处 —— 面板不该看到已撤回的条目"。
+    // 而此处此前只挡 shadow ⇒ **面板的"最近"与"被标注"列表会显示 merged/expired 条目**。
+    // 权威定义: `retrieval/lifecycle.ts` 的 `isLiveEntry`。
     const rows = this.db
       .prepare(
-        "SELECT * FROM memories WHERE status != 'shadow' ORDER BY asserted_at DESC, rowid DESC LIMIT ?",
+        "SELECT * FROM memories WHERE " + visibleClause() + " ORDER BY asserted_at DESC, rowid DESC LIMIT ?",
       )
       .all(limit) as unknown as RowLike[];
     return rows.map((r) => this.hydrate(r));
@@ -168,7 +191,11 @@ export class IndexReader {
   query(q: Query): MemoryEntry[] {
     const clauses: string[] = [];
     const params: SQLInputValue[] = [];
-    if (!q.includeShadow) clauses.push("status != 'shadow'");
+    // ⚠ **必须用 HIDDEN, 不能只写 'shadow'** (§686): 此前只挡 shadow, 而 searchText() 用了
+    // HIDDEN ⇒ 口径分叉 (TTL 过期的条目: 全文检索看不到、结构化查询看得到 —— 面板
+    // contradictions 与 memoryQuery 的 LIKE 降级分支都会显示它)。
+    // 权威定义在 retrieval/lifecycle.ts 的 isLiveEntry —— 新增读路径照它写。
+    if (!q.includeShadow) clauses.push(visibleClause());
     if (q.kind) {
       clauses.push("kind = ?");
       params.push(q.kind);
@@ -216,7 +243,7 @@ export class IndexReader {
     const trimmed = text.trim();
     if (!trimmed) return [];
     const cap = Math.max(1, Math.min(limit, 500));
-    const visible = opts.includeHidden ? "" : " AND status NOT IN (" + HIDDEN + ")";
+    const visible = opts.includeHidden ? "" : " AND " + visibleClause();
     const picked: MemoryEntry[] = [];
     const seen = new Set<string>();
     const take = (id: string): void => {
@@ -249,62 +276,40 @@ export class IndexReader {
     return this.query({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  /**
-   * 实体反查: **按实体键**取回提到它的条目 (倒排表命中, 不扫 memories)。
-   *
-   * 为什么需要它 (实测依据, docs/benchmark-review.md §二之二): 写入期建边再怎么调都解决不了
-   * "字面不可达但共享实体"的查询 —— 把共享实体的**全部**配对建边 (442 条, 现状的 3.3 倍)
-   * 只能把命中从 19/104 提到 22/104。真瓶颈在检索期: 种子实体反查出的候选池平均 12.9 条,
-   * 而目标在池中平均排第 8 —— 写入期必须在**不知道查询**时猜"哪几条相关", 反查不必猜。
-   *
-   * 可见性口径与 query() 一致 (默认排除 shadow/merged/expired; 反查是召回, 不该回放已撤回的)。
-   */
+  // ⚠ 实体反查与计数三个方法**已抽到 index-entities.ts** (§686 行数上限触发, 职责不同):
+  // 它们都只碰 entities 表, 与"怎么查记忆" (query/searchText) 的变化原因不同。
+  // 委托见 index-entities.ts 的 withEntities().
   byEntities(keys: readonly string[], limit = 50): MemoryEntry[] {
-    const wanted: string[] = [];
-    const seenKey = new Set<string>();
-    for (const k of keys) {
-      const key = entityKey(k);
-      if (!key || seenKey.has(key)) continue;
-      seenKey.add(key);
-      wanted.push(key);
-    }
-    if (!wanted.length) return [];
-    const placeholders = wanted.map(() => "?").join(", ");
-    const rows = this.db
-      .prepare(
-        "SELECT m.* FROM memories m JOIN entities e ON e.memory_id = m.id" +
-          " WHERE e.entity IN (" +
-          placeholders +
-          ") AND m.status NOT IN (" +
-          HIDDEN +
-          ") ORDER BY m.valid_at DESC, m.rowid DESC LIMIT ?",
-      )
-      .all(...wanted, limit) as unknown as RowLike[];
-    return rows.map((r) => this.hydrate(r));
+    return this.entities.byEntities(keys, limit);
   }
 
   /** 有实体键的条目数 (与 countEntityRows 一起构成覆盖率读数)。 */
   countWithEntities(): number {
-    const row = this.db.prepare("SELECT COUNT(DISTINCT memory_id) AS n FROM entities").get() as {
-      n: number;
-    };
-    return row.n;
+    return this.entities.countWithEntities();
   }
 
   /** 实体索引行数 (供重建/自检判断"倒排是否已补齐")。 */
   countEntityRows(): number {
-    const row = this.db.prepare("SELECT COUNT(*) AS n FROM entities").get() as { n: number };
-    return row.n;
+    return this.entities.countEntityRows();
   }
 
-  /** 关系遍历: 只返回存活 (非 shadow) 的邻居, 与 query 的可见性一致。 */
+  /**
+   * 关系遍历: 源与邻居**都必须存活** (非 shadow), 与 query 的可见性一致。
+   *
+   * 为什么源端也要判 (真实缺陷, 2026-09-18 实测): 撤回保留 relations (真相文件里那条是
+   * 可审计记录), 于是已撤回节点的边留在库里 —— 实测 60 条 generalizes 边里 41 条挂在
+   * 10 个已撤回的占位草稿上, 全图度数最高的节点就是一条被否定的草稿 (10 条边)。
+   * 此前只挡"撤回的邻居", 漏了"撤回的源"。修在读取侧而非删数据: 可见性是读取期的性质,
+   * 于是存量残留边立刻失效, 不必写迁移。详见 bug-fix/2026-09-18-shadow-source-edges.md。
+   */
+  /** 关系遍历 (出边)。实现与完整说明在 graph-reader.ts (两个方向合看才见其不对称)。 */
   traverse(fromId: string, relationType: string): MemoryEntry[] {
-    const rows = this.db
-      .prepare(
-        "SELECT m.* FROM memories m JOIN relations r ON r.to_id = m.id WHERE r.from_id = ? AND r.type = ? AND m.status != 'shadow'",
-      )
-      .all(fromId, relationType) as unknown[];
-    return (rows as RowLike[]).map((r) => this.hydrate(r));
+    return this.graph.out(fromId, relationType as RelationType);
+  }
+
+  /** 关系遍历 (入边)。见 graph-reader.ts 的 incoming()。 */
+  traverseIncoming(toId: string, relationType: string): MemoryEntry[] {
+    return this.graph.incoming(toId, relationType as RelationType);
   }
 
   /**

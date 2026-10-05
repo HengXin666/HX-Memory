@@ -59,6 +59,16 @@ export function tokenSetOf(text: string): Set<string> {
   const out = new Set<string>();
   for (const t of [...s.words, ...s.bigrams]) {
     if (t.length >= 2) out.add(t);
+    // ⚠ 2026-09-18 修复: **非中文的单字符 (数字/字母) 必须保留**。
+    //
+    // 为什么: 单字符此前被一律剔除 (理由见头注: 中文单字 "要/上/设" 噪声大) ——
+    // 但那把**数字与标识符**也一起丢了, 于是 "第 3 轮" 与 "第 4 轮" 的词集**完全相同**,
+    // 覆盖率算出 1.0 而被判为重复 ⇒ **静默吞并** (新条目根本不落盘)。
+    // 实测: 把其中一处数字改成相邻值, 原实现 **60/60 全部误判重复**。
+    //
+    // 只放行"非中文"的: 中文单字仍然剔除 (噪声理由成立), 而 "3"/"a"/"x" 这类
+    // 是**具体标识符**, 它们的差异就是真实的语义差异。
+    else if (/[0-9a-zA-Z]/.test(t)) out.add(t);
   }
   return out;
 }
@@ -117,7 +127,21 @@ export function decideAssociation(
   // 1) 新内容已被某条老记忆覆盖 → 重复 (强化老条目, 合并新增的标签/实体)。
   //    证据不足 (候选太短) 时不允许吞并 —— 那会把"上限 10"这类短句误判成任何含"上限"的记忆的重复。
   const hasEvidence = candidateTokens.size >= minEvidence;
-  if (byCoverage && hasEvidence && byCoverage.coverage >= mergeFloor) {
+  // ⚠ 2026-09-18 修复 (第二处): 覆盖率之外还要看**候选新增了什么**。
+  //
+  // 为什么仅靠覆盖率不够: 它只算"候选有多少被老条目覆盖", 不看"候选带来了什么新东西"。
+  // 于是一条只差一个数字的记忆 (如"上限 5 秒" vs "上限 30 秒") 覆盖率仍是 0.8~1.0,
+  // **越过第一道门的结论** (指纹比较明明知道它们不同) 而被吞并。
+  //
+  // 判据: 若候选的**新增词里含具体标识符** (数字/拉丁), 那是**真实的新信息** ——
+  // 不吞并, 退化为"建边 + 落盘"(信息不丢)。
+  // 这一条与上游的单字符修复**必须同时生效**: 上游让"3 vs 4"这类差异**可见**,
+  // 这一条让判据**用得上**那个差异 (只修任一处都无效, 实测 5/5 误判不变)。
+  const candidateNewTokens = [...candidateTokens].filter(
+    (t) => !tokenSetOf(byCoverage?.entry.content ?? "").has(t),
+  );
+  const bringsIdentifier = candidateNewTokens.some((t) => /[0-9a-zA-Z]/.test(t));
+  if (byCoverage && hasEvidence && byCoverage.coverage >= mergeFloor && !bringsIdentifier) {
     const target = byCoverage.entry;
     const mergedTags = (candidate.tags ?? []).filter((t) => !(target.tags ?? []).includes(t));
     const mergedEntities = (candidate.entities ?? []).filter(

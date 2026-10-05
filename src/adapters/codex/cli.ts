@@ -14,6 +14,7 @@
 //   node dist/adapters/codex/cli.js mcp --http --port 4399 [--token <t>] [--host <h>] # MCP over HTTP
 // 纯 Node, 零 harness 依赖 (Facade + 内核服务直连, 与 DSH 面板走同一套语义)。
 import { resolve } from "node:path";
+import { relinkAll } from "../../app/relink.ts";
 import { fileURLToPath } from "node:url";
 import { FileBackend } from "../../storage/file-store.ts";
 import { EpisodeStore } from "../../storage/episode-store.ts";
@@ -58,7 +59,10 @@ export async function main(argv: string[]): Promise<number> {
   const root = flags["root"];
   if (!root) {
     console.error(
-      "usage: hx-memory <sync|rules|stats|digest|export|import|verify|rebuild|consolidate|normalize|maintain|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
+      "usage: hx-memory <sync|rules|stats|digest|search|evidence|relink|export|import|verify|rebuild|consolidate|normalize|maintain|mcp> --root <memRoot> [--repo <repoRoot>] [--episodes] [--since <iso>] [--dry-run] [--http --port N --token T]",
+    );
+    console.error("  search  --text <query> [--limit N]");
+    console.error("  evidence --id <memoryId>   (trace a memory back to its raw turns; exit 2 = 溯源不完整)",
     );
     return 1;
   }
@@ -137,12 +141,23 @@ export async function main(argv: string[]): Promise<number> {
       // 约定与 consolidate 一致: 必须显式 --dry-run=true 才只报告
       const report = await stack.consolidate.run({ dryRun: flags["dry-run"] === "true" });
       const prunedEpisodes = stack.episodes.prune();
+      // 重新建边: 补齐"建边判据改进后存量条目没跟上"的缺口。
+      //
+      // 为什么把它放进定期维护 (而不是只留手动命令): 建边**只发生在写入时**, 因此判据一旦改进,
+      // 存量条目就永远停在旧口径上 —— 实测真实库曾出现"有 401 条边可建, 库里却只有 20 条"。
+      // 依赖用户手动跑一次, 等于这个缺口长期存在。
+      //
+      // 安全性: relink 只**追加** relations 字段 (不删任何既有边, 含人工显式建的),
+      // 且幂等 (重跑 0 新增) —— 与 consolidate 同级别的保守改动。真跑才写盘 (dryRun 只报告)。
+      const relink = await relinkAll(stack.store, { dryRun: flags["dry-run"] === "true" });
       const out = {
         command: "maintain",
         applied: report.applied,
         scanned: report.scanned,
         expiring: report.expiring.length,
         prunedEpisodes,
+        relinkAdded: relink.added,
+        relinkChanged: relink.changed,
       };
       console.log(JSON.stringify(out));
       return 0;
@@ -162,6 +177,85 @@ export async function main(argv: string[]): Promise<number> {
       console.log();
       for (const point of digest.points) console.log("- " + point);
     }
+    stack.close();
+    return 0;
+  }
+
+  if (cmd === "search") {
+    // 与人侧交互: 面板已有搜索, CLI 此前没有 —— 而无 GUI 的环境 (远程 shell / 脚本) 只能直连存储,
+    // 那会绕过使用层语义 (覆盖率过滤 / 预算 / 可见性 / 降级说明), 拿到与面板不一致的结果。
+    const keyword = flags["text"] ?? flags["q"];
+    const limit = Number(flags["limit"] ?? 10);
+    const stack = openMemoryStack(root);
+    const res = stack.facade.recall({
+      ...(keyword ? { text: keyword } : {}),
+      purpose: "recall",
+      limit,
+      tokenBudget: Math.max(400, limit * 160),
+    });
+    if (!res.hits.length) {
+      // 与工具同一句口径: 没返回东西 = 库里确实没有 (弃权闸门保证这句成立)。
+      console.log("No relevant memory found.");
+    } else {
+      for (const hit of res.hits) {
+        console.log("[" + hit.entry.kind + "][" + hit.entry.id + "] " + hit.entry.content);
+        if (hit.channels.length) console.log("    why: " + hit.channels.join("+"));
+      }
+    }
+    if (res.degraded.length) {
+      // 降级必须可见 (否则"没搜到"与"引擎降级"分不开)。
+      for (const d of res.degraded) console.error("degraded: " + d);
+    }
+    stack.close();
+    return 0;
+  }
+
+  if (cmd === "evidence") {
+    // 追来源: 一条记忆 → 产生它的原始对话原话 (与工具 memory_evidence / 面板「追来源」同一口径)。
+    const id = flags["id"];
+    if (!id) {
+      console.error("evidence 需要 --id <memoryId>");
+      store.close();
+      return 1;
+    }
+    const stack = openMemoryStack(root);
+    const chain = await stack.facade.evidenceChain(id);
+    if (!chain) {
+      console.error("no memory entry with id " + id);
+      stack.close();
+      return 1;
+    }
+    console.log("[" + chain.entryId + "] " + chain.content);
+    console.log("source: " + chain.source);
+    console.log("traceable: " + (chain.traceable ? "yes" : "no"));
+    for (const why of chain.reasons) console.log("reason: " + why);
+    if (chain.episodes.length) {
+      console.log("--- raw turns (untouched) ---");
+      for (const ep of chain.episodes) {
+        console.log("[" + ep.role + " turn=" + ep.turn + " " + ep.at + "] " + ep.text);
+      }
+    }
+    // 退出码区分"可完整溯源"与"不完整": 脚本据它决定要不要人工核对。
+    stack.close();
+    return chain.traceable ? 0 : 2;
+  }
+
+  if (cmd === "relink") {
+    // 给**存量条目**补结构关联边 (只加 relates, 不动内容)。
+    // 为什么需要 CLI 入口: 建边只在写入时发生, 因此"判据改进"只对新条目生效 ——
+    // 实测真实库 active 154 条而 relates 边仅 20 条 (按当前判据重算可得约 400 条)。
+    const stack = openMemoryStack(root);
+    const report = await relinkAll(stack.store, {
+      dryRun: flags["dry-run"] === "true",
+      ...(flags["max-links"] ? { maxLinks: Number(flags["max-links"]) } : {}),
+    });
+    console.log(JSON.stringify(report, null, 2));
+    console.log(
+      (report.dryRun ? "[干跑] " : "") +
+        "扫描 " + report.scanned + ", 新增边 " + report.added +
+        " (涉及 " + report.changed + " 条)" +
+        (report.dryRun ? " — 未写盘; 加 --dry-run=false 或去掉该参数即执行" : ""),
+    );
     stack.close();
     return 0;
   }

@@ -32,9 +32,44 @@ export interface StructuredTurn {
    * 垃圾实体会把不相关的记忆连成一团, 比没有边更糟。
    */
   entities?: string[];
+
+  /**
+   * **重要性 1..10** (缺省视为中性 5): 影响排序与整合优先级。
+   *
+   * 与 `entities`/`conclusion` 同一个处置 (§765): 该字段自 ADR 起就声明在 `MemoryEntry` 上,
+   * 而**从未有任何一层产出过它** —— 于是 `compositeScore` 里的 `importanceFactor`
+   * 恒为 0.778 (**对所有条目相同, 在排序上不区分任何东西**)。
+   *
+   * 为什么必须由抽取层产出: 排序要区分"这条重要吗", 而那需要**读内容**才知道 ——
+   * 写入方 (工具/CLI) 只拿到一段文本, 判断不了。
+   */
+  importance?: number;
+
+  /**
+   * **置信度 0..1** (缺省 0.7): 低置信条目排序降权, 但不被丢弃。
+   *
+   * 与 `importance` 同上 (§765): 从未被产出的后果更具体 ——
+   * `adjudicator` 里有一条判据 "**候选置信度不低于目标才允许取代**",
+   * 而两边都取缺省值 ⇒ 差恒为 0 ⇒ **那条判据从不生效**, 且 `supersede` 的
+   * `confidence` 恒为 0.6 (margin 恒 0)。**一个设计好的判据恒不触发**比"字段空着"更值得修。
+   */
+  confidence?: number;
 }
 
 export interface TurnStructurer {
+  /**
+   * 这是否是**具备提炼能力**的实现 (能产出 conclusion)。
+   *
+   * 为什么必须由实现**显式声明** (2026-09-18; 实测代价: 两版推断判据各自导致 42 / 39 个测试失败):
+   * "无结论"有两种成因且处置相反 ——
+   *   · 能力缺失 (启发式兜底 / LLM 不可用) → 保持原行为 (直接落盘);
+   *   · 候选可疑 (LLM 读了但没提炼出来) → 进待审队列。
+   * 而这两种情况**从外部无法区分**: 启发式兜底同样返回 summary/tags/points;
+   * makeLlmStructurer 的构造不抛异常, 运行时失败还会被 catch 回退。
+   * 任何"看返回形状"或"看装配期对象"的推断都被实测证伪, 因此交由实现自己声明。
+   */
+  readonly canConclude?: boolean;
+
   /**
    * 结构化一轮问答。
    * input.answer 是**同一个设计的一部分**: 只有问题没有回答时, 结论与理由无从谈起
@@ -46,6 +81,9 @@ export interface TurnStructurer {
 /** 默认启发式结构化: 不调 AI, 纯规则确定可测。 */
 export function heuristicStructurer(): TurnStructurer {
   return {
+    // 兜底**刻意不产 conclusion** (见 structure 内的说明): 因此它不具备结论能力,
+    // 待审闸门不得据此把"无结论"判成候选可疑 (那会让无 LLM 环境全部进队列)。
+    canConclude: false,
     async structure(input) {
       const text = input.text.trim();
       const points = text.length > 120 ? splitPoints(text) : [text];
