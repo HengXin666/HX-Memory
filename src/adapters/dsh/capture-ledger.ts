@@ -10,6 +10,7 @@ import type { CaptureResult } from "../../capture/engine.ts";
 import type { CapturePipeline } from "../../capture/pipeline.ts";
 import type { EpisodeStore } from "../../kernel/ports.ts";
 import type { CaptureLog, CaptureRecord, CaptureSkipReason } from "./capture-log.ts";
+import type { CaptureNegativity } from "../../capture/engine.ts";
 
 export interface SessionEventLike {
   type: string;
@@ -64,6 +65,13 @@ export interface TurnContext {
 /** 落盘一轮的全部输入 (依赖全由调用方注入, 因此这段可单测)。 */
 export interface FlushTurnDeps {
   pipe: Pick<CapturePipeline, "run">;
+  /**
+   * 负面/纠正信号的判定面 (可选; 见 kernel/negativity.ts)。
+   *
+   * 由装配层注入而不是 pipeline 自建: 词表是**设置项** (面板可改), 而 ledger 是适配层 ——
+   * 它知道"配置从哪来"。缺省不传 = 关闭该路径, 行为与接入前逐字一致。
+   */
+  negativity?: CaptureNegativity;
   /** 每次落盘时**重新求值** (面板能在会话中途开关 episode 记录 / 耗时账本)。 */
   episodes: () => EpisodeStore | null;
   log: () => CaptureLog | null;
@@ -136,6 +144,7 @@ export async function flushTurn(deps: FlushTurnDeps, ctx: TurnContext): Promise<
       },
       {
         ...(episodeMs ? { episodeMs } : {}),
+        ...(deps.negativity ? { negativity: deps.negativity } : {}),
         onTiming: (timing, res) => {
           if (!log) return;
           const stored = res.entries.length;
@@ -147,6 +156,8 @@ export async function flushTurn(deps: FlushTurnDeps, ctx: TurnContext): Promise<
             ...(skip ? { skip } : {}),
             entries: stored,
             ...(stored > 0 ? {} : { detail: res.signal }),
+            // 结构化路径 (耗时之外的第二个维度) —— 见 CaptureRecord 的字段说明。
+            ...(res.concludeCapable === undefined ? {} : { concludeCapable: res.concludeCapable }),
           });
         },
       },

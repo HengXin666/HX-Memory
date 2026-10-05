@@ -121,7 +121,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 | ④   | **确定性注入** (自动)   | 每个 `agent/pre-step`                  | 绑定命中的项目, 每次对话自动注入绑定记忆                             | 模型每步都带着相关记忆 (测试 10/10 命中)                        |
 | ⑤   | **记忆工具** (模型可调) | DSH 工具区                             | 模型自主调用 `memory_search` / `memory_save` / `memory_rule_propose` | 按需检索 / 保存 / 提议规则                                      |
 | ⑥   | **推广批次**            | DSH 设置 → 记忆审阅                    | 点「运行推广批次」                                                   | 聚类最近的经验成待审提议, 并给出漏斗报告 (候选/跳过/簇/产出/AI 是否启用) |
-| ⑦   | **Codex CLI**           | 终端                                   | `hx-memory sync/rules/stats/verify/rebuild`                          | 同步 AGENTS.md / 列规则 / 统计 / 一致性自检 / 分级重建          |
+| ⑦   | **Codex CLI**           | 终端                                   | `hx-memory sync/rules/stats/search/evidence/verify/rebuild`          | 同步 AGENTS.md / 列规则 / 统计 / **检索** / **追来源** / 一致性自检 / 分级重建          |
 | ⑧   | **MCP 服务**            | Claude Code / Desktop / Cursor / Cline | `hx-memory mcp --root <memRoot>` 配成 MCP server                     | 六个工具 (search/save/link/history/forget/stats) 共用同一份记忆 |
 | ⑨   | **衰减整合**            | 终端 / 定时任务                        | `hx-memory consolidate [--dry-run]`                                  | 短命记忆按衰减/TTL 置为 `expired` (可逆, 永不删除)              |
 
@@ -241,11 +241,16 @@ node --experimental-strip-types scripts/bench-retrieval.ts 10000 [--semantic]   
 
 ```bash
 hx-memory stats   --root <memRoot>   # 统计 + 引擎状态
+hx-memory search  --root <memRoot> --text "弃权闸门" --limit 5   # 与面板/工具同一条检索语义
+hx-memory evidence --root <memRoot> --id <memoryId>   # 追来源: 这条记忆由哪几轮原始对话产生
 hx-memory verify  --root <memRoot>   # 索引 ↔ 真相 一致性自检 (不一致返回 1)
 hx-memory rebuild --root <memRoot>              # T1: 索引 ← 真相
 hx-memory rebuild --root <memRoot> --episodes   # T2: 记忆 ← 原文重放
 hx-memory consolidate --root <memRoot> [--dry-run]  # 衰减扫描 (过期可逆, rule/lesson 永不过期)
 ```
+
+`evidence` 的退出码是**三分**的: `0` = 可完整溯源, `2` = 溯源不完整 (原因随输出给出), `1` = 条目不存在 ——
+脚本据此决定要不要人工核对, 不必解析输出文本。
 
 **用进废退**: 被检索并注入的记忆会 `reinforcement+1` 并刷新 `lastHitAt` (同一分钟内的重复命中合并成一次),
 因此常用记忆衰减更慢; 反之从未被用到的 `event`/`context` 会先过期。
