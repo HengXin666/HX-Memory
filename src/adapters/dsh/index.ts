@@ -5,26 +5,23 @@
 //   session/event       → 聚合 turn → 批量捕获入记忆 (见 runtime.ts)
 //   ctx.tools.register  → memory_search / memory_save / memory_rule_propose
 //   ctx.settings        → 可配置开关 (经 installSection 接住宿主权威配置源)
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
 import { FileBackend } from "../../storage/file-store.js";
 import { CapturePipeline } from "../../capture/pipeline.js";
-import { makeSessionStartHandler } from "./session-start.js";
-import {
-  HxMemoryRuntime,
-  projectOfSession,
-  type SessionEventLike,
-  type SessionLike,
-} from "./runtime.js";
-import { makePreStepHandler } from "./prestep.js";
+import { createPendingGuidance, makeSessionStartHandler } from "./session-start.js";
+import { makeRegistrationCheck, wireSessionLifecycle } from "./session-wiring.js";
+import { wirePrestepAndCapture } from "./prestep-wiring.js";
+import { HxMemoryRuntime, scopeOfSession } from "./runtime.js";
+import type { ProjectScopeArg } from "../../kernel/project-lineage.ts";
 import { registerMemoryTools } from "./tools.js";
+import { captureReviewBridge } from "./capture-review-bridge.ts";
+import { makeAlwaysOnDetailedReader } from "./gateway-injection.ts";
 import { EpisodeStore } from "../../storage/episode-store.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { makeLlmAbstractor } from "./llm-abstractor.js";
 import { makeLlmStructurer } from "./llm-structurer.js";
-import { RecallService } from "../../recall/service.ts";
 import { HybridRetriever } from "../../retrieval/hybrid.js";
 import { MemoryFacade } from "../../app/facade.js";
 import { MemoryNormalizer } from "../../app/normalize.ts";
@@ -32,49 +29,35 @@ import { LexicalEmbedder } from "../../retrieval/embedding-lexical.js";
 import { LinearVectorIndex } from "../../retrieval/vector.js";
 import { ProjectedVectorIndex } from "../../retrieval/vector-projected.js";
 import { openAiEmbedderFromEnv } from "../../retrieval/embedding-http.js";
-import { Binder, type BindingConfig } from "../../kernel/binder.ts";
+import { Binder } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
-import { HxMemoryGateway } from "./gateway.js";
-import { HXMEM_REMOTE_METHODS } from "./remote-methods.js";
-import { assertRemoteContract, remoteContract } from "./remote-contract.js";
+import { mountGateway } from "./gateway-mount.ts";
 import { InvocationLog } from "./invocations.js";
 import type { LlmInvocationRecord } from "./llm-agent.js";
-import { DEFAULT_SETTINGS, type HxMemorySettings } from "./types.js";
-import { createSettingsSource } from "./settings-source.js";
+import { createLiveSettings } from "./settings-live.js";
+// 设置 schema 必须由**本入口**再导出一次 (0.1.7+ 契约): 宿主从
+// `entry.fiber.runtime.Config` 读它 (`cordis` 的 `plugin()` 取的就是 `plugin.Config`),
+// 而那正是这个模块的导出面。少了这一行, 宿主判定"该条目没有 schema" → 设置页上
+// 整个命名空间消失, 且**没有任何报错** (2026-09-29 实测)。
+export { Config, MEMORY_SETTINGS_NAMESPACE, MEMORY_SETTING_KEYS } from "./settings.js";
 import { createTriggerCache } from "./trigger-cache.js";
 import { ScheduleLog } from "./schedule-log.js";
 import { CaptureLog } from "./capture-log.js";
 import { wireMaintenance } from "./maintenance-wiring.js";
 import { wireSettings } from "./settings-wiring.js";
 import { wireLifecycle } from "./lifecycle-wiring.js";
+import { wireDecisionGate } from "./decision-wiring.js";
 
 export const name = "hx-memory";
 // 只硬依赖工具注册表: 事件监听不需要服务, 设置经 ctx.inject 可选接入,
 // llm/agentDefaultModel 用 ctx.get 探测 (缺失时 AI 增强自动回退启发式, 插件照常工作)。
 export const inject = ["tools"];
 
-export interface HxMemoryPluginOptions {
-  /** 记忆根目录 (默认 $DSH_HOME/hx-memory, 再退回 ~/.dsh/hx-memory)。 */
-  root?: string;
-  /** 存储层 (可选: 不传则用 root 自建默认 FileBackend)。 */
-  store?: FileBackend;
-  /** Review 队列目录 (可选: 默认 <root>/review)。 */
-  reviewDir?: string;
-  settings?: Partial<HxMemorySettings>;
-  /** 声明式记忆绑定 (VCP 式记忆拓扑): 项目 → 绑定哪些记忆源。 */
-  bindings?: BindingConfig[];
-}
-
-/**
- * 默认记忆根: $HX_MEMORY_ROOT → $DSH_HOME/hx-memory → ~/.dsh/hx-memory。
- * 跟随 DSH_HOME 很重要: 多实例/CI 用 DSH_HOME 隔离状态, 记忆根不能落在共享的 ~/.dsh。
- */
-export function defaultMemoryRoot(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.HX_MEMORY_ROOT?.trim()) return env.HX_MEMORY_ROOT.trim();
-  const dshHome = env.DSH_HOME?.trim();
-  if (dshHome) return resolve(dshHome, "hx-memory");
-  return join(homedir(), ".dsh", "hx-memory");
-}
+// 入口选项与默认路径整段在 plugin-options.ts; 这里再导出, 保持既有导入路径不变。
+export type { HxMemoryPluginOptions } from "./plugin-options.js";
+export { defaultMemoryRoot } from "./plugin-options.js";
+// 上面两行只做再导出 (不引入本地绑定), 但本模块自己要使用它们 —— 因此仍需本地导入。
+import { defaultMemoryRoot, type HxMemoryPluginOptions } from "./plugin-options.js";
 
 /** 尝试构造 AI 能力; agents 服务不可用或构造失败 → undefined (调用方回退启发式)。 */
 function safeAgent<T>(fn: () => T): T | undefined {
@@ -94,10 +77,12 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   // 注入进来的 store 属于调用方, 由它负责关闭 —— 这里只关自己建的那个。
   const ownsStore = !opts.store;
   const reviewDir = opts.reviewDir ?? join(root, "review");
-  // 组合配置 (插件 entry) 是 base; 宿主 settings 服务可用时以它的权威值覆盖。
-  const compositionSettings: HxMemorySettings = { ...DEFAULT_SETTINGS, ...opts.settings };
-  const settingsSource = createSettingsSource<HxMemorySettings>(compositionSettings);
-  const settings = (): HxMemorySettings => ({ ...DEFAULT_SETTINGS, ...settingsSource.read() });
+  // 组合配置 (插件 entry) 是 base; 0.1.7+ 由 volatile 引用覆盖, 旧宿主由 wireSettings 接 thunk。
+  // 三步的顺序是硬约束 (写错的表现是"设置看着生效、其实读默认值"且无报错), 因此收在
+  // createLiveSettings 里由结构保证 —— 见 settings-live.ts 的说明。
+  const liveSettings = createLiveSettings(opts.settings ?? {}, opts);
+  const settingsSource = liveSettings.source;
+  const settings = liveSettings.read;
 
   const bindingStore = new BindingStore(root);
   // v2 检索器: 绑定注入 / 会话召回 / memory_search 三条路共用同一个检索语义
@@ -122,6 +107,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     { embedder: localEmbedder, autoEvolve: () => settings().autoEvolve },
   );
   facade.withIndexStatus(() => store.ftsStatus());
+  // 证据链: 条目 → 原文 (与 app/stack.ts 同一接线, 保证各宿主行为一致)。
+  facade.withEvidence(new EpisodeStore({ root, retentionDays: settings().episodeRetentionDays }));
   // 治理出口延后接线 (generalizer 建在下方, 依赖 reviewDir 与模型) ——
   // 坏评超标的记忆据此产出人审提议; 不接线则标注照常落盘, 只是不产生提议。
   facade.withGeneralizer({
@@ -152,8 +139,11 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     facade,
     revision: () => store.revision(),
     budgetTokens: 400,
+    // 条数上限: 传**函数** —— 面板改动当轮生效 (与 autoEvolve/episodeRetentionDays 同一约定)。
+    // 缓存已把条数纳入失效判据 (见 trigger-cache 的 caches), 因此改条数不会命中旧缓存。
+    maxEntries: () => settings().alwaysOnMaxEntries,
   });
-  const refreshAlwaysOn = (project?: string): Promise<void> => triggerCache.refresh(project);
+  const refreshAlwaysOn = (scope?: ProjectScopeArg): Promise<void> => triggerCache.refresh(scope);
 
   const binder = new Binder(
     (q) => store.query(q),
@@ -165,12 +155,12 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     // 通用触发通道 (无项目绑定时的兜底): always-on 保底 + 回忆意图门控。
     // 这是"AI 没意识到要查记忆"时记忆仍然生效的保证 (见 src/trigger/policy.ts)。
     {
-      alwaysOn: (project) => triggerCache.ids(project),
-      recallFor: (text, decision, project) => triggerCache.recallFor(text, decision, project),
+      alwaysOn: (scope) => triggerCache.ids(scope),
+      recallFor: (text, decision, scope) => triggerCache.recallFor(text, decision, scope),
       now: () => new Date().toISOString(),
-      // project 一路透传到这里 (会话的 projectOf → binder.warm → 缓存刷新):
+      // 工作区范围一路透传到这里 (会话的 scopeOf → binder.warm → 缓存刷新):
       // 兜底通道此前丢掉了它, 于是 always-on 退化成"不区分项目" —— 泄漏与缓存串味都由此而来。
-      warm: (project) => refreshAlwaysOn(project),
+      warm: (scope) => refreshAlwaysOn(scope),
       // 命中即强化: 确定性注入是每轮都在跑的主通道, 注入过的记忆必须算"被用到"。
       // Facade.reinforce 自带 60s 合并窗口 (同窗口内重复命中只写一次), 失败静默 (不拖垮注入)。
       onInjected: (ids) => {
@@ -180,7 +170,11 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   );
   // AI 结构化: 经 agents 服务调最小 agent; 不可用时 pipeline 自动回退启发式。
   const structurer = safeAgent(() => makeLlmStructurer(ctx, settings));
-  const pipe = new CapturePipeline(store, { structurer: structurer ?? undefined });
+  // reviewRoot 与真相文件同根: 待审队列要落在人能找的地方 (而不是临时目录)。
+  const pipe = new CapturePipeline(store, {
+    structurer: structurer ?? undefined,
+    reviewRoot: root,
+  });
 
   // AI 调用记录: 订阅宿主事件, 存环形缓冲供面板展示 (透明可审计)。
   const invocationLog = new InvocationLog();
@@ -237,6 +231,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     episodes: () => episodeStore(),
     // 提供者 (不是实例): 面板里关掉账本当轮生效, 不需要重启。
     captureLog: () => (settings().captureLog ? captureLog : null),
+    // 负面/纠正信号判定面 (词表可配置 ⇒ 必须每次求值, 不能构造期固化)。
+    negativity: () => gate.negativity.capture,
   });
   // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用/失败时回退启发式。
   const generalizer = new GeneralizerService(
@@ -260,7 +256,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     },
   );
   generalizerHolder.current = generalizer;
-  const recall = new RecallService((q) => store.query(q), retriever);
+  // 待发指引: 会话开始装入、首轮预步取走后清空 —— 记忆**只有 pre-step 一个注入点**。
+  const pendingGuidance = createPendingGuidance();
 
   // 后台维护 (P3 的 ⬜ 调度器) 的组装: 策略/执行/记录在 maintenance-wiring.ts。
   // 放在 gateway 之前 —— Service 构造即注册, 它的 maintenance RPC 要读这份记录。
@@ -271,41 +268,79 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     idleMs: () => runtime.idleMs(),
   });
 
-  // 挂载 Review Web 服务 (Typert Remote): Service 构造即注册, 随 fiber 自动卸载。
-  // bindingStore 必须无条件注入 —— 否则面板 saveBindings 永远返回 "binding store not mounted"。
-  ctx.effect(() => {
-    const gateway = new HxMemoryGateway(ctx, {
+  // 面板网关的装配整段在 gateway-mount.ts (组装根只负责传依赖 + root)。
+  mountGateway({
+    ctx,
+    root,
+    deps: {
       store,
       generalizer,
       bindingStore,
       invocations: invocationLog,
       facade,
       // 主动整理 (面板 dryRun → 确认 → 写回) 与 CLI 共用同一实现。
-      normalizer: { run: (opts) => new MemoryNormalizer(store, root).run(opts) },
+      normalizer: { run: (opts: Parameters<MemoryNormalizer["run"]>[0]) => new MemoryNormalizer(store, root).run(opts) },
+      // 待审队列: 从磁盘现读 (队列是追加写的真相文件, 不做缓存 —— 面板刷新要看到最新)。
+      captureReview: captureReviewBridge(root),
+      alwaysOnDetailed: makeAlwaysOnDetailedReader(() => Promise.resolve(store.all())),
       schedule: scheduleLog,
       capture: captureLog,
       // 维护记录与开关同样必须**无条件注入**: 面板据此显示"最近跑过没有/成功没有/为什么关着"。
-      // (漏注入的表现是面板上没有维护区块 —— 而这正是本功能要消灭的那类"不可见"。)
       maintenance: maintenance.log,
       maintenanceConfig: () => maintenance.config(),
       // 面板"当前项目"预填: 与捕获/绑定/召回同一派生口径 (仓库级键)。
       currentProject: () => runtime.project(),
-    });
-    // 装配期校验远端契约 (见 remote-contract.ts): 宿主是**用它自己那份** dsh-typert-protocol
-    // 读 @Remote 标记的, 两份实例不等价时全部端点会静默 404, 而 fiber 依旧 active。
-    // 在这里失败比让面板收到 19 个 404 强 —— 加载错误能一眼看见, 静默 404 不能。
-    assertRemoteContract(remoteContract(gateway, HXMEM_REMOTE_METHODS));
-    return () => void 0; // Service 随 fiber 自动卸载, 无需手动清理
-  }, "hx-memory.gateway()");
-
-  // 设置: 宿主提供 installSection 时把用户层接进来 (必须接住 setSource 的权威 thunk,
-  // 否则用户改的设置永远不会被读到); 旧宿主没有这个方法就退回组合配置。
+    },
+  });
+  // 旧宿主 (<= 0.1.6) 的 installSection 把"权威配置 thunk"交给消费方 —— 必须接住,
+  // 否则用户改的设置永远不会被读到。0.1.7+ 已在 createLiveSettings 里由 volatile 引用接管,
+  // 这里只负责"别让宿主再为它自动生成一份页面"。
   // 宿主版本差异的处理整段在 settings-wiring.ts (组装根只负责调用)。
-  wireSettings({ ctx, compositionSettings, settingsSource });
+  wireSettings({
+    ctx,
+    // 必须是**补全过默认值**的组合层 (旧宿主 0.1.1 的 register 拿它当 base, 传裸
+    // opts.settings 会让宿主侧大部分字段是 undefined —— 见 LiveSettings.composition)。
+    compositionSettings: liveSettings.composition,
+    settingsSource,
+  });
+
+  // 决策层 (召回闸) + 负面/纠正信号链路: 两者的接线整段在 decision-wiring.ts。
+  const gate = wireDecisionGate({
+    root,
+    settings,
+    logWarn,
+    // 以往同类纠正: 用使用层检索 (`purpose:"recall"` 只按相关性排, 不占保底通道)。
+    recallLessons: async (text) => {
+      const scope = runtime.scope();
+      const ranged = {
+        ...(scope?.project ? { project: scope.project } : {}),
+        ...(scope?.lineage?.length ? { lineage: scope.lineage } : {}),
+      };
+      const hits = facade.recall({
+        text: text + " 禁止 改为 教训 被否决",
+        purpose: "recall",
+        limit: 3,
+        tokenBudget: 260,
+        ...(Object.keys(ranged).length ? { scope: ranged } : {}),
+      }).hits;
+      return hits.map((h) => h.entry.content.slice(0, 120));
+    },
+  });
 
   // 工具注册
   ctx.effect(
-    () => registerMemoryTools(ctx, { store, generalizer, retriever, facade }),
+    () =>
+      registerMemoryTools(ctx, {
+        store,
+        generalizer,
+        retriever,
+        facade,
+        // 主动写记忆的真实来源 (取代常量 "session:tool"): 与捕获路径同一口径。
+        sourceOf: () => runtime.sessionId(),
+        // memory_search 的项目过滤范围 (与 trigger-cache 的 recallFor 同一口径)。
+        // 不给它就会搜全库 ⇒ 别的项目的私有记忆被当本项目经验 (见 MemoryToolDeps.scopeOf)。
+        scopeOf: () => runtime.scope(),
+      }),
     "hx-memory.tools()",
   );
 
@@ -320,56 +355,40 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     ownsStore,
   });
 
-  // 会话开始: 注入记忆指引 + 跨项目规则召回 (只注入规则, 不注入历史)。
-  // 判定与组装在 session-start.ts (组装根只负责把它接上事件)。
+  // 会话开始: **只登记, 不注入** (指引装入待发容器, 由首轮预步随记忆块发出)。
+  // 判定在 session-start.ts (组装根只负责把它接上事件)。
   const onSessionStart = makeSessionStartHandler({
-    binder,
-    recall,
     settings: () => ({
       rootAgentsOnly: settings().rootAgentsOnly,
       injectGuidance: settings().injectGuidance,
       language: settings().language,
     }),
-    projectOf: (session) => projectOfSession(session) ?? session.id,
+    pending: pendingGuidance,
   });
-  ctx.on("agent/session-start", (payload: unknown) => {
-    // 会话状态登记与注入分开: 即使不注入 (subagent/关掉指引), runtime 也要开始跟踪这一会话。
-    const agent = (payload as { agent: { session: SessionLike } }).agent;
-    runtime.onSessionStart(agent.session);
-    onSessionStart(payload);
-  });
-
-  // 逐轮确定性注入 (VCP 式): 每步用最新用户文本做绑定检索注入, 不靠模型自觉。
-  // 运行时契约已对照 dsh-agent-instructions 的权威实现验证 (waterfall: next() → 追加上下文消息)。
-  // 类型: DSH 的 ctx.on 需要 dsh-agent 的 UserMessage[]/Agent 精确类型, 这里用受控断言收敛。
-  ctx.on(
-    "agent/pre-step",
-    makePreStepHandler(binder, {
-      rootAgentsOnly: () => settings().rootAgentsOnly,
-      enabled: () => settings().injectBindings,
-      warmupMs: () => settings().semanticWarmupMs,
-      language: () => settings().language,
-      injectMode: () => settings().injectMode,
-      projectOf: (payload) => projectOfSession(payload.agent.session) ?? payload.agent.session.id,
-      // 判定落账: 写入永远 best-effort (append 不抛), 账本关掉时直接丢弃。
-      onDecision: (decision) => {
-        if (!settings().scheduleLog) return;
-        scheduleLog.append({ at: new Date().toISOString(), ...decision });
-      },
-    }) as never,
-  );
-
-  // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
-  ctx.on("session/event", (session: unknown, event: unknown) => {
-    void runtime
-      .capture(session as SessionLike, event as SessionEventLike)
-      .catch((error: unknown) => logWarn("capture failed: %s", error));
+  // 会话生命周期接线 (会话开始的双事件名 + 离开时的冲刷) 整段在 session-wiring.ts。
+  // 那一段独立成文件的原因不只是行数: 它承载的是一次真实故障的修法 (见该文件头注)。
+  wireSessionLifecycle({
+    ctx,
+    runtime,
+    onSessionStart,
+    pendingGuidance,
+    warn: (message) => logWarn(message, ""),
   });
 
-  // 会话离开 store: 立即冲刷未落盘的 turn 并回收状态 (否则 autoMemoryInterval>1 时,
-  // 已结束会话的缓冲会一直留到插件卸载)。
-  ctx.on("session/disposed", (session: unknown) => {
-    runtime.onSessionEnd(session as SessionLike);
+  // 逐轮确定性注入 + 捕获。两段接线整段在 prestep-wiring.ts:
+  // 前者是"每步注入什么", 后者是"每一轮沉淀什么" —— 它们共享一个**上下文来源**
+  // (会话的 scope), 而那正是本次 dsh 0.2.0 故障打断的东西 (见 session-wiring.ts 头注)。
+  wirePrestepAndCapture({
+    ctx,
+    binder,
+    runtime,
+    pendingGuidance,
+    scheduleLog,
+    settings,
+    scopeOf: scopeOfSession,
+    logWarn,
+    negativity: gate.negativity,
+    checkRegistration: makeRegistrationCheck(runtime, (m) => logWarn(m, "")),
   });
 }
 

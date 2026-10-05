@@ -59,6 +59,59 @@ interface RecentView {
   tags?: string[];
 }
 
+/**
+ * 一条记忆的证据链 (与 facade.evidenceChain 同形)。
+ *
+ * 为什么面板需要它: "可溯源"是本产品的核心承诺, 而此前**人侧没有任何入口** ——
+ * 只有 agent 能通过 memory_evidence 工具追到原话。人看到一条结论却查不到它的出处,
+ * 就没法判断该不该改它, 也就谈不上"用户握有最终编辑权"。
+ */
+interface EvidenceEpisode {
+  id: string;
+  role: string;
+  text: string;
+  at: string;
+  turn: number;
+}
+
+interface EvidenceChainView {
+  entryId: string;
+  content: string;
+  source: string;
+  episodeIds: string[];
+  episodes: EvidenceEpisode[];
+  /** 是否完整可溯源 (false 时 reasons 说明缺在哪)。 */
+  traceable: boolean;
+  reasons: string[];
+}
+
+/** 一条待审的捕获候选 (与 capture/review-queue.ts 的 CaptureReviewItem 同形)。 */
+/**
+ * 注入预览 (服务端 alwaysOnPreview 的投影)。
+ *
+ * `blocked` 是本出口存在的原因: 规则是用户确认过的不变量, 而保底通道的承诺是无条件注入 ——
+ * 实测真实库 9 条已确认规则里 **2 条因配额永远注入不进**, 且完全静默。
+ * 面板必须把它们列出来 (含成因), 否则用户只能看到"我确认过这条规则, 但它好像没生效"。
+ */
+interface InjectionPreviewView {
+  picked: Array<{ id: string; kind: string; scope: string; content: string; tokens: number }>;
+  blocked: Array<{ id: string; kind: string; content: string; tokens: number; reason: string }>;
+  budgetTokens: number;
+  selectedTokens: number;
+}
+
+interface CaptureReviewView {
+  id: string;
+  at: string;
+  /** 为什么进待审 (可审计: 多条并列)。 */
+  reasons: string[];
+  question: string;
+  conclusion: string;
+  answerExcerpt: string;
+  project?: string;
+  session: string;
+}
+
 /** 被 agent 负面标注过的记忆 (bad/exposure/quality 三件都要可见, 降权才可解释)。 */
 interface FlaggedView {
   id: string;
@@ -274,14 +327,18 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<HitView[]>([]);
   const [searched, setSearched] = useState(false);
-  const [tab, setTab] = useState<"props" | "recent" | "inv" | "flagged" | "sched" | "cost">(
-    "props",
-  );
+  const [tab, setTab] = useState<
+    "props" | "recent" | "review" | "inv" | "flagged" | "sched" | "cost" | "inject"
+  >("props");
   const [sched, setSched] = useState<SchedView | null>(null);
   const [maint, setMaint] = useState<MaintView | null>(null);
   const [cost, setCost] = useState<CapView | null>(null);
   const [inv, setInv] = useState<InvocationView[]>([]);
   const [flagged, setFlagged] = useState<FlaggedView[]>([]);
+  /** 待审队列: available=false 表示端点未接线 (与"没有待审"是两件事)。 */
+  const [captureReview, setCaptureReview] = useState<{ available: boolean; items: CaptureReviewView[] } | null>(null);
+  /** 注入预览: null = 尚未拉取; 用 blocked 显式列出"因配额没进来"的条目。 */
+  const [injectView, setInjectView] = useState<InjectionPreviewView | null>(null);
   const [recent, setRecent] = useState<RecentView[]>([]);
   const [recentMsg, setRecentMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -294,6 +351,14 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [open, setOpen] = useState<Record<string, ReviewEntryView[] | "loading" | "error">>({});
   /** 宿主不认识 entriesByIds (面板比宿主新, 通常是宿主没重启): 提示一次, 不再逐条报错。 */
   const [staleHost, setStaleHost] = useState(false);
+  /**
+   * 已展开证据链的记忆 id → 链路或状态。
+   * 按需取 (不是全量预取): 每条都要读 episode 日志, 全量预取会把面板拖垮 ——
+   * 与 open (审阅展开) 同一取舍。
+   */
+  const [evidence, setEvidence] = useState<
+    Record<string, EvidenceChainView | "loading" | "error">
+  >({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -490,6 +555,24 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     if (tab === "recent") void refreshRecent();
   }, [tab, refreshRecent]);
 
+  const refreshInjection = useCallback(async () => {
+    try {
+      // 浏览器侧的 rpc 只有 { call }, 读不到 cwd —— 项目名必须走 currentProject (与绑定页同一做法;
+      // 面板曾试图读 rpc.cwd 这个不存在的字段, 于是自动建行永远不生效)。
+      // 项目为空时端点按"没有项目"处理 (只给跨项目规则) —— 那是正确降级, 不是错误。
+      const cur = await callHxMemory<{ project?: string }>(rpc, "currentProject");
+      setInjectView(
+        await callHxMemory<InjectionPreviewView>(rpc, "alwaysOnPreview", { project: cur?.project ?? "" }),
+      );
+    } catch {
+      setInjectView(null);
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    if (tab === "inject") void refreshInjection();
+  }, [tab, refreshInjection]);
+
   const refreshFlagged = useCallback(async () => {
     try {
       const list = await callHxMemory<FlaggedView[]>(rpc, "flaggedMemories", { limit: 50 });
@@ -537,6 +620,70 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     if (tab === "cost") void refreshCost();
   }, [tab, refreshCost]);
 
+  /**
+   * 展开/收起一条记忆的证据链 (追到产生它的原始对话原话)。
+   *
+   * 降级要可见: 宿主未重启 (不认识该端点) 时给出与 staleHost 同类的一次性提示,
+   * 而不是逐条报错 —— 宿主进程比面板活得久是常态。
+   */
+  const toggleEvidence = async (id: string) => {
+    if (evidence[id] && evidence[id] !== "loading") {
+      setEvidence((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    setEvidence((prev) => ({ ...prev, [id]: "loading" }));
+    try {
+      const chain = await callHxMemory<EvidenceChainView>(rpc, "evidenceChain", { id });
+      setEvidence((prev) => ({ ...prev, [id]: chain }));
+    } catch (e) {
+      setEvidence((prev) => ({ ...prev, [id]: "error" }));
+      setRecentMsg(String(e));
+    }
+  };
+
+  /** 拉取待审队列 (按需, 切到该 tab 时才读 —— 与其它 tab 同一取舍)。 */
+  const refreshCaptureReview = useCallback(async () => {
+    try {
+      const res = await callHxMemory<{ available: boolean; items: CaptureReviewView[] }>(
+        rpc,
+        "captureReviewQueue",
+        { limit: 50 },
+      );
+      setCaptureReview(res ?? { available: false, items: [] });
+    } catch {
+      // 宿主未重启 (不认识该端点) → 显示为未接线而不是空队列。
+      setCaptureReview({ available: false, items: [] });
+    }
+  }, [rpc]);
+
+  /**
+   * 审核裁决: keep (确认保留) 或 drop (**从记忆里剔除**)。
+   *
+   * ⚠ 语义在 2026-10-05 反转 (用户要求: "审核机制是用于剔除你的记忆, 而不是说阻止你的记忆
+   * 加入到记忆中"): 队列里的条目**已经入库**, 因此:
+   *   · keep  = 确认留下 (它本来就在库里, 不重复写);
+   *   · drop  = 真的剔除 (服务端写 shadow; 只改队列状态会让"剔除"变成一句空话)。
+   * 旧动作名 accept/reject 在服务端仍被接受并映射到同一套新语义 (兼容既有调用点)。
+   */
+  const resolveReview = async (id: string, action: "keep" | "drop") => {
+    setRecentMsg("");
+    try {
+      const res = await callHxMemory<{ ok?: boolean; error?: string }>(
+        rpc,
+        "resolveCaptureReview",
+        { id, action },
+      );
+      if (res.ok === false) setRecentMsg(res.error ?? "failed");
+      await refreshCaptureReview();
+    } catch (e) {
+      setRecentMsg(String(e));
+    }
+  };
+
   const delRecent = async (id: string) => {
     setRecentMsg("");
     try {
@@ -548,6 +695,10 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
       setRecentMsg(String(e));
     }
   };
+
+  useEffect(() => {
+    if (tab === "review") void refreshCaptureReview();
+  }, [tab, refreshCaptureReview]);
 
   const lastRun = status?.lastRun;
   const elapsed = busy && busySince > 0 ? Math.max(0, Math.round((now - busySince) / 1000)) : 0;
@@ -573,6 +724,15 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
           onClick={() => setTab("recent")}
         >
           {t("tabRecent")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "review"}
+          className={tab === "review" ? "tab on" : "tab"}
+          onClick={() => setTab("review")}
+        >
+          {t("tabCaptureReview")}
         </button>
         <button
           type="button"
@@ -610,7 +770,60 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
         >
           {t("tabCaptureCost")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "inject"}
+          className={tab === "inject" ? "tab on" : "tab"}
+          onClick={() => setTab("inject")}
+        >
+          {t("tabInjection")}
+        </button>
       </div>
+
+      {tab === "inject" ? (
+        <section className="pane">
+          <p className="hint">{t("injHint")}</p>
+          {injectView === null ? (
+            <p className="hint">{t("injUnavailable")}</p>
+          ) : injectView.picked.length === 0 && injectView.blocked.length === 0 ? (
+            <p className="hint">{t("injEmpty")}</p>
+          ) : (
+            <>
+              <p className="hint">
+                {t("injBudget")}: {injectView.budgetTokens} · {t("injUsed")}: {injectView.selectedTokens}
+              </p>
+              <h4>{t("injPicked")}</h4>
+              <ul className="list">
+                {injectView.picked.map((e) => (
+                  <li key={e.id}>
+                    <span className="badge soft">{e.kind}</span>
+                    <span className="badge soft">{e.tokens}</span> {e.content}
+                  </li>
+                ))}
+              </ul>
+              {/* 被配额挡掉的**必须显式列出**: 规则承诺无条件注入, 静默失效是用户唯一
+                  无法自行发现的故障 —— 他只会觉得"我确认过这条, 但它好像没生效"。 */}
+              {injectView.blocked.length ? (
+                <>
+                  <h4>{t("injBlocked")}</h4>
+                  <ul className="list">
+                    {injectView.blocked.map((b) => (
+                      <li key={b.id}>
+                        <span className="badge soft">{b.kind === "rule" ? "rule" : b.kind}</span>
+                        <span className="badge soft">
+                          {b.reason === "over-group-cap" ? t("injReasonGroupCap") : t("injReasonTotalBudget")}
+                        </span>
+                        <span className="badge soft">{b.tokens}</span> {b.content}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
 
       {tab === "sched" ? (
         <section className="pane">
@@ -840,6 +1053,61 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
         </section>
       ) : null}
 
+      {tab === "review" ? (
+        <section className="panel">
+          <h3>{t("tabCaptureReview")}</h3>
+          {captureReview === null ? (
+            <div className="meta">{t("loading")}</div>
+          ) : !captureReview.available ? (
+            <div className="banner info">{t("captureReviewUnavailable")}</div>
+          ) : captureReview.items.length === 0 ? (
+            <div className="empty">{t("captureReviewEmpty")}</div>
+          ) : (
+            <div className="list">
+              {captureReview.items.map((r) => (
+                <div className="row" key={r.id}>
+                  <span className="badge soft">{r.project ?? r.session.slice(0, 12)}</span>
+                  <span className="rule-text">{r.question || r.conclusion}</span>
+                  <span className="meta">
+                    {stamp(r.at)}
+                    {r.conclusion ? " · 结论: " + r.conclusion.slice(0, 60) : ""}
+                  </span>
+                  {/* 原因必须展示: 审核机制的立身之本就是"人能看懂它为什么被标记" */}
+                  {r.reasons.length ? (
+                    <div className="meta">
+                      {t("captureReviewWhy")}:
+                      {r.reasons.map((why, i) => (
+                        <div key={i}>· {why}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {r.answerExcerpt ? (
+                    <div className="meta">回答节选: {r.answerExcerpt.slice(0, 160)}</div>
+                  ) : null}
+                  {/* 处置按钮: 只给"看"不给"做"的队列是半成品 —— 人看懂了原因却无法动作。 */}
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => void resolveReview(r.id, "keep")}
+                    title={t("captureReviewAccept")}
+                  >
+                    {t("captureReviewAccept")}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => void resolveReview(r.id, "drop")}
+                    title={t("captureReviewReject")}
+                  >
+                    {t("captureReviewReject")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {tab === "inv" ? (
         <section className="pane">
           <h3>{t("tabInvocations")}</h3>
@@ -898,12 +1166,54 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
                   </span>
                   <button
                     type="button"
+                    className="ghost"
+                    onClick={() => void toggleEvidence(r.id)}
+                    title={t("evidenceOpen")}
+                  >
+                    {evidence[r.id] && evidence[r.id] !== "loading"
+                      ? t("evidenceClose")
+                      : t("evidenceOpen")}
+                  </button>
+                  <button
+                    type="button"
                     className="danger"
                     onClick={() => void delRecent(r.id)}
                     title={t("recentDelete")}
                   >
                     {t("recentDelete")}
                   </button>
+                  {evidence[r.id] === "loading" ? (
+                    <div className="meta evidence">{t("evidenceLoading")}</div>
+                  ) : null}
+                  {evidence[r.id] === "error" ? (
+                    <div className="meta evidence">{t("evidenceUnavailable")}</div>
+                  ) : null}
+                  {evidence[r.id] && evidence[r.id] !== "loading" && evidence[r.id] !== "error"
+                    ? (() => {
+                        const c = evidence[r.id] as EvidenceChainView;
+                        return (
+                          <div className="meta evidence">
+                            <div>
+                              {t("evidenceSource")}: {c.source} ·{" "}
+                              {c.traceable ? t("evidenceYes") : t("evidenceNo")}
+                            </div>
+                            {c.reasons.map((why, i) => (
+                              <div key={i}>· {why}</div>
+                            ))}
+                            {c.episodes.length === 0 ? null : (
+                              <div>
+                                <div className="meta">{t("evidenceRawTurns")}</div>
+                                {c.episodes.map((ep) => (
+                                  <div key={ep.id} className="meta">
+                                    [{ep.role} turn={ep.turn} {stamp(ep.at)}] {ep.text}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
+                    : null}
                 </div>
               ))}
             </div>

@@ -1,72 +1,98 @@
-// src/adapters/dsh/session-start.ts — 会话开始时的记忆注入 (指引 + 常驻规则/绑定)。
+// src/adapters/dsh/session-start.ts — 会话开始时的**登记** (不注入)。
 //
-// 为什么独立成模块: index.ts 是**组装根** (只接线, 不装策略), 而"会话开始时给什么"
-// 本身就是一段有判定的策略 (subagent 过滤 / 开关 / 新旧两条线 / 判重)。
+// 为什么独立成模块: index.ts 是**组装根** (只接线, 不装策略), 而"会话开始时做什么"
+// 本身就是一段有判定的策略 (subagent 过滤 / 开关 / 判重)。
 // 它此前长在 index.ts 里, 把组装根顶过了仓库的 400 行上限 (verify-structure) ——
 // 上限的用意正是"超过 400 行通常是两个职责被塞进了一个文件"。
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import type { Binder } from "../../kernel/binder.ts";
-import type { RecallService } from "../../recall/service.ts";
-import { memoryGuidance, MEMORY_PLUGIN_SOURCE } from "./guidance.js";
-import { priorInjections } from "./prestep.js";
+//
+// ⚠ **这里不再注入任何东西** (2026-09, 用户实测 "别注入2次, 就只能注入一次"):
+// 此前本模块发"指引"、pre-step 发"条目", 一次会话里模型读到两块 HX-Memory 内容。
+// 现在**唯一的注入点是 pre-step** (见 prestep.ts 的"单一注入点"注释): 指引与条目被组装进
+// 同一个块, 一次会话里只出现一次。
+//
+// 那为什么这个模块还留着: 会话开始仍然要做一件**只有这里能做**的事 —— 把指引**塞进 agent**,
+// 让它在**首轮预步**时随块发出。理由是预步才是"知道用户问什么"的时刻:
+//   · 指引说一次就够, 且它必须与条目同块 (分开就是两块, 正是用户要消掉的形态);
+//   · 条目按真实用户文本排序/裁预算, 比"会话开始时还不知道要问什么"更准。
+// 因此本模块的产出是"给 agent 挂上一段待发指引", 而不是一条已注入的消息。
+import { memoryGuidance } from "./guidance.js";
 import type { SessionLike } from "./runtime.js";
 
 /** 会话开始 payload 里本模块用到的面 (其余字段不碰)。 */
 export interface SessionStartAgent {
   session: SessionLike;
-  inject: (message: unknown) => void;
 }
 
 export interface SessionStartDeps {
-  binder: Binder;
-  recall: Pick<RecallService, "recall">;
   /** 当前设置快照 (每次求值, 面板改动当轮生效)。 */
   settings: () => { rootAgentsOnly: boolean; injectGuidance: boolean; language: "zh" | "en" };
-  /** 项目键派生 (与捕获/绑定/召回同一口径, 由组装根注入)。 */
-  projectOf: (session: SessionLike) => string;
+  /** 待发指引的容器 (每次会话开始重置一次; 由组装根注入)。 */
+  pending: PendingGuidance;
 }
 
 /**
- * 会话开始的注入处理器。
+ * 待发指引 (会话级): 会话开始时装入, 首轮预步取走后清空。
  *
- * 两条线并存 (这是设计, 不是历史包袱):
- *   - 项目**声明了**绑定 → 会话开始就确定性注入绑定集 (不依赖模型自觉), 指引作为工具通道补充;
- *   - 没有绑定 → 指引 + 全局规则召回, 由模型按需调 memory_search (旧线)。
- * 与 pre-step 的分工: 这里建立"已在上下文里"的基线, pre-step 只补差量。
+ * 为什么用容器而不是直接写进会话: 写进会话就是"注入" —— 而注入必须**只**发生在预步那一个点。
+ * 容器还有一个副作用是正面的: 取走即清空, 于是"指引只出现一次"由数据形状保证,
+ * 不依赖任何一处的判重条件写对。
+ *
+ * 按 session id 分桶: 同进程多会话并存 (DSH 的 subagent/并发步) 时不会互相顶掉。
  */
+export interface PendingGuidance {
+  set(sessionId: string, text: string): void;
+  /** 取走并清空 (首轮预步调用; 已取走或不存在 → 空串)。 */
+  take(sessionId: string): string;
+  clear(sessionId: string): void;
+}
+
+export function createPendingGuidance(): PendingGuidance {
+  const bySession = new Map<string, string>();
+  return {
+    set: (id, text) => {
+      bySession.set(id, text);
+    },
+    take: (id) => {
+      const text = bySession.get(id) ?? "";
+      bySession.delete(id);
+      return text;
+    },
+    clear: (id) => {
+      bySession.delete(id);
+    },
+  };
+}
+
 export function makeSessionStartHandler(deps: SessionStartDeps) {
   return (payload: unknown): void => {
     const agent = (payload as { agent: SessionStartAgent }).agent;
     const settings = deps.settings();
-    // subagent 不注入指引/绑定: 它拿到的任务提示词由父 agent 组织, 塞记忆反而污染委派语义。
+    // subagent 不挂指引: 它拿到的任务提示词由父 agent 组织, 塞记忆反而污染委派语义。
     // 与 runtime.capture 同口径: undefined 视为"过滤 subagent"。
     if (settings.rootAgentsOnly !== false && agent.session.header?.origin === "subagent") return;
+    // 判据写在这里而不是预步: 关掉指引后, 预步只发条目块 (仍然是一个块)。
     if (!settings.injectGuidance) return;
-    const parts: string[] = [];
-    // project 的派生由调用方负责 (它已经按 runtime 的同一口径算过) —— 这里收已派生好的键。
-    const project = deps.projectOf(agent.session);
-    const guidance = memoryGuidance(settings.language);
-    const bound = deps.binder.injectFor(project, "");
-    if (bound) {
-      parts.push(bound);
-      parts.push(guidance); // 工具通道作为补充 (VCP Agent 同时有绑定 + 主动检索)
-    } else {
-      // 旧线: 指引 + 全局规则召回 (靠模型自觉调 memory_search)
-      parts.push(guidance);
-      const recallOut = deps.recall.recall({ project });
-      if (recallOut.rules.length) parts.push(recallOut.injected);
-    }
-    if (!parts.length) return;
-    // 会话历史里已经有本插件的注入块 → 不再灌第二遍。
-    // 实测同一会话会出现两份完全相同的指引 (session-start 被触发两次), 而它与预步的注入
-    // 此前也无法互相判重 (标题/框架句不同) —— 同一批记忆因此会在一轮里出现两三次。
-    const text = parts.join("\n\n");
-    if (priorInjections(agent).has(text)) return;
-    agent.inject(
-      createUserMessage({
-        content: [{ type: "text", text }],
-        source: { kind: "plugin", plugin: MEMORY_PLUGIN_SOURCE, form: "instructions" },
-      }),
-    );
+    deps.pending.set(agent.session.id, memoryGuidance(settings.language));
   };
 }
+
+/**
+ * 宿主各版本的**会话开始事件名** (_按新到旧_)。
+ *
+ * ⚠ **2026-10-05 真实故障**: 0.2.0-rc.2 里 `agent/session-start` **不存在**
+ * (全树 grep 0 命中; 0.2.0 的 agent/* 事件全集为 created/disposed/status/pre-step/
+ * request/request-error/assistant-stream/turn-stopping/error)。而 cordis 的 `ctx.on`
+ * 对未知事件名**静默不报错** (`_hooks[name] ||= []` → 永不触发), 于是插件表面完全正常:
+ * fiber active、工具可用、pre-step 注入照跑 —— 只有"会话开始登记"这一支整体哑掉。
+ *
+ * 后果链 (逐条实测):
+ *   · `runtime.onSessionStart` 从不执行 ⇒ lastSessionId/lastProject/lastLineage 恒 undefined;
+ *   · `memory_search` 的 `scopeRequired` 因此永远拿不到 scope ⇒ 实测 **0 条**命中 (带 scope 5 条);
+ *   · `memory_save` 的来源退化成常量 `session:tool` (真库 10-02 起 6/6 条全退化);
+ *   · 指引块永不装入 ⇒ 首轮不再有"可用 memory_search…"那句。
+ *
+ * 0.2.0 的等价钩子是 `agent/created` (权威范例: `@deepseek-ai/dsh-hooks-claude-code`
+ * 用它承接 SessionStart)。两个名字**都注册** (旧名永不触发也无害) 才能同时支持
+ * 0.1.7 与 0.2.0 —— 插件声明支持两条通路就要真的都能用。
+ */
+export const SESSION_START_EVENTS = ["agent/created", "agent/session-start"] as const;

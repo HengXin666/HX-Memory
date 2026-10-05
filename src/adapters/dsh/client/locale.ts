@@ -117,6 +117,19 @@ export const reviewEn = {
   flaggedExposure: "exposure",
   flaggedQuality: "quality",
 
+  // 注入预览 ("这一轮会注入什么" + "什么被配额挡了")。
+  tabInjection: "Injection preview",
+  injHint:
+    "What the always-on channel would inject right now, plus what was a candidate but did not fit the budget. Rules are user-confirmed invariants promised unconditional injection, so anything blocked is shown explicitly instead of failing silently.",
+  injUnavailable: "This host has no always-on preview mounted (older adapter).",
+  injPicked: "Will inject",
+  injBlocked: "Blocked by budget",
+  injBudget: "Budget",
+  injUsed: "Used",
+  injEmpty: "Nothing to inject right now (no confirmed rules and no project facts).",
+  injReasonGroupCap: "group quota exhausted",
+  injReasonTotalBudget: "item larger than total budget",
+
   // 注入调度账本 ("为什么这一轮注入/没注入")。
   tabSchedule: "Injection schedule",
   tabCaptureCost: "Capture cost",
@@ -179,6 +192,20 @@ export const reviewEn = {
   recentDelete: "Delete",
   deleted: "deleted",
   recentTitle: "Recently captured (auto-sink, you keep the right to review)",
+  tabCaptureReview: "Pending review",
+  captureReviewEmpty: "Nothing pending. Everything captured is already in the library; items here are flagged for review.",
+  captureReviewUnavailable: "Not wired up (host may need a restart to expose this endpoint).",
+  captureReviewWhy: "why flagged",
+  captureReviewAccept: "Keep (confirm)",
+  captureReviewReject: "Drop (remove from memory)",
+  evidenceOpen: "Trace origin",
+  evidenceClose: "Hide origin",
+  evidenceLoading: "Loading origin…",
+  evidenceUnavailable: "Origin unavailable (host may need a restart to expose this endpoint).",
+  evidenceSource: "source",
+  evidenceYes: "fully traceable",
+  evidenceNo: "not traceable",
+  evidenceRawTurns: "Raw turns (untouched):",
   invEmpty: "No AI invocations yet. They appear when a memory is structured or abstracted.",
   invTask: "task",
   invPrompt: "prompt",
@@ -313,6 +340,18 @@ export const reviewZh: Locale = {
   flaggedExposure: "曝光",
   flaggedQuality: "质量因子",
 
+  tabInjection: "注入预览",
+  injHint:
+    "现在这一轮保底通道会注入什么, 以及哪些本是候选却塞不进预算。规则是用户确认过的不变量、承诺无条件注入 —— 所以被挡的必须显式列出来, 而不是静默失效。",
+  injUnavailable: "当前宿主没有挂载注入预览 (适配器较旧)。",
+  injPicked: "将会注入",
+  injBlocked: "因配额被挡",
+  injBudget: "预算",
+  injUsed: "已用",
+  injEmpty: "当前没有可注入的内容 (没有已确认规则, 也没有本项目的关键事实)。",
+  injReasonGroupCap: "分组配额用尽",
+  injReasonTotalBudget: "单条超过总预算",
+
   tabSchedule: "注入调度",
   tabCaptureCost: "沉淀耗时",
   schedHint:
@@ -371,6 +410,20 @@ export const reviewZh: Locale = {
   recentDelete: "删除",
   deleted: "已删除",
   recentTitle: "新沉淀 (自动捕获, 你有权随时查看/撤回)",
+  tabCaptureReview: "待审",
+  captureReviewEmpty: "暂无待审。捕获的内容都已入库; 这里的条目是被标记出来供你复核的。",
+  captureReviewUnavailable: "未接线 (宿主可能需重启才能提供该端点)。",
+  captureReviewWhy: "为何被标记",
+  captureReviewAccept: "保留(确认)",
+  captureReviewReject: "剔除(从记忆中移除)",
+  evidenceOpen: "追来源",
+  evidenceClose: "收起来源",
+  evidenceLoading: "正在取来源…",
+  evidenceUnavailable: "取不到来源 (宿主可能需重启才能提供该端点)。",
+  evidenceSource: "来源",
+  evidenceYes: "可完整溯源",
+  evidenceNo: "溯源不完整",
+  evidenceRawTurns: "原始对话 (未经改写):",
   invEmpty: "还没有 AI 调用记录。当记忆被结构化或提炼时会出现在这里。",
   invTask: "任务",
   invPrompt: "提示词",
@@ -411,6 +464,35 @@ export const reviewZh: Locale = {
   searchBtn: "搜索",
   proposalsCount: "待审 {n} 条",
   loading: "读取中…",
+};
+
+// ---- 真相文件视图 (§795): 只读浏览 <root>/{daily,digest,rules}/*.md ----
+/** 文件视图字典。 */
+export const filesEn = {
+  nav: "Truth files",
+  hint:
+    "The source of truth is Markdown files; the SQLite index is rebuildable. This view lists them read-only " +
+    "so you can see exactly what was written — and when.",
+  allDirs: "All",
+  summary: "{n} files · {size}",
+  refresh: "Refresh",
+  loading: "Loading…",
+  empty: "No files yet (nothing has been written to this directory).",
+  readDenied: "Cannot read {path} (outside the allowed directories, or it no longer exists).",
+};
+export type FilesLocale = typeof filesEn;
+
+export const filesZh: FilesLocale = {
+  nav: "真相文件",
+  hint:
+    "真相在 Markdown 文件里, SQLite 索引只是可重建的派生结果。本页只读地列出它们, " +
+    "让你直接看到到底写了什么、什么时候写的。",
+  allDirs: "全部",
+  summary: "{n} 个文件 · {size}",
+  refresh: "刷新",
+  loading: "读取中…",
+  empty: "还没有文件 (该目录下未被写入过)。",
+  readDenied: "读不到 {path} (不在允许的目录内, 或它已不存在)。",
 };
 
 export const cardZh: CardLocale = {
