@@ -126,4 +126,8 @@ export {
   ENGINE_PROFILES,
   recommend,
 } from "./external/bakeoff.ts";
+export { hindsightMemoryEngine } from "./external/hindsight.ts";
+export { mem0MemoryEngine } from "./external/mem0.ts";
+export { ragflowKnowledgeEngine } from "./external/ragflow.ts";
+export { lightRagKnowledgeEngine } from "./external/lightrag.ts";
 export { reindexKnowledge, reindexMemory } from "./external/migrate.ts";
