@@ -2,11 +2,11 @@
 //
 // 定位: 让"语义召回"这条通道**默认就能跑**, 而不是等接上某个向量库才存在。
 //   - 全量投影 + 增量嵌入: 由存储提供廉价投影 (indexDocs) 与写版本号 (revision),
-//     变了才同步、只嵌新条目 —— 绝不按查询扫一批候选 (那样在万级下会静默漏索引);
+//     变了才同步、只嵌新条目  绝不按查询扫一批候选 (那样在万级下会静默漏索引);
 //   - 身份自述: embedderId/dim 是索引身份 (ADR-023), 换模型必须新建索引而不是复用;
 //   - 线性扫描: 千级条目下是亚毫秒级; 万级以上应该换 ANN 引擎 (同一个 VectorIndex 端口)。
 //
-// 诚实边界: 这不是向量数据库, 没有持久化、没有 ANN 索引、没有多进程共享 ——
+// 诚实边界: 这不是向量数据库, 没有持久化、没有 ANN 索引、没有多进程共享 
 // 它随时可以从真相重建 (派生数据), 这正是它可以被替换的前提。
 import type { IndexDoc, SyncEmbedder, VectorIndex } from "../kernel/ports.ts";
 import { cosine } from "./embedding.ts";
@@ -18,7 +18,7 @@ interface VectorRecord {
 }
 
 export interface LinearVectorIndexOptions {
-  /** 嵌入器 (必须支持同步调用 —— 预步注入不能等 IO)。 */
+  /** 嵌入器 (必须支持同步调用  预步注入不能等 IO)。 */
   embedder: SyncEmbedder;
   /** 检索时的余弦下限 (默认 0.35): 低于它不算命中, 避免"什么都能召回"。 */
   floor?: number;
@@ -47,7 +47,7 @@ export class LinearVectorIndex implements VectorIndex {
 
   /**
    * 增量同步 (幂等): 只嵌"新增或内容变了"的条目, 淘汰已消失的条目。
-   * 复杂度 O(投影条数) 次哈希比较 + O(变更条数) 次嵌入 —— 稳态下写入一条只嵌一条。
+   * 复杂度 O(投影条数) 次哈希比较 + O(变更条数) 次嵌入  稳态下写入一条只嵌一条。
    */
   upsert(docs: readonly IndexDoc[]): void {
     const pending: Array<{ id: string; hash: string; text: string }> = [];

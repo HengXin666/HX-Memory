@@ -1,6 +1,6 @@
 // tests/s1/retrieval-vector.test.ts — 检索的向量通道 (语义召回) 与能力自述一致性。
 //
-// 用桩嵌入器构造"字面完全不重合但向量相近"的场景 —— 这正是向量通道存在的意义,
+// 用桩嵌入器构造"字面完全不重合但向量相近"的场景  这正是向量通道存在的意义,
 // 也是它无法被词/bigram 覆盖率替代的原因。
 import { describe, expect, it } from "vitest";
 import { HybridRetriever } from "../../src/retrieval/hybrid.ts";

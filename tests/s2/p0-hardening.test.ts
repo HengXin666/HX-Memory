@@ -1,7 +1,7 @@
 // tests/s2/p0-hardening.test.ts — 三个实测发现的问题的回归护栏。
 //
 // 都是"本地全绿但语义错"的类型, 因此断言必须钉住**可观察的行为差异**, 不是"没抛错":
-//   1. alwaysOn 走廉价投影 (而不是 all() 的全量 hydrate) —— 预步每轮都跑, 10k 条差 22 倍;
+//   1. alwaysOn 走廉价投影 (而不是 all() 的全量 hydrate)  预步每轮都跑, 10k 条差 22 倍;
 //   2. 跨进程写入必须能被向量通道看到 (此前 BM25 看得到、向量看不到);
 //   3. 确定性注入路径必须触发"命中即强化" (此前只有模型主动查才强化)。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
@@ -51,7 +51,7 @@ describe("P0-1: alwaysOn 用廉价投影而不是全量 hydrate", () => {
     const summaries = store.entrySummaries();
     const active = store.all().filter((e) => (e.status ?? "active") === "active");
     expect(summaries.map((s) => s.id).sort()).toEqual(active.map((e) => e.id).sort());
-    // 投影只含选择所需字段 (不含 relations/tags) —— 这是它便宜的原因。
+    // 投影只含选择所需字段 (不含 relations/tags)  这是它便宜的原因。
     expect(summaries[0]).not.toHaveProperty("relations");
     expect(summaries[0]).not.toHaveProperty("tags");
     store.close();

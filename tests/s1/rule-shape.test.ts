@@ -2,7 +2,7 @@
 //
 // 为什么值得钉: 判据一旦与生成模板漂移 (改了一处忘了另一处), 挡掉的就不是占位草稿,
 // 而是**真正的规则** (或者一条都挡不住, 回到"10 条草稿吃光 400 token 保底预算"的老问题)。
-// 两种失败都不会有任何报错 —— 因此模板只能有一份, 且必须被断言。
+// 两种失败都不会有任何报错  因此模板只能有一份, 且必须被断言。
 import { describe, expect, it } from "vitest";
 import { heuristicRuleText, isHeuristicRulePlaceholder } from "../../src/kernel/rule-shape.ts";
 

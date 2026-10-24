@@ -8,7 +8,7 @@
 //
 // 好消息是**返回面同形**: 新控制器的公开方法逐字包含
 // `getSnapshot()` / `subscribe()` / `set(field, value)` / `unset(field)` (另外多一个
-// `mutate(ops, revision)`)。因此卡片侧的读取与写入逻辑**一行都不用改** ——
+// `mutate(ops, revision)`)。因此卡片侧的读取与写入逻辑**一行都不用改** 
 // 只有"到哪里取这个作用域"变了, 那件事收在 `resolveSettingsScope` 里。
 //
 // 为什么把类型与纯逻辑放在无 JSX 的 .ts 里: 仓库的 kernel tsconfig 不含 DOM lib, 只要 node

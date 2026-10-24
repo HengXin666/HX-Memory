@@ -7,6 +7,7 @@
 //   4. 图扩展召回"结构相关但字面不相关"的记忆, 并给出可审计的 why;
 //   5. token 预算是硬约束 (注入多少字才是真实约束)。
 import { describe, expect, it } from "vitest";
+import { queryTerms } from "../../src/retrieval/channels.ts";
 import { HybridRetriever } from "../../src/retrieval/hybrid.ts";
 import { termStreams } from "../../src/kernel/cjk.ts";
 import type { MemoryEntry, Query } from "../../src/kernel/types.ts";
@@ -122,7 +123,7 @@ describe("检索: 返回顺序必须按综合分降序", () => {
    * MMR 的产出是**挑选顺序** (相关性 × 差异度的折中), 不是相关度顺序; 旧实现把
    * mmrSelect 的输出直接当排名返回, 于是分数最高的条目会因为"与已选项相似"被排到后面。
    * 实测后果: 接入真语义通道后 (向量候选多、相似度普遍高) R@1 从 0.726 掉到 0.099,
-   * 而 gold 的分数其实全场最高 —— 是**排序**错了, 不是召回错了。
+   * 而 gold 的分数其实全场最高  是**排序**错了, 不是召回错了。
    */
   const many = (): MemoryEntry[] => {
     // 一批高度相似的条目: MMR 会把它们彼此视为冗余, 从而打乱"分数降序"。
@@ -288,5 +289,25 @@ describe("检索: 能力自述 (降级必须可见)", () => {
     const out = r.retrieveSync({ text: "容器并发" });
     expect(out.degraded.some((d) => d.includes("semantic"))).toBe(true);
     expect(r.capabilities().semantic).toBe(false);
+  });
+});
+// ---- 2026-10-05: 覆盖率分母不许被重复词虚高 ----
+//
+// 真实缺陷: `queryTerms` 的 `words` 流是按**语音变体**逐份 push 的 (原形/归一形/去口水话),
+// 同一个词会出现两三次, 而当时只给 `all` 去了重。实测后果: 查询
+// "工具调用 测试 哪些工具可用" 的 weighted 是 ["工具","测试","工具","可用"] 
+// `工具` 重复 ⇒ 分母虚高 ⇒ 浅撞条目算出 0.5 覆盖率而挤进前排。
+describe("queryTerms: weighted 必须去重 (分母口径)", () => {
+  it("同一查询词不重复出现", () => {
+    const t = queryTerms("工具调用 测试 哪些工具可用", { keepFunctionWords: true });
+    const dup = t.weighted.filter((w, i) => t.weighted.indexOf(w) !== i);
+    expect(dup, "weighted 里有重复词: " + JSON.stringify(t.weighted)).toEqual([]);
+  });
+
+  it("语音变体造成的重复也去重 (同一词三种写法只算一次)", () => {
+    // "密等" 会归一成 "幂等", 原形与归一形都在 words 流里  旧代码会算两次。
+    const t = queryTerms("密等 怎么确保", { keepFunctionWords: true });
+    const dup = t.weighted.filter((w, i) => t.weighted.indexOf(w) !== i);
+    expect(dup, JSON.stringify(t.weighted)).toEqual([]);
   });
 });

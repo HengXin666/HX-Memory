@@ -79,13 +79,17 @@ export function resolveBinding(
 
 /**
  * 把一组命中条目格式化成注入文本 (与 recall 输出同风格)。
- * 每行末尾带**稳定 id 标记** (见 adapters/dsh/oid.ts): 人读是注记, 代码据此做跨轮去重与差量注入 ——
+ * 每行末尾带**稳定 id 标记** (见 adapters/dsh/oid.ts): 人读是注记, 代码据此做跨轮去重与差量注入 
  * 没有它就只能比"整块文本", 而块文本会随条目集合变化, 于是已注入过的条目被反复重发。
  */
 export function formatBoundEntries(heading: string, entries: MemoryEntry[]): string {
   if (!entries.length) return "";
   // 传 kind: 框架句承诺"标记为 rule 的是已确认跨项目约束", 不带标记则那句话指代不到对象 (理由见 injection-format 头注)。
-  return "【" + heading + "】\n" + entries.map((e) => formatEntryLine(e.id, e.content, e.kind)).join("\n");
+  // 传 date: 每条带自己的 validAt 日期  没有它, 一条四周前的 bug 陈述与今天刚踩的坑
+  // 在模型眼里逐字同形, 于是它会把已完结的事当成当前待办 (用户 2026-10-06 实测指控, 见
+  // docs/memory-failure-audit-20261006.md 第五节)。日期是「这件事多旧」的唯一可用信号。
+  return "【" + heading + "】\n" +
+    entries.map((e) => formatEntryLine(e.id, e.content, e.kind, { date: e.ts?.validAt })).join("\n");
 }
 
 /** always-on 组 (常驻不变量) 与新召回组 (按本轮相关性) 的切分。 */
@@ -99,7 +103,7 @@ export interface TriggerGroups {
 /**
  * 把触发通道的一次召回切成两组。
  *
- * 为什么必须切分 (真实缺陷): always-on 是**不变量**, 没有随轮次变化的理由 ——
+ * 为什么必须切分 (真实缺陷): always-on 是**不变量**, 没有随轮次变化的理由 
  * 逐轮重发既烧预算, 又让同一条记忆在上下文里出现 N 次 (模型会误以为它更重要)。
  * 而真正需要逐轮补的是"这件事的具体历史"(意图召回), 它按话题变化。
  * 切分之后由调用方按"已注入 id 集合"只补差量, 两组的语义才不会被同一个判重口径搅在一起。
@@ -149,7 +153,7 @@ export interface TriggerSource {
    *
    * 必须带工作区范围: 不区分项目就会把 A 项目的私有记忆注入给 B 项目 (实测泄漏)。
    * 字符串 = 单值等价 (老调用点); 对象 = 带祖先链 (子仓库也能看到父工程, 见 kernel/project-lineage)。
-   * "不知道是哪个工作区"时传 undefined —— 那时只该给跨项目规则。
+   * "不知道是哪个工作区"时传 undefined  那时只该给跨项目规则。
    */
   alwaysOn(scope?: ProjectScopeArg): readonly string[];
   /** 按触发决策召回条目 (实现方决定用哪些通道/预算)。 */
@@ -158,14 +162,14 @@ export interface TriggerSource {
   now(): string;
   /**
    * 可选: 注入成功后回报被注入的条目 id (用于"命中即强化")。
-   * 为什么需要它: 模型主动调 memory_search 那条路会强化, 而**每轮都在跑的确定性注入**此前不强化 ——
+   * 为什么需要它: 模型主动调 memory_search 那条路会强化, 而**每轮都在跑的确定性注入**此前不强化 
    * 结果是主力通道注入的记忆永远不强化、照常衰减, 与"用进废退"的设计正好相反 (实测确认)。
    * 实现方应做节流 (Facade.reinforce 自带 60s 合并窗口), 且失败要静默 (不能拖垮注入)。
    */
   onInjected?(ids: readonly string[]): void;
   /**
    * 可选: 异步把 always-on 集合准备好 (存储查询是异步的, 而预步判定是同步的)。
-   * prestep 会在注入前先 `binder.warm()` —— 这是"第一轮就有 always-on 保底"的关键,
+   * prestep 会在注入前先 `binder.warm()`  这是"第一轮就有 always-on 保底"的关键,
    * 否则首轮会因为没有缓存而完全无记忆 (而那正是最需要保底的时刻)。
    */
   warm?(scope?: ProjectScopeArg): Promise<void>;
@@ -193,7 +197,7 @@ export class Binder {
   private lastTokens = 0;
   /**
    * v2 检索器 (可选): 传入则绑定走混合检索 (BM25 + 图扩展 + 预算 + 治理闸门);
-   * 不传则走 v1 的关键词路径 —— 后者保留是为了不让"没升级的宿主/老测试"被迫一起改,
+   * 不传则走 v1 的关键词路径  后者保留是为了不让"没升级的宿主/老测试"被迫一起改,
    * 不是长期形态 (见 docs/architecture-v2.md §7 P1)。
    */
   private readonly retriever?: SyncRetriever;
@@ -223,7 +227,7 @@ export class Binder {
     if (!s) return [];
     const lineage = s.lineage?.length ? s.lineage : s.project ? [s.project] : [];
     const configs = this.configs();
-    // 先找精确匹配 (最具体), 再逐级向上找祖先声明的绑定 —— 越具体越优先, 与"就近覆盖"一致。
+    // 先找精确匹配 (最具体), 再逐级向上找祖先声明的绑定  越具体越优先, 与"就近覆盖"一致。
     for (const name of lineage) {
       const cfg = configs.find((c) => c.project === name);
       if (cfg) return cfg.bindings;
@@ -233,7 +237,7 @@ export class Binder {
 
   /**
    * 注入前热身 (可选): 异步嵌入器的向量投影需要在后台补齐才有语义召回。
-   * 带硬时限, 永不阻塞 —— 没补齐就降级 (结果里会说明), 补多少算多少。
+   * 带硬时限, 永不阻塞  没补齐就降级 (结果里会说明), 补多少算多少。
    */
   async warm(deadlineMs = 50, query?: string, scope?: ProjectScopeArg): Promise<void> {
     // 两条都要热: ①向量投影 (异步嵌入器); ②always-on 缓存 (存储查询是异步的)。
@@ -287,7 +291,7 @@ export class Binder {
       for (const e of resolved) selectedIds.add(e.id);
       for (const e of entries) sentIds.add(e.id);
     }
-    // 即使这一轮一条都没发出去, 也要如实记下"走的是绑定通道、选了什么" ——
+    // 即使这一轮一条都没发出去, 也要如实记下"走的是绑定通道、选了什么" 
     // 否则 pre-step 只能拿到上一次的状态, 把"差量挡掉"误报成"库里没有"。
     if (bindings.length) {
       this.lastChannel = "binding";
@@ -298,7 +302,7 @@ export class Binder {
       const text2 = blocks.join("\n");
       this.lastTokens = estimateTokens(text2);
       // 声明式绑定注入同样要算"被用到" (否则配了绑定的项目反而永不强化);
-      // 只算实际发出的条目 —— 被差量过滤掉的本轮并没有被用到。
+      // 只算实际发出的条目  被差量过滤掉的本轮并没有被用到。
       if (sentIds.size) this.triggerSource?.onInjected?.([...sentIds]);
       return text2;
     }
@@ -345,7 +349,7 @@ export class Binder {
       this.lastTokens = 0;
       return "";
     }
-    // 注意: always-on 与意图召回是**两条独立通道**, 不是二选一 ——
+    // 注意: always-on 与意图召回是**两条独立通道**, 不是二选一 
     // always-on 给"不变量", 意图召回给"这件事的具体历史"; 只给前者会让用户问"上次怎么解决的"
     // 时拿不到那条 lesson (真实踩过)。recallFor 的实现方负责合并两者并按预算去重。
     const entries = this.triggerSource.recallFor(text, decision, scope);
@@ -363,7 +367,7 @@ export class Binder {
     this.lastInjectedAt = this.triggerSource.now();
     this.lastIds = fresh.map((e) => e.id);
     // 命中即强化: 确定性注入是"每轮都在跑"的主通道, 它注入过的记忆必须也算被用到
-    // (只算**实际发出**的那部分 —— 被差量过滤掉的条目这轮并没有被"用到")。
+    // (只算**实际发出**的那部分  被差量过滤掉的条目这轮并没有被"用到")。
     this.triggerSource.onInjected?.(this.lastIds);
     const out = formatBoundEntries("相关记忆 (" + decision.mode + ")", fresh);
     this.lastTokens = estimateTokens(out);

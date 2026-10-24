@@ -1,7 +1,7 @@
 /**
  * Gate: 文档同步 (学习 deepseek-harness 的 doc-sync, 按本仓库规模裁剪到轻量版)。
  *
- * 为什么需要: 文档最常见的失效不是"写得不好", 而是**写得对但指的路径已经不存在** ——
+ * 为什么需要: 文档最常见的失效不是"写得不好", 而是**写得对但指的路径已经不存在** 
  * 重命名文件、挪动目录、删掉脚本之后, 文档里的引用静默变成谎言, 而没人会发现。
  * DSH 用一整套 (verify-doc-refs / verify-doc-budgets / verify-translation-pairing …) 解决;
  * 本仓库不需要双语配对与生成式目录, 因此只保留最有效的两条:
@@ -17,7 +17,7 @@
  * 之所以要显式: 让"这是外部引用"成为作者的有意声明, 而不是 gate 猜出来的豁免。
  *
  * 不做的事 (明确边界): 不检查措辞、不做字数预算 (本仓库文档规模小且变动频繁, 预算会变噪声)、
- * 不校验外部 URL (网络抖动会让 gate 变成 flaky —— 那是 CI 诅咒)。
+ * 不校验外部 URL (网络抖动会让 gate 变成 flaky  那是 CI 诅咒)。
  *
  * 用法: node --experimental-strip-types scripts/verify-docs.ts
  */
@@ -30,7 +30,7 @@ const DOC_ROOT_FILES = ["README.md", "CONTRIBUTING.md", "AGENTS.md"];
 
 /**
  * 文档里不要出现的过程痕迹。
- * 只看"标记形状" (TODO: / TODO( / // TODO / - TODO) —— 散文里讨论"不留 TODO"不该被判违规
+ * 只看"标记形状" (TODO: / TODO( / // TODO / - TODO)  散文里讨论"不留 TODO"不该被判违规
  * (实测踩过: CONTRIBUTING 里"无 TODO/emoji"这句被旧版规则误伤)。
  */
 const FORBIDDEN = [/(?:^|[\s(`/])TODO\s*[:(()]/, /(?:^|[\s(`/])FIXME\s*[:(()]/];
@@ -79,6 +79,10 @@ const NAME_INDEX = new Set<string>();
   }
 })(ROOT);
 
+/**
+ * 设置热更新 + 面板自刷新 + 文档同步门禁与技能库
+ * .agents/notes/implemented/process/2026-09-10-live-settings-and-doc-gates.md
+ */
 function docs(): string[] {
   const files: string[] = [];
   for (const dir of DOC_DIRS) files.push(...walk(resolve(ROOT, dir)));

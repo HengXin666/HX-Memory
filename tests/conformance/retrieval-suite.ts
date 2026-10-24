@@ -26,6 +26,10 @@ export interface RetrievalSpec {
 
 const T = { validAt: "2026-06-01T00:00:00.000Z", assertedAt: "2026-06-01T00:00:00.000Z" };
 
+/**
+ * 用 ANN 引擎替换内存线性向量索引
+ * .agents/notes/proposed/architecture/2026-09-10-proposed-ann-vector-engine.md
+ */
 function entry(over: Partial<MemoryEntryInput>): MemoryEntryInput {
   return {
     kind: "lesson",
@@ -38,9 +42,9 @@ function entry(over: Partial<MemoryEntryInput>): MemoryEntryInput {
 }
 
 /**
- * 桩嵌入器: 模拟真模型的"同义/话题"能力 —— 部署类映射到 e1, 工程类映射到 e2, 其它正交。
+ * 桩嵌入器: 模拟真模型的"同义/话题"能力  部署类映射到 e1, 工程类映射到 e2, 其它正交。
  * 关键点: 与语料无关的文本必须落到正交方向, 否则"无关查询不返回东西"这条契约就没法验 (真实的
- * 退化嵌入器也会造成同样的问题 —— 这也是为什么向量通道必须有 floor 与 conformance)。
+ * 退化嵌入器也会造成同样的问题  这也是为什么向量通道必须有 floor 与 conformance)。
  */
 const stubEmbedder: SyncEmbedder = {
   id: "stub-embed",
@@ -178,7 +182,7 @@ export function describeRetrieval(spec: RetrievalSpec): void {
       const ids = retriever
         .retrieveSync({ text: "并发结论", limit: 10 })
         .hits.map((h) => h.entry.id);
-      // 注意: 语料里其它相关条目仍应被召回 —— 契约是"这两个 id 不出现", 不是"结果为空"。
+      // 注意: 语料里其它相关条目仍应被召回  契约是"这两个 id 不出现", 不是"结果为空"。
       expect(ids).not.toContain("s1");
       expect(ids).not.toContain("e1");
     });

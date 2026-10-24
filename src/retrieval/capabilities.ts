@@ -4,21 +4,21 @@
 // 与检索主流程无关; 内联在 HybridRetriever 构造函数里既占行数, 也让这条规则的优先级
 // 只能通过构造一个检索器来间接测试。
 //
-// 铁律: 能力自述必须与**真实行为**一致 —— 宁可少宣称能力 (调用方会走降级路径),
+// 铁律: 能力自述必须与**真实行为**一致  宁可少宣称能力 (调用方会走降级路径),
 // 也不要谎报 (调用方会以为有语义通道而拿到错误的空结果)。conformance 会断言这条。
 import type { RetrievalCapabilities } from "../kernel/ports.ts";
 
 /**
  * 保守默认: 什么都没配、引擎也没自述时的能力自述。
  *
- * 数值与原实现**逐字一致** —— 抽取时不得顺手"改进"它。
+ * 数值与原实现**逐字一致**  抽取时不得顺手"改进"它。
  *
  * ⚠ 2026-09-18 更正: 此处原写"它同时被 conformance 断言", 但**核实后发现没有任何测试引用它**
  * (变异 `multiProcess: false → true` 曾让全量测试通过)。现已由
- * `tests/s1/capabilities-default.test.ts` 真正钉住 —— 那句话现在成真了。
+ * `tests/s1/capabilities-default.test.ts` 真正钉住  那句话现在成真了。
  *
  * 为什么它值得保护: 真实装配下这条兜底**走不到** (caps 来自 `index-status.ts` 的自述),
- * **恰恰因此**改坏它会静默生效 —— 没有测试、没有运行时路径会告诉你它变了。
+ * **恰恰因此**改坏它会静默生效  没有测试、没有运行时路径会告诉你它变了。
  * 注意 graph 的类型是联合字面量而非布尔 ("none" | "relations"), 与 entity 能力无关。
  */
 export const DEFAULT_CAPS: RetrievalCapabilities = {

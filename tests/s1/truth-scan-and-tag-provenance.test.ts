@@ -48,7 +48,7 @@ function newRoot(): string {
 }
 
 describe("scanTruth / readFileTags: 读真相的权威实现", () => {
-  it("**扫全部 TRUTH_DIRS** —— 每个目录各放一条, 三条都要被读到", () => {
+  it("**扫全部 TRUTH_DIRS**  每个目录各放一条, 三条都要被读到", () => {
     const root = newRoot();
     try {
       for (const dir of TRUTH_DIRS) {
@@ -72,7 +72,7 @@ describe("scanTruth / readFileTags: 读真相的权威实现", () => {
     }
   });
 
-  it("### 负例: **手写目录清单会漏** —— 这正是 §722/§725 的成因", () => {
+  it("### 负例: **手写目录清单会漏**  这正是 §722/§725 的成因", () => {
     const root = newRoot();
     try {
       // 只往**第一个**真相目录写 (若有人手写 ["digest","rules"], 而 daily 才是第一个, 它就会漏)。

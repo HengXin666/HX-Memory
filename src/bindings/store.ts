@@ -56,6 +56,10 @@ export class BindingStore {
   }
 }
 
+/**
+ * HX-Memory 接入 Agent Notes v2
+ * .agents/notes/implemented/process/2026-10-08-repository-agent-notes-v2-adoption.md
+ */
 function isBindingConfig(v: unknown): v is BindingConfig {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;

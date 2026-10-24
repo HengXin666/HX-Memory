@@ -2,7 +2,7 @@
 //
 // 与 index-reader.ts 对称: 读侧负责"怎么查", 写侧负责"怎么写"。
 // 独立的理由是**治理闸门必须只有一处**: "未确认的 rule 不许入库"这条规则
-// 同时约束正常写入 (add/update) 与全量重建 (rebuildFromFiles) —— 两处各写一遍迟早会漏一处,
+// 同时约束正常写入 (add/update) 与全量重建 (rebuildFromFiles)  两处各写一遍迟早会漏一处,
 // 而漏掉的那条路会让人工闸门在重建时被静默绕过 (重建是常见操作)。
 import type { DatabaseSync } from "node:sqlite";
 import type { MemoryEntry } from "../kernel/types.ts";
@@ -82,7 +82,7 @@ export class IndexWriter {
 
   /**
    * 写实体倒排行 (显式字段优先, 缺失时用确定性抽取兜底; 见 kernel/entity.ts 的 entitiesOf)。
-   * 兜底放在**索引侧**而不是写回真相文件 —— 实体是派生物, 换抽取器只需重建索引。
+   * 兜底放在**索引侧**而不是写回真相文件  实体是派生物, 换抽取器只需重建索引。
    * 返回写入的实体键数 (0 表示这条记忆没有可反查的实体)。
    */
   indexEntities(e: Pick<MemoryEntry, "id" | "entities" | "content">): number {

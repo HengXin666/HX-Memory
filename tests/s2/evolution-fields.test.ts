@@ -59,7 +59,7 @@ describe("演化字段 (v2): 真相 → 索引 → 真相 往返无损", () => {
     expect(e?.relations).toEqual([{ type: "mentions", toId: "容器", weight: 0.7 }]);
   });
 
-  it("删库重建 (rebuildFromFiles) 后字段逐个相等 —— 否则换引擎就丢语义", () => {
+  it("删库重建 (rebuildFromFiles) 后字段逐个相等  否则换引擎就丢语义", () => {
     const before = store.add(rich());
     store.rebuildFromFiles();
     expect(store.get("v2-full")).toEqual(before);

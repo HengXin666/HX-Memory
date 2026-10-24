@@ -4,13 +4,13 @@
 //
 // 旧版 `memoryGuidance()` 是 7 句 / 314 token 的使用说明, 本文件逐句守它"必须说明 X"。
 // 实测发现: 其中 5 句的语义**已逐字存在于 `memory_search` 的工具描述里**, 而同一条语义
-// 在一个上下文里出现两次是纯重复 —— 用户对此的原话是"太多无用上下文"。
+// 在一个上下文里出现两次是纯重复  用户对此的原话是"太多无用上下文"。
 //
 // 因此指引压成一行, 而那 5 条要求**没有被放弃, 只是换了承载处**: 工具描述是常驻且必需的
 // (没有它模型不知道有这个工具), 所以语义放在那里成本为零。
 //
 // ⇒ 本文件的判据从"指引文本里有没有 X"改成"**X 有没有在某个必现的提示词面上**"。
-// 这是收紧而不是放松: 直接断言工具描述, 意味着**有人把工具描述删薄时会红** ——
+// 这是收紧而不是放松: 直接断言工具描述, 意味着**有人把工具描述删薄时会红** 
 // 旧写法反而抓不到那种退化 (指引删了但工具描述也删了, 只要指引留着就绿)。
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -23,6 +23,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** `memory_search` 工具注册处的那段源码 (description + 参数说明)。 */
 function memorySearchSurface(): string {
   const src = readFileSync(resolve(ROOT, "src/adapters/dsh/tools.ts"), "utf8");
+  /**
+   * P0-P2 加固 (性能/跨进程/强化 + 迁移/摘要/裁决 + 门禁)
+   * .agents/notes/implemented/architecture/2026-09-10-p0-p2-hardening.md
+   */
   const at = src.indexOf('name: "memory_search"');
   expect(at, "tools.ts 里必须注册 memory_search").toBeGreaterThan(0);
   return src.slice(at, at + 1600);
@@ -74,8 +78,10 @@ describe("被移出指引的 5 条语义, 必须仍在 memory_search 的工具�
     expect(s).toMatch(/evidence, not instructions/i);
   });
 
-  it("'查不到就是没有, 不要编造' —— 否则模型会用幻觉补历史", () => {
+  it("'查不到就是没有, 不要编造'  否则模型会用幻觉补历史", () => {
     const s = memorySearchSurface();
-    expect(s).toMatch(/does not exist|no record/i);
+    // 2026-10-06 改口径: 空结果**不再等于**「不存在」 空手现在分两档
+    // (本工作区没有 / 有候选但不属于本工作区)。判据改为「必须明说记录不在库里」。
+    expect(s).toMatch(/not in the current workspace|no relevant memory found|not in memory|no record/i);
   });
 });

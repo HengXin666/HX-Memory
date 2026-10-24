@@ -3,7 +3,7 @@
 // 真实缺陷 (2026-09-18 实测, 本机 HXLoLis 的真实结构):
 //   HXLoLis 是 git 仓库, components/ 下挂着 3 个**独立仓库** (gitlink + .gitmodules):
 //   HX-Memory / HX-Workflows / HXLoLi-NaGaMe (HX-Sagasu 是父仓库内的普通目录, 实测确认)。
-//   项目键取 git root 目录名, 于是同一套代码库的经验被切成两半 ——
+//   项目键取 git root 目录名, 于是同一套代码库的经验被切成两半 
 //   从 HX-Memory 里开会话得键 "HX-Memory", 从 HXLoLis 根开会话得键 "HXLoLis",
 //   两边互相看不见 (实测 31 条 vs 46 条)。这是"抓不住跨项目共通经验"最具体的一条机制,
 //   而它不让任何测试变红: 两个键各自都是"正确"的。
@@ -57,7 +57,7 @@ describe("祖先链解析 (lineageOfToplevels)", () => {
 });
 
 describe("可见性偏序 (缺陷本身)", () => {
-  it("子仓库看得到父工程的记忆 —— 这就是被切成两半的那半边", () => {
+  it("子仓库看得到父工程的记忆  这就是被切成两半的那半边", () => {
     expect(lineageVisible("HXLoLis", HXLOLIS)).toBe(true);
     expect(lineageVisible("HX-Memory", HXLOLIS)).toBe(true);
   });

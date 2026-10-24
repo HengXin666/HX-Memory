@@ -1,7 +1,7 @@
 # ADR (架构决策记录)
 
 > 目的: 保留可被编号引用的决策日志 (历史沿革), 供外部与旧文档按编号回指。
-> 边界 (不写什么): 新决策**不再写在这里** —— 一律写成 [Agent Note](../.agents/notes/README.md) (它强制记录被否掉的替代方案);
+> 边界 (不写什么): 新决策**不再写在这里**  一律写成 [Agent Note](../.agents/notes/README.md) (它强制记录被否掉的替代方案);
 > 这里只在需要编号引用时追加一行指向对应 Note。本文件保留 v1/v2 时期的原始记录, 不再扩写。
 > 与代码的关系: 记录取舍而非实现; 实现位置见各条目内的路径引用与 `src/`。
 
@@ -62,14 +62,14 @@
 
 ## ADR-009: 宿主契约必须真机验证 (行为门禁, 不是"能启动")
 
-- **背景**: 插件在真机上"装得上、进程不崩、fiber active", 但两个 Web 面板整块不可用 —— 三个原因都不在业务逻辑里: patch 的 `isolate` 让服务在 root ctx 不可见 (宿主 Typert gateway 的 SRC 扫描拿不到 → `/api/hxMemory/*` 全 404); client bundle 硬编码了错误的模块 id (宿主 loader 要求注册 id == boot graph 行 id == 包名); 客户端把 RPC 写成了 `call("hxMemory", "reviewQueue", "proposed")` (真实约定是 `call("/api", "hxMemory/reviewQueue", { args })` + 解包 `{ok,value}`)。
+- **背景**: 插件在真机上"装得上、进程不崩、fiber active", 但两个 Web 面板整块不可用  三个原因都不在业务逻辑里: patch 的 `isolate` 让服务在 root ctx 不可见 (宿主 Typert gateway 的 SRC 扫描拿不到 → `/api/hxMemory/*` 全 404); client bundle 硬编码了错误的模块 id (宿主 loader 要求注册 id == boot graph 行 id == 包名); 客户端把 RPC 写成了 `call("hxMemory", "reviewQueue", "proposed")` (真实约定是 `call("/api", "hxMemory/reviewQueue", { args })` + 解包 `{ok,value}`)。
 - **选项**: (a) 只保留"启动不崩"冒烟; (b) 用 mock 宿主测 RPC; (c) 真机装插件 + 起 web host + 逐条断言。
 - **决策**: (c)。`scripts/smoke-dsh.sh` 在隔离 `DSH_HOME` 里跑: 组合 profile → 启 host → 断言两个 fiber active → 断言 6 个 RPC 端点返回 `ok:true` → 断言 bundle 模块 id 与 boot manifest 行 id 一致。CI 的 `boot-smoke.yml` 只跑这个脚本。
 - **后果**: CI 需要网络与 DSH 安装 (慢几十秒); 换来"面板真的能用"这件事有自动化证据。
 
 ## ADR-010: `project` 键 = 会话工作目录名 (不是 session id)
 
-- **背景**: 早期实现用 `agent.session.id` (UUID) 当项目键, 于是自动捕获永远 `scope:"agent"`、绑定面板让用户填的项目名无从填写、项目内召回永远为空 —— "项目隔离"只存在于类型里。
+- **背景**: 早期实现用 `agent.session.id` (UUID) 当项目键, 于是自动捕获永远 `scope:"agent"`、绑定面板让用户填的项目名无从填写、项目内召回永远为空  "项目隔离"只存在于类型里。
 - **选项**: (a) 继续用 session id; (b) 用 cwd 的目录名; (c) 用 git 仓库根。
 - **决策**: (b)。`projectOfSession()` 取 `session.header.cwd` 的目录名, 捕获 (scope/project) → 绑定 (BindingConfig.project) → 召回 (Query.project) 全链路一致。
 - **后果**: 同一目录名在不同路径下会合并 (可接受); 换仓库根方案需解析 `.git`, 留给后续。
@@ -86,11 +86,11 @@
 - **背景**: 记忆结构化/规则提炼只需要"一次文本进、一次文本出"。最初用 `agents.create` 造最小 agent, 但 agent 拥有工具面、会产生自己的会话事件; 本插件在根级监听 `session/event`, 于是子会话的 user/message 被再次捕获 → 递归调用 + 会话文件污染。复核还发现 0.1.2-rc.1 上 `Session.events` 已被移除, 该路径会静默退化成启发式。
 - **选项**: (a) 继续用 agents + `origin:"subagent"` + 工具限制; (b) 改用第一方一次性调用 `ctx.llm.stream({provider, model, messages, system, maxTokens, signal})` (dsh-session-title-llm 的做法)。
 - **决策**: (b)。无 agent、无工具、无会话事件; provider/model 从 `agentDefaultModel` 取, 取不到就回退启发式。
-- **后果**: AI 增强不再是"另一个会话"; 超时由本地 deadline 强制拒绝 (不依赖流实现配合 abort)。代价是拿不到 agent 的工具能力 —— 而这本来也不需要。
+- **后果**: AI 增强不再是"另一个会话"; 超时由本地 deadline 强制拒绝 (不依赖流实现配合 abort)。代价是拿不到 agent 的工具能力  而这本来也不需要。
 
 ## ADR-013: 会话事件读取必须跨 DSH 版本 + 按 surface 过滤
 
-- **背景**: 0.1.1-rc.2 的 `Session.events` 在 0.1.2-rc.1 被移除 (改为 `eventAt/snapshotEvents/ownEvents`)。直接读 `events` 会在目标版本上静默拿到 undefined: 跨 step 去重失效 (每步重复注入), AI 读不到输出。另一方面, compaction 会遮蔽 (shadow) 被替换的事件 —— 它们仍在日志里但已不在模型可见的 surface 上, 按日志判断"注入过"会让模型看不见记忆却永远不再注入。
+- **背景**: 0.1.1-rc.2 的 `Session.events` 在 0.1.2-rc.1 被移除 (改为 `eventAt/snapshotEvents/ownEvents`)。直接读 `events` 会在目标版本上静默拿到 undefined: 跨 step 去重失效 (每步重复注入), AI 读不到输出。另一方面, compaction 会遮蔽 (shadow) 被替换的事件  它们仍在日志里但已不在模型可见的 surface 上, 按日志判断"注入过"会让模型看不见记忆却永远不再注入。
 - **决策**: 新增 `src/adapters/dsh/session-events.ts`: 优先 `eventAt(surface.nodes)`, 退到 `snapshotEvents()` → `events` → `ownEvents()`, 并统一按 `surface.nodes` 过滤可见性。`tests/s2/session-events.test.ts` 覆盖四种形状。
 - **后果**: 版本差异集中在一处; 测试用"只带 snapshotEvents 的 fake"防止再次假通过。
 
@@ -116,7 +116,7 @@
 
 ## ADR-017: 全文索引默认 FTS5 + "词 + CJK bigram" 双流分词
 
-- **背景**: v1 的检索评分是 `content.includes(词)` 计数 —— 没有词形归一、没有相关性排序、中文无分词。实测 (Node 24.15 / SQLite 3.51.3 / `node:sqlite`): FTS5 自带且 trigram/porter/rtree 可用, 但 **trigram 无法匹配 2 字中文查询** (`MATCH '并发'` → 0 行), unicode61 又把连续汉字当一个 token。
+- **背景**: v1 的检索评分是 `content.includes(词)` 计数  没有词形归一、没有相关性排序、中文无分词。实测 (Node 24.15 / SQLite 3.51.3 / `node:sqlite`): FTS5 自带且 trigram/porter/rtree 可用, 但 **trigram 无法匹配 2 字中文查询** (`MATCH '并发'` → 0 行), unicode61 又把连续汉字当一个 token。
 - **选项**: (a) 引入 jieba 类分词依赖; (b) 只用 trigram (放弃 2 字查询); (c) `Intl.Segmenter` 词流 + CJK bigram 流双列, 交给 unicode61, BM25 列权区分。
 - **决策**: (c)。零依赖, 且"任意 2 字中文查询可召回"是确定性的; 代价是索引膨胀 2-3 倍与 bigram 宽召回 (噪声由检索层的覆盖率过滤 + MMR 压住)。
 - **后果**: 索引带 `tokenizer_version`; 版本不一致时**必须重建**而不是混用 (混用 = 静默召回失真)。规则 (rule) 的确认闸门在检索侧再校验一次。
@@ -167,18 +167,18 @@
 - **背景**: "记忆会自己更新"如果做成"新记忆自动推翻旧记忆", 就会把"用户改主意了"和"用户说了句更细的话"一起吞掉; 如果什么都不做, 旧结论会一直和新结论一起被注入 (用户看到的自相矛盾)。调研也发现: mem0 OSS v3 干脆退回 ADD-only, 说明自动演化在生产上很难做对。
 - **选项**: (a) 全自动 LLM 裁决 (mem0 早期 / A-MEM); (b) 只做去重不做演化; (c) 分档: 确定性的自动做, 需要判断的只标记。
 - **决策**: (c)。三档且按"证据强度"升级:
-  1. **duplicate (自动, 只强化)**: 归一化指纹相同, 或候选覆盖率 ≥ 0.75, 或语义余弦 ≥ 0.95 (有 Embedder 时) —— 不重复落盘, 强化老条目并合并标签/实体;
-  2. **supersede (自动, 写演化链)**: 必须**四条同时成立** —— 显式更新信号 (改为/不再/废弃/替换为…)、同一种类、时间不倒退、目标是同话题 (覆盖率 ≥ 0.5); 旧条目置 `superseded` + `supersededBy` (不删除, `history()` 可查);
+  1. **duplicate (自动, 只强化)**: 归一化指纹相同, 或候选覆盖率 ≥ 0.75, 或语义余弦 ≥ 0.95 (有 Embedder 时)  不重复落盘, 强化老条目并合并标签/实体;
+  2. **supersede (自动, 写演化链)**: 必须**四条同时成立**  显式更新信号 (改为/不再/废弃/替换为…)、同一种类、时间不倒退、目标是同话题 (覆盖率 ≥ 0.5); 旧条目置 `superseded` + `supersededBy` (不删除, `history()` 可查);
   3. **contradict (只标记, 不裁决)**: 数字不一致或极性相反且无更新信号 → 双向 `contradicts` 边, 两条都保持 active, 由人/后续 LLM 裁决。
 - **规则豁免 (硬约束)**: 候选是 rule → 只落盘; 目标是 rule → 只标记冲突, 状态绝不由机器改 (人工闸门 ADR-003 不破)。
-- **后果**: "换个说法重记"不再产生重复; "我把上限改成 50" 能自动生效且历史可查; 真正的矛盾会显式暴露而不是静默覆盖。代价是需要 LLM 的语义裁决仍未自动化 —— 那是下一步, 且必须带闸门。
+- **后果**: "换个说法重记"不再产生重复; "我把上限改成 50" 能自动生效且历史可查; 真正的矛盾会显式暴露而不是静默覆盖。代价是需要 LLM 的语义裁决仍未自动化  那是下一步, 且必须带闸门。
 
 ## ADR-025: 向量召回默认走"同步嵌入 + 线性索引", ANN 引擎后置
 
-- **背景**: "语义召回"如果等接上向量数据库才存在, 那这条通道永远没有测试覆盖, 也没人知道它坏了。另一方面, 预步注入 (`agent/pre-step`) 是**同步**判定点, 而主流向量库/远端嵌入 API 都是异步的 —— 直接把 async 引进检索会让注入路径变形。
+- **背景**: "语义召回"如果等接上向量数据库才存在, 那这条通道永远没有测试覆盖, 也没人知道它坏了。另一方面, 预步注入 (`agent/pre-step`) 是**同步**判定点, 而主流向量库/远端嵌入 API 都是异步的  直接把 async 引进检索会让注入路径变形。
 - **选项**: (a) 直接接 sqlite-vec/LanceDB (引入原生依赖 + 异步索引维护); (b) 先做端口 + 同步本地实现 (线性扫描), 需要规模时再换 ANN; (c) 不做向量, 只留词/bigram。
-- **决策**: (b)。三件东西: ①`SyncEmbedder` 端口 (`embedSync`) —— 只有同步嵌入器能进预步路径, 异步嵌入器必须走投影 (architecture-v2 §3.3); ②`VectorIndex` 端口 + 默认 `LinearVectorIndex` (内存线性扫描, 增量同步按内容哈希判断"要不要重嵌", 有 floor 防噪声, 有同步上限并记 `vector:scan-capped` 降级); ③默认嵌入器 `HashingEmbedder` (零依赖零成本, 中文可用, 词汇重合级语义)。
-- **后果**: 语义通道默认可用、有测试 (含"字面不重合但向量相近"的召回契约)、可降级可观测; 千级条目内线性扫描够快, 万级以上必须换 ANN —— 换的时候只实现 `VectorIndex` 端口 (sqlite-vec/LanceDB/Qdrant), 检索层一行不改。身份 (`embedderId`/`dim`) 进索引, 换模型即重建 (ADR-023)。
+- **决策**: (b)。三件东西: ①`SyncEmbedder` 端口 (`embedSync`)  只有同步嵌入器能进预步路径, 异步嵌入器必须走投影 (architecture-v2 §3.3); ②`VectorIndex` 端口 + 默认 `LinearVectorIndex` (内存线性扫描, 增量同步按内容哈希判断"要不要重嵌", 有 floor 防噪声, 有同步上限并记 `vector:scan-capped` 降级); ③默认嵌入器 `HashingEmbedder` (零依赖零成本, 中文可用, 词汇重合级语义)。
+- **后果**: 语义通道默认可用、有测试 (含"字面不重合但向量相近"的召回契约)、可降级可观测; 千级条目内线性扫描够快, 万级以上必须换 ANN  换的时候只实现 `VectorIndex` 端口 (sqlite-vec/LanceDB/Qdrant), 检索层一行不改。身份 (`embedderId`/`dim`) 进索引, 换模型即重建 (ADR-023)。
 
 ## ADR-026: 语义检索分三层落地 (离线词典语义 / 远端真语义 / 词汇兜底), 阈值由嵌入器自述
 
@@ -188,13 +188,13 @@
   1. **`LexicalEmbedder` (默认, 离线零依赖)**: 同义词表归一 (上线/发版→发布, 兜底→熔断) + 字级 2/3-gram (中文换词不换字) + 英文轻量词形归一。实测同义平均 cos≈0.50、无关≈0.005。
   2. **`OpenAiCompatibleEmbedder` (可选, 真语义)**: POST `{baseUrl}/embeddings` 协议 (覆盖 OpenAI/Ollama/vLLM/TEI/自建), 异步 → 配 `ProjectedVectorIndex` (后台补齐, 预步注入读投影)。配 `HX_MEMORY_EMBEDDING_BASE_URL/MODEL` 即启用。
   3. **`HashingEmbedder` (基线)**: 保留用于对照与降级。
-- **附带决策 (阈值)**: 余弦下限 `floor` 由**嵌入器自己声明** —— 不同模型的相似度尺度完全不同 (词汇级 0.2-0.5, 真语义 0.7+), 全局阈值必然有一边失效。
+- **附带决策 (阈值)**: 余弦下限 `floor` 由**嵌入器自己声明**  不同模型的相似度尺度完全不同 (词汇级 0.2-0.5, 真语义 0.7+), 全局阈值必然有一边失效。
 - **效果 (本机评测, `scripts/eval-retrieval.ts`)**: 10 条记忆 × 同义改写查询, Recall@1 由 20% → **80%**, Recall@3 由 20% → **100%**; 无关查询仍为空 (无噪声)。回归护栏: `tests/conformance/paraphrase-recall.test.ts`。
 
 ## ADR-027: 预步注入的语义预热有硬时限 (宁可少召回, 不阻塞对话)
 
 - **背景**: 远端嵌入器是异步的, 而 `agent/pre-step` 的注入判定是同步的。若每次注入都等嵌入服务, 对话就被记忆层拖住了。
-- **决策**: 三层保证: ①检索器提供 `warm(deadlineMs, query)` —— 在硬时限内尽量补齐投影, **超时不报错**; ②预步处理器注入前 `await` 它 (默认 50ms, 可用 `semanticWarmupMs` 调, 0 = 完全不预热); ③未就绪时结果里带 `vector:projection-warming` 降级说明, 下一轮继续补 (不静默)。
+- **决策**: 三层保证: ①检索器提供 `warm(deadlineMs, query)`  在硬时限内尽量补齐投影, **超时不报错**; ②预步处理器注入前 `await` 它 (默认 50ms, 可用 `semanticWarmupMs` 调, 0 = 完全不预热); ③未就绪时结果里带 `vector:projection-warming` 降级说明, 下一轮继续补 (不静默)。
 - **附带修正**: 预热必须把**本轮查询文本**一起嵌入 (`prime`), 否则"文档就绪、查询未就绪"会让第一轮永远没有语义召回。
 - **后果**: 最坏情况每轮多花 `warmupMs`; 换来数轮之内语义召回可用, 且对话延迟有上界。实测 10k 条: 预热后的检索 13.7ms/次。
 
@@ -202,12 +202,12 @@
 
 - **背景**: 面板"记忆浏览"搜索任何内容, 前几条永远是那几条已确认规则; always-on 的 6 条规则约 300 token 吃光 400 token 预算, 随任务变化的关键事实一条都注入不进来。两个症状同源: **一套检索语义被两种目的复用**, 且预算没有分仓。
 - **选项**: (a) 调低规则通道权重/去掉 boost; (b) 面板另开一条纯检索路径; (c) 在 `RetrievalRequest` 上加显式的 `purpose` 维度。
-- **决策**: (c)。`"inject"` (默认) 开规则保底通道与 boost; `"recall"` 关掉两者, 只按相关性排 —— 用于面板浏览、`memory_search`、按需召回、意图召回、近邻裁决。两种目的都不删除 rules 通道 (显式传 `channels.rules.enabled` 可覆盖)。always-on 侧: 规则组最多占 `ruleBudgetRatio` (默认 0.6), 其余留给事实/偏好/决策, 且只有两组都有候选时才切分; `scope:"agent"` 的 fact/preference 纳入候选 (跨工作区共享层)。
+- **决策**: (c)。`"inject"` (默认) 开规则保底通道与 boost; `"recall"` 关掉两者, 只按相关性排  用于面板浏览、`memory_search`、按需召回、意图召回、近邻裁决。两种目的都不删除 rules 通道 (显式传 `channels.rules.enabled` 可覆盖)。always-on 侧: 规则组最多占 `ruleBudgetRatio` (默认 0.6), 其余留给事实/偏好/决策, 且只有两组都有候选时才切分; `scope:"agent"` 的 fact/preference 纳入候选 (跨工作区共享层)。
 - **后果**: 面板/工具恢复"相关性排序"; 注入侧默认行为零改动 (`purpose` 默认 `"inject"`); 规则不再独吞预算。代价是多了一个需要在两种语义间正确选择的字段。详见 Agent Note `2026-09-11-retrieval-purpose-and-alwayson-budget.md`。
 
 ## ADR-029: 项目键为仓库级 (git root 目录名), 回退目录名
 
-- **背景**: 项目键曾是会话工作目录的**目录名**, 在 monorepo 里按子包碎片化 —— 同一个仓库的另一个目录里, 之前沉淀的项目经验"不属于这个项目", 绑定/always-on/项目内召回全部看不到。
+- **背景**: 项目键曾是会话工作目录的**目录名**, 在 monorepo 里按子包碎片化  同一个仓库的另一个目录里, 之前沉淀的项目经验"不属于这个项目", 绑定/always-on/项目内召回全部看不到。
 - **选项**: (a) 维持目录名 + 让用户手动配绑定; (b) 用 git remote URL / 仓库根绝对路径; (c) git root 的目录名, 非仓库回退目录名。
 - **决策**: (c)。同一仓库任意子目录得到同一个键, 跨仓库仍隔离; 结果按 cwd 缓存 (预步每轮都要问这个键), git 执行器可注入以便单测。
 - **后果**: monorepo 不再碎片化; 非 git 目录行为与之前一致。代价: 不同路径下的同名仓库会合并 (可接受), 取键会短暂 fork git (3s 超时)。详见 Agent Note `2026-09-11-repo-stable-project-key-and-shared-scope.md`。

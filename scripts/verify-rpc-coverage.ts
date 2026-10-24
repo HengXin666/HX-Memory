@@ -1,15 +1,15 @@
 // scripts/verify-rpc-coverage.ts — 每个 `@Remote` 端点都必须在**某个验证面**上出现过。
 //
-// 为什么需要它 (2026-09-18, §756): §753 我核端点覆盖时, 判据**只搜了 `tests/`** ——
+// 为什么需要它 (2026-09-18, §756): §753 我核端点覆盖时, 判据**只搜了 `tests/`** 
 // 于是把 6 个**已在真机 smoke 里被真的调用**的端点报成"零测试"。
 //
 // **⇒ 那次错误的形态是"虚报缺陷"**: 我差点据此去补 6 份不需要的测试。
 // **⇒ 根因**: 只搜了一个面, 而结论是"**全都没有**"。
 //
-// 本脚本把那条规则机械化: **判据必须同时搜两层, 且把搜过的面打进输出** ——
+// 本脚本把那条规则机械化: **判据必须同时搜两层, 且把搜过的面打进输出** 
 // 那样"零覆盖"这个结论**可复核** (读输出就知道它搜了哪里)。
 //
-// ⚠ 它**不是**"覆盖率检查" (不要求每个端点有专门测试) —— 它守的是:
+// ⚠ 它**不是**"覆盖率检查" (不要求每个端点有专门测试)  它守的是:
 //   **"没有任何验证面提到过这个端点"这件事不会悄悄发生**。
 //   端点被删/改名时, 这一条会红 (而不是等面板上出现空白)。
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-/** 搜过的**面** (每一步都出现在输出里 —— 否则结论不可复核)。 */
+/** 搜过的**面** (每一步都出现在输出里  否则结论不可复核)。 */
 const SURFACES: ReadonlyArray<{ label: string; collect: () => Array<{ path: string; text: string }> }> = [
   { label: "tests/", collect: () => walkTextFiles(join(ROOT, "tests"), ".ts") },
   { label: "scripts/smoke-dsh.sh", collect: () => [readOne(join(ROOT, "scripts", "smoke-dsh.sh"))] },

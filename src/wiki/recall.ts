@@ -18,7 +18,7 @@ import { pagePath, slug, type WikiAddress } from "./address.ts";
 import { listPages, readPage, type WikiPage, type WikiSection } from "./page.ts";
 import { queryTerms } from "../retrieval/channels.ts";
 
-/** 页面命中的一层 (为什么它被选中 —— 可审计)。 */
+/** 页面命中的一层 (为什么它被选中  可审计)。 */
 export interface PageMatch {
   domain: string;
   page: string;
@@ -44,7 +44,7 @@ function scorePage(p: WikiPage, terms: string[]): { score: number; hitTerms: str
   return { score: score + hitTerms.length * 2, hitTerms };
 }
 
-/** 第 1 级: matchPage —— 定位主题页 (绝大多数问题从这里开始)。 */
+/** 第 1 级: matchPage  定位主题页 (绝大多数问题从这里开始)。 */
 export function matchPage(root: string, query: string, limit = 5): PageMatch[] {
   // 用 weighted (已剔虚词与单字碎片) 而不是 terms: "的/用/一个"这类词在每张页里都出现,
   // 计入打分会让 page 匹配退化成"谁的正文长谁赢"(该判据的实测依据见 retrieval/channels.ts)。
@@ -65,7 +65,7 @@ export function matchPage(root: string, query: string, limit = 5): PageMatch[] {
   return out.sort((a, b) => b.score - a.score || (a.page < b.page ? -1 : 1)).slice(0, limit);
 }
 
-/** 第 2 级: getPage —— 当前有效结论 (绝大多数问题在这里结束)。 */
+/** 第 2 级: getPage  当前有效结论 (绝大多数问题在这里结束)。 */
 export function getPage(
   root: string,
   addr: Pick<WikiAddress, "domain" | "page">,
@@ -78,7 +78,7 @@ export function getPage(
   return only.length ? { ...p, sections: only } : { ...p, sections: [] };
 }
 
-/** 第 3 级: getEvidence —— 这条结论来自哪几轮对话 (引用, 不是摘要)。 */
+/** 第 3 级: getEvidence  这条结论来自哪几轮对话 (引用, 不是摘要)。 */
 export function getEvidence(
   root: string,
   addr: WikiAddress,
@@ -89,7 +89,7 @@ export function getEvidence(
   return sections.map((s) => ({ section: s.name, sources: [...s.sources], body: s.body }));
 }
 
-/** 第 4 级: getEvolution —— 它何时新增、被谁改写、为什么变。 */
+/** 第 4 级: getEvolution  它何时新增、被谁改写、为什么变。 */
 export function getEvolution(
   root: string,
   addr: WikiAddress,
@@ -100,7 +100,7 @@ export function getEvolution(
   return sections.map((s) => ({ section: s.name, timeline: [...s.timeline] }));
 }
 
-/** 第 5 级: searchDialogue —— 未经改写的原始对话 (原话的唯一来源)。 */
+/** 第 5 级: searchDialogue  未经改写的原始对话 (原话的唯一来源)。 */
 export interface DialogueStore {
   /** 按 session/turn 或 id 取原始轮次文本; 找不到返回 null。 */
   raw(idOrRef: string): string | null;
@@ -109,7 +109,7 @@ export interface DialogueStore {
 /**
  * 从来源引用里取出原始对话原文。
  *
- * 硬规则: 摘要**永不**被当作原话引用 —— 因此这里只接受**原始来源引用**,
+ * 硬规则: 摘要**永不**被当作原话引用  因此这里只接受**原始来源引用**,
  * 找不到就如实返回 null (不退回用小节正文冒充原话)。
  */
 export function searchDialogue(store: DialogueStore, refs: readonly string[]): Array<{ ref: string; text: string }> {

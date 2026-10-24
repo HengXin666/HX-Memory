@@ -2,7 +2,7 @@
 //
 // 单独成模块的理由有两条:
 //   1) 可测: node 环境的测试能直接断言"注册成什么形状", 而不必把 .tsx 组件树拖进 kernel 的
-//      tsc 程序 (那份 tsconfig 没有 DOM lib —— 真实踩过);
+//      tsc 程序 (那份 tsconfig 没有 DOM lib  真实踩过);
 //   2) 契约集中: 这一段是**版本最容易漂的地方**, 集中一处并带测试。
 //
 // ## 0.1.7 把这张卡的两半都换了 (2026-09-29 实测)
@@ -11,17 +11,17 @@
 //   新: 槽位 `plugins.bundle.config`, key = **包名** (在 Plugins 页的 bundle 详情页里渲染);
 //       作用域来自服务 `configForms.get(entryId)`。
 //   实证: `settings.plugin.item` 与 `settingsScope` 在全仓 0.1.7 里**零命中**; 而
-//   `settings.describe()` 实测仍会返回 `autoGenerate` —— 但它在新宿主客户端**没有任何
+//   `settings.describe()` 实测仍会返回 `autoGenerate`  但它在新宿主客户端**没有任何
 //   渲染消费者** (只在 wire/schema 里出现), 所以"只要标了 volatile 就会自动出现表单"
 //   是错的: 没有槽位注册, 这个命名空间在界面上就没有入口。
 //
 // 好消息: 两代作用域的**返回面同形** (getSnapshot / subscribe / set / unset), 因此卡片组件
-// 一行都不用改 —— 变的只是"到哪里取"与"注册到哪个槽位", 两件事都收在本模块里。
+// 一行都不用改  变的只是"到哪里取"与"注册到哪个槽位", 两件事都收在本模块里。
 import type { SettingsScopeLike } from "./settings-scope.js";
 
 /** 宿主设置命名空间: 必须等于 runtime 条目的 entry id (见 dsh/cordis.patch.yml 顶部说明)。 */
 export const MEMORY_SETTINGS_NAMESPACE = "hx-memory";
-/** 本包的包名 —— 也是一些槽位的 key。 */
+/** 本包的包名  也是一些槽位的 key。 */
 export const MEMORY_PACKAGE_NAME = "@hengxin666/hx-memory";
 /** 卡片文案的 locale 命名空间。 */
 export const CARD_LOCALE_NAMESPACE = "hx-memory.injection";
@@ -58,6 +58,10 @@ export function resolveSettingsScope(ctx: CardHost): SettingsScopeLike | null {
     | undefined;
   const fromForms = forms?.get(MEMORY_SETTINGS_NAMESPACE);
   if (fromForms) return fromForms;
+  /**
+   * 注入时机可配置 (首轮一次 vs 逐轮差量)
+   * .agents/notes/implemented/bug-fix/2026-09-12-injection-timing-first-turn.md
+   */
   const legacy = ctx.get("settingsScope") as
     | { bind(spec: { namespace: string }): SettingsScopeLike }
     | undefined;
@@ -68,7 +72,7 @@ export function resolveSettingsScope(ctx: CardHost): SettingsScopeLike | null {
  * 把「记忆注入」卡注册到宿主「设置 → 插件 → 本插件」页。
  *
  * 为什么**注册时**就去拿 scope 是错的: 客户端插件之间没有声明依赖, 本插件的 apply 完全
- * 可能与承载这些服务的插件加载交错 —— apply 时 `ctx.get(...)` 返回 undefined, 卡片就永远
+ * 可能与承载这些服务的插件加载交错  apply 时 `ctx.get(...)` 返回 undefined, 卡片就永远
  * 不会出现, 而且没有任何报错 (本仓库踩过同类"静默不注册"的坑)。
  * 因此这里**无条件注册** (key 只是字符串), 把 scope 的解析推迟到宿主真正渲染卡片时
  * (inject 钩子), 那时服务必然已就位。宿主没有该槽位时没人渲染它, 不会留下可见残留。
@@ -87,7 +91,7 @@ export function registerInjectionCard(ctx: CardHost, deps: CardDependencies): vo
     ),
   );
   // <= 0.1.6: 旧的 plugin.item 槽位。宿主没有它时 `inject` 只是挂着等 (不会报错),
-  // 因此两条同时注册是安全的 —— 哪代宿主的槽位存在, 就在哪里出现一张卡。
+  // 因此两条同时注册是安全的  哪代宿主的槽位存在, 就在哪里出现一张卡。
   ctx.slots.inject("settings.plugin.item", () =>
     ctx.slots.register(
       {

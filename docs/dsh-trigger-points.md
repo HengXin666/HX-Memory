@@ -8,7 +8,7 @@
 ## 0. 一句话
 
 VCP 的做法是把日记占位符写在 Agent 模板里, 由 `processMessages` 在请求前**无条件**解析注入;
-DSH 的等价物是 **cordis 的 waterfall / event 插件点** —— 其中 `agent/pre-step` 是"每轮必过、可以改注入内容"的那个点,
+DSH 的等价物是 **cordis 的 waterfall / event 插件点**  其中 `agent/pre-step` 是"每轮必过、可以改注入内容"的那个点,
 `system-prompt/assemble` 是"系统提示词级"的点, `tools/pre-execute` 是"模型调工具前"的点。
 三者的可靠性递减: **pre-step (强制) > system-prompt (强制但无轮次语义) > 工具 (概率)**。
 
@@ -16,20 +16,20 @@ DSH 的等价物是 **cordis 的 waterfall / event 插件点** —— 其中 `ag
 
 | 触发点                                     | 类型      | 时机              | 能否改写注入内容                          | 本项目状态                            |
 | ------------------------------------------ | --------- | ----------------- | ----------------------------------------- | ------------------------------------- |
-| `agent/pre-step`                           | waterfall | 每轮每一步开始前  | **能** (在 `next()` 结果上追加 user 消息) | **已用** —— 触发层 + 绑定注入的主通道 |
-| `agent/session-start`                      | event     | 会话建立时        | 能 (`agent.inject`)                       | **已用** —— 记忆使用指引              |
-| `system-prompt/assemble`                   | waterfall | 组装系统提示词时  | **能** (改 `assembly.variables` / 文本)   | 未用 —— 候选 (见 §3)                  |
-| `agent/request`                            | waterfall | 每次模型请求前    | 能                                        | 未用 —— 与 pre-step 重叠, 优先级低    |
+| `agent/pre-step`                           | waterfall | 每轮每一步开始前  | **能** (在 `next()` 结果上追加 user 消息) | **已用**  触发层 + 绑定注入的主通道 |
+| `agent/session-start`                      | event     | 会话建立时        | 能 (`agent.inject`)                       | **已用**  记忆使用指引              |
+| `system-prompt/assemble`                   | waterfall | 组装系统提示词时  | **能** (改 `assembly.variables` / 文本)   | 未用  候选 (见 §3)                  |
+| `agent/request`                            | waterfall | 每次模型请求前    | 能                                        | 未用  与 pre-step 重叠, 优先级低    |
 | `tools/pre-execute`                        | event     | 工具执行前        | 不能 (只能观察/拦截)                      | 未用                                  |
-| `tools/post-execute`                       | event     | 工具执行后        | 不能                                      | 未用 —— 可用于"工具失败 → 建议查记忆" |
-| `session/event`                            | event     | 会话产生任何事件  | 不能 (只读)                               | **已用** —— 捕获 turn 与派发 episode  |
-| `agent/session-start` / `session/disposed` | event     | 会话生命周期      | 能 (前者)                                 | **已用** —— 缓冲冲刷                  |
+| `tools/post-execute`                       | event     | 工具执行后        | 不能                                      | 未用  可用于"工具失败 → 建议查记忆" |
+| `session/event`                            | event     | 会话产生任何事件  | 不能 (只读)                               | **已用**  捕获 turn 与派发 episode  |
+| `agent/session-start` / `session/disposed` | event     | 会话生命周期      | 能 (前者)                                 | **已用**  缓冲冲刷                  |
 | `agent/error` / `agent/request-error`      | waterfall | 出错时            | 能 (可返回 retry)                         | 未用                                  |
-| `llm/stream`                               | waterfall | 流式请求          | 能                                        | 未用 —— 侵入性强, 不建议记忆层用      |
-| `subagent/start` / `subagent/end`          | event     | 子 agent 生命周期 | 不能                                      | 未用 —— 目前靠 `rootAgentsOnly` 过滤  |
+| `llm/stream`                               | waterfall | 流式请求          | 能                                        | 未用  侵入性强, 不建议记忆层用      |
+| `subagent/start` / `subagent/end`          | event     | 子 agent 生命周期 | 不能                                      | 未用  目前靠 `rootAgentsOnly` 过滤  |
 
 > 上表的"类型"含义: **event** = 广播通知 (能读能注入副作用, 但改不了别的消费者的结果);
-> **waterfall** = 中间件 (拿到 `next()`, 可以改写入参/返回值) —— 记忆注入必须用 waterfall 才能**保证**内容进入本轮。
+> **waterfall** = 中间件 (拿到 `next()`, 可以改写入参/返回值)  记忆注入必须用 waterfall 才能**保证**内容进入本轮。
 
 ## 2. 三个关键点位的契约
 
@@ -46,9 +46,9 @@ ctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {
 
 - **为什么是主通道**: 它在每一步的模型请求之前、拿得到"最新一轮用户文本", 且能改变实际发送的消息。
 - **约束**: 同步判定点上要做异步检索必须自带投影/缓存 (本项目用 `Binder.warm()` 带硬时限预热)。
-- **去重**: 注入出去的消息会进入会话日志, 下一个 step 的 claimed batch 里看不到它 —— 必须扫**模型可见的**历史事件 (`surface.nodes`) 去重, 否则每步重复注入 (本项目 `prestep.ts` 已处理)。
+- **去重**: 注入出去的消息会进入会话日志, 下一个 step 的 claimed batch 里看不到它  必须扫**模型可见的**历史事件 (`surface.nodes`) 去重, 否则每步重复注入 (本项目 `prestep.ts` 已处理)。
   两个必须一起做的细节: ①`agent/session-start` 的注入经 `agent.inject()` 进 inbox, 它的事件
-  要等这一步的 claim 批次落日志才可见, 而 pre-step 在**那之前**运行 —— 基线还得并入本轮
+  要等这一步的 claim 批次落日志才可见, 而 pre-step 在**那之前**运行  基线还得并入本轮
   claimed 批次, 否则首轮必然重发一份; ②判重按**条目 id 集合**, 不是整块文本
   (标题/框架句不同就会漏判)。
 - **注入时机可配置**: 设置 `injectMode` = `every-turn` (默认, 逐轮补新条目) 或 `first`
@@ -71,14 +71,14 @@ ctx.on(
 ```
 
 - **适用**: 全局、不随轮次变化的内容 (相当于 Letta 的 `system/` 常驻块)。
-- **不适用**: "与当前话题相关"的记忆 —— 这里拿不到本轮用户文本, 而且系统提示词通常被缓存/复用,
+- **不适用**: "与当前话题相关"的记忆  这里拿不到本轮用户文本, 而且系统提示词通常被缓存/复用,
   把易变内容塞进去会破坏前缀缓存并放大成本。
 - **本项目结论**: 记忆不挂这里; 常驻部分已由 `agent/session-start` 的指引 + pre-step 的 always-on 承担。
 
 ### 2.3 `tools/pre-execute` / `tools/post-execute` (工具前后)
 
 - **能做什么**: 观察工具调用、记录审计、在失败后建议检索。
-- **不能做什么**: 改不了模型已经决定的消息内容 —— 因此**不能用来保证记忆注入**。
+- **不能做什么**: 改不了模型已经决定的消息内容  因此**不能用来保证记忆注入**。
 - **候选用法**: 模型调用某个业务工具失败时, 由 post-execute 主动查一次记忆并给出提示 (下一步模型可见)。
 
 ### 2.4 为什么 `session/event` 不能用来注入
@@ -97,7 +97,7 @@ ctx.on(
 | 未配置时 | 无占位符 → 无记忆                                        | **仍有 always-on 保底** (这是本项目补的一环)                                                              |
 
 **结论**: DSH 的 `agent/pre-step` 就是 VCP `processMessages` 的等价物, 且能力更强 (能读会话历史做去重、能按轮次决策)。
-本项目已经挂上; 差别只在"未声明时是否有保底" —— 我们用 always-on 通道补上了。
+本项目已经挂上; 差别只在"未声明时是否有保底"  我们用 always-on 通道补上了。
 
 ## 4. 尚未使用但值得评估的点位
 
@@ -112,10 +112,10 @@ ctx.on(
 
 以下均为上游 `deepseek-ai/deepseek-harness` 仓库中的位置 (2026-09 核对):
 
-- 轮次与步骤时序图: `docs/agent-lifecycle.md` —— 明确 `system-prompt/assemble` 与 `agent/pre-step` 都在 `step/start` 之前, `agent/request` 在其后。 <!-- verify-docs:allow (上游仓库路径) -->
-- 事件作用域表: `packages/core/scope/src/scoped-events.generated.ts` —— 列出 `system-prompt/assemble` / `tools/*` / `subagent/*` 等的 scope 取参方式。 <!-- verify-docs:allow (上游仓库路径) -->
+- 轮次与步骤时序图: `docs/agent-lifecycle.md`  明确 `system-prompt/assemble` 与 `agent/pre-step` 都在 `step/start` 之前, `agent/request` 在其后。 <!-- verify-docs:allow (上游仓库路径) -->
+- 事件作用域表: `packages/core/scope/src/scoped-events.generated.ts`  列出 `system-prompt/assemble` / `tools/*` / `subagent/*` 等的 scope 取参方式。 <!-- verify-docs:allow (上游仓库路径) -->
 - `agent/pre-step` 的权威用法: `packages/context/session-reference/src/index.ts` (`await next()` 后返回 `{ kind: "enter", messages }`)。 <!-- verify-docs:allow (上游仓库路径) -->
 - `system-prompt/assemble` 的权威用法: `packages/core/agent/src/model-selection.ts` (改写 `assembly.variables`)。 <!-- verify-docs:allow (上游仓库路径) -->
-- 宿主侧 hook 插件: `packages/hooks/hooks-claude-code`、`packages/hooks/hooks-codex` —— DSH 自己就用插件点实现了外部 hook 的等价能力。 <!-- verify-docs:allow (上游仓库路径) -->
+- 宿主侧 hook 插件: `packages/hooks/hooks-claude-code`、`packages/hooks/hooks-codex`  DSH 自己就用插件点实现了外部 hook 的等价能力。 <!-- verify-docs:allow (上游仓库路径) -->
 
 > 说明: 上表"本项目状态"以 `src/adapters/dsh/index.ts` 的 `ctx.on` 注册为准, 可由该文件直接核对。

@@ -4,12 +4,12 @@
 //
 // ```ts
 // // recall = 显式搜索/面板浏览/意图召回: 规则保底通道默认关闭 (要的是"最相关")。
-// // 显式传 channels.rules.enabled 仍可覆盖 —— 目的是改默认, 不是禁掉该通道。
+// // 显式传 channels.rules.enabled 仍可覆盖  目的是改默认, 不是禁掉该通道。
 // const recall = req.purpose === "recall";
 // const enabled = (c) => req.channels?.[c]?.enabled ?? (recall && c === "rules" ? false : true);
 // ```
 //
-// 而**既有测试只是"用 `purpose: "recall"` 去调"**, 没有一条断言这条契约本身 ——
+// 而**既有测试只是"用 `purpose: "recall"` 去调"**, 没有一条断言这条契约本身 
 // 于是"把 `recall` 判据写反"或"去掉可覆盖性"都不会被发现。
 //
 // 三档行为 (实测):

@@ -1,6 +1,6 @@
 // scripts/verify-field-coverage.ts — **沉睡字段**必须被显式登记。
 //
-// 为什么需要它 (2026-09-18, §771): §765/§768 修了 `importance`/`confidence` ——
+// 为什么需要它 (2026-09-18, §771): §765/§768 修了 `importance`/`confidence` 
 // 它们**声明在 `MemoryEntry` 上、有排序/裁决的读者、却从未有任何一层产出过** (真库 475/475 null)。
 //
 // **⇒ 而那次修完我立刻想到**: 还有别的字段在沉睡吗?
@@ -15,7 +15,7 @@
 // **⇒ 本脚本守的是那条分界**: 一个"零填充"的字段**要么有明确理由, 否则必须红**。
 // "有读者却无产出点"这类 (§765 那种) **必须被登记为已知问题**, 不能靠人记得。
 //
-// ⚠ 判据用的是**声明侧** (`types.ts` 的 `MemoryEntry` 字段) 而不是真库列 ——
+// ⚠ 判据用的是**声明侧** (`types.ts` 的 `MemoryEntry` 字段) 而不是真库列 
 // 真库可能为空 (CI), 而声明是权威。零填充的判定交给**人登记 + 复查**, 不是本脚本猜。
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,7 +31,7 @@ const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
  */
 const KNOWN_EMPTY = new Map<string, string>([
   ["expiresAt", "有兜底: 无 TTL 也走衰减路径 (consolidate 的 ttlHit=false 分支)"],
-  ["mergedFrom", "[计划] S3 整合 (衰减/过期/合并) —— 见 open-source-landscape 的路线图"],
+  ["mergedFrom", "[计划] S3 整合 (衰减/过期/合并)  见 open-source-landscape 的路线图"],
 ]);
 
 /** 从 `MemoryEntry` 的接口体里抽出可选字段名 (只看那一个接口)。 */
@@ -54,7 +54,7 @@ console.log("verify-field-coverage: MemoryEntry 声明了 " + fields.length + " 
 console.log("  已知零填充 (有理由): " + [...known.keys()].join(", "));
 
 // ⚠ 这条检查**不猜**哪个字段空着 (那要真库); 它守的是**登记表本身的时效性**:
-// 登记的理由里提到的机制必须仍然存在 —— 否则那条"理由"已经失效而字段仍空着。
+// 登记的理由里提到的机制必须仍然存在  否则那条"理由"已经失效而字段仍空着。
 // ⚠ **判据是反向的**: 理由里出现的**每个标识符**都必须能在被引用的文档/源码里找到。
 //
 // 为什么不能只查白名单 (§771 实测): 第一版写成 `if (!/^(consolidate|ttlHit|...)$/.test(sym)) continue;`
@@ -81,7 +81,7 @@ for (const [field, why] of known) {
 }
 
 if (stale.length) {
-  console.error("verify-field-coverage: **登记表过期** —— 理由里引用的机制已消失:");
+  console.error("verify-field-coverage: **登记表过期**  理由里引用的机制已消失:");
   for (const s of stale) console.error("  " + s);
   process.exit(1);
 }

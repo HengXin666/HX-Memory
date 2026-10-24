@@ -4,7 +4,7 @@
 // 都带自己的取舍 (裁剪上限、缺依赖时的降级形状、available 的语义)。放在 Gateway 类里
 // 会让它越过 400 行上限, 也会把这层"纯投影"混进服务生命周期。
 //
-// 关键契约: **缺依赖时也要返回形状完整的对象**, 并让 available/enabled 如实说明状态 ——
+// 关键契约: **缺依赖时也要返回形状完整的对象**, 并让 available/enabled 如实说明状态 
 // 面板据此显示"本宿主没有账本/维护已关闭", 而不是画一个说不清是"没数据"还是"没接上"的空白。
 import type { ScheduleLog, ScheduleRecord, ScheduleSessionSummary } from "./schedule-log.js";
 import type { CaptureLog, CaptureRecord, CaptureStats } from "./capture-log.js";

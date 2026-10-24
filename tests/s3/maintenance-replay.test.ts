@@ -5,7 +5,7 @@
 //   - 开关/周期是否**实时**读设置 (而不是构造时快照一次);
 //   - 执行器是否真的拿到了 --root (漏传 = 每次都跑、每次都没做事);
 //   - 维护结果是否真的经 gateway RPC 出得来。
-// 上面的每一条都能在单元测试里全绿、同时在真机上一动不动 —— 本仓库真踩过这种假绿
+// 上面的每一条都能在单元测试里全绿、同时在真机上一动不动  本仓库真踩过这种假绿
 // (entity 通道曾经因为凭据没从组装根转发而恒定零效果, 而通道单测全过)。
 //
 // 关键: **用真实的 cordis Context**, 不是手搓的假 ctx。
@@ -186,7 +186,7 @@ describe("真实 apply() 下的后台维护接线", () => {
     const { Config } = await import("../../src/adapters/dsh/settings.ts");
     expect(MEMORY_SETTINGS_NAMESPACE).toBeTruthy();
     // ⚠ 0.1.7 起这两个字段是 **volatile** (面板可改、改完当轮生效), 解析结果是引用对象
-    // `{ get() }` 而不是裸值 —— 宿主 loader 正是靠这个引用做原地更新 (见 settings.ts 顶部)。
+    // `{ get() }` 而不是裸值  宿主 loader 正是靠这个引用做原地更新 (见 settings.ts 顶部)。
     // 所以断言要读 `.get()`, 直接断言数字会得到 "[object Object]" 而失败。
     const parsed = Config({ maintenanceIntervalHours: 3, maintenanceIdleMinutes: 5 }) as {
       maintenanceIntervalHours: { get(): number };

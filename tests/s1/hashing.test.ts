@@ -1,7 +1,7 @@
 // tests/s1/hashing.test.ts — 统一的哈希与归一化 (单一事实源的回归护栏)。
 //
 // 这些函数曾经在 4 个文件里各写一份 (jscpd 标出的 clone)。它们的语义必须**完全一致**:
-// 内容指纹决定"要不要重嵌", token 哈希决定"落到哪个维度" —— 两处分叉会造成
+// 内容指纹决定"要不要重嵌", token 哈希决定"落到哪个维度"  两处分叉会造成
 // "看着没变却重嵌了"/"以为变了却没重嵌"这类静默行为差异。
 import { describe, expect, it } from "vitest";
 import { contentFingerprint, fnv1a32, l2Normalize } from "../../src/kernel/hashing.ts";

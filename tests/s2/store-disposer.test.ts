@@ -5,7 +5,7 @@
 // 修复前 src/adapters/dsh/ 里没有任何 store.close(), 于是每次热重载漏一个句柄 +
 // 叠加 WAL/SHM 争用, 最终 "database is locked"。
 //
-// 为什么用**文件描述符计数**做判据: "卸载后重开同一 root 仍能跑" 测不出泄漏 ——
+// 为什么用**文件描述符计数**做判据: "卸载后重开同一 root 仍能跑" 测不出泄漏 
 // 实测 SQLite 允许未 close 的连接旁边再开一个连接并写入 (POSIX 语义如此), 所以
 // reopen 类断言在有无 close 时都通过 (写过一版, 去掉 close 后 4 条全绿, 是假闸门)。
 // 真正能分辨的是 fd 数: 打开 N 个 backend → fd 上升, 全部 close → 回落到基线。
@@ -67,7 +67,7 @@ function fdCountFor(dir: string): number {
     try {
       if (readlinkSync("/proc/self/fd/" + fd).includes(dir)) n++;
     } catch {
-      // fd 可能在读取间隙被关闭 —— 忽略。
+      // fd 可能在读取间隙被关闭  忽略。
     }
   }
   return n;
@@ -121,7 +121,7 @@ describe("插件卸载: 释放 store 句柄", () => {
     apply(ctx as never, { root, store: injected });
     await dispose(ctx);
 
-    // 调用方的 store 必须仍然可用 —— 关了就是越权 (它持有 fd)。
+    // 调用方的 store 必须仍然可用  关了就是越权 (它持有 fd)。
     expect(fdCountFor(root)).toBeGreaterThan(0);
     expect(() => injected.query({})).not.toThrow();
     injected.close();

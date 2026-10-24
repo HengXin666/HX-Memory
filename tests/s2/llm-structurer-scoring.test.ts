@@ -1,10 +1,10 @@
 // tests/s2/llm-structurer-scoring.test.ts — **LLM 实现**必须真的产出 `importance`/`confidence`。
 //
 // 为什么需要它 (2026-09-18, §792 实测): §765 给 `StructuredTurn` 加了这两个字段、改了提示词,
-// **却忘了在 `makeLlmStructurer` 的 return 里接上** —— 于是字段**仍然永不产出** (真库 0/480)。
+// **却忘了在 `makeLlmStructurer` 的 return 里接上**  于是字段**仍然永不产出** (真库 0/480)。
 //
 // **⇒ 那一刻我只测了 pipeline 的透传 (喂假 structurer), 而没测真实实现。**
-// ⇒ 教训: 加字段时要沿**整条链**测一遍 —— 声明 / 提示词 / **实现** / 透传 / 入库, 少一环就白做。
+// ⇒ 教训: 加字段时要沿**整条链**测一遍  声明 / 提示词 / **实现** / 透传 / 入库, 少一环就白做。
 import { describe, expect, it } from "vitest";
 import { scoringFields } from "../../src/adapters/dsh/llm-structurer.ts";
 

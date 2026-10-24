@@ -3,13 +3,13 @@
 // 为什么需要它 (2026-09-18): 上一轮把真相文件改成原子写 (tmp + rename) 后,
 // 正常路径不留残留 (实测写 10 次残留 0), 但**进程在 rename 前崩溃**会留下孤儿 tmp。
 //
-// 它**不影响正确性** —— 文件名是 `<原文件>.tmp-<pid>-<时间戳>` (**在 .md 之后追加**),
+// 它**不影响正确性**  文件名是 `<原文件>.tmp-<pid>-<时间戳>` (**在 .md 之后追加**),
 // 而 `walkMd` 只收 `endsWith(".md")` ⇒ 不会被读成真相文件。
-// 但它**会永久累积** (此前无清理机制) —— 本文件守住清扫器。
+// 但它**会永久累积** (此前无清理机制)  本文件守住清扫器。
 //
 // **删除必须保守** (两条判据):
 //   ① 文件名含 `.tmp-` 且**不以 `.md` 结尾**;
-//   ② **mtime 超过 1 小时** —— 刚产生的 tmp 可能属于一个**正在进行的写入**,
+//   ② **mtime 超过 1 小时**  刚产生的 tmp 可能属于一个**正在进行的写入**,
 //      删掉它会让那次写入的 rename 失败。
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync, mkdirSync } from "node:fs";

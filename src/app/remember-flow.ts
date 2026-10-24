@@ -63,7 +63,7 @@ export async function runRemember(
       : {}),
     ...(semantic ? { semanticSimilarity: (id: string) => semantic.get(id) } : {}),
     ...(deps.embedder ? { semanticDuplicateFloor: deps.semanticDuplicateFloor } : {}),
-    // 关闭自动演化: 把阈值抬到不可能达到的高度 —— 只保留字面去重与建边, 不取代不标记不语义合并。
+    // 关闭自动演化: 把阈值抬到不可能达到的高度  只保留字面去重与建边, 不取代不标记不语义合并。
     ...(deps.autoEvolve() ? {} : { supersedeFloor: 2, conflictFloor: 2, semanticDuplicateFloor: 2 }),
   });
 

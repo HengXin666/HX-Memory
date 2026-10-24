@@ -1,11 +1,11 @@
 // scripts/lib/channel-probe.ts — 用真实检索器给每个节点标出"它靠哪条通道被召回"。
 //
-// 目的 (item 5): 关系图此前所有节点都是同一套中性配色, 看的人无法回答图上最值得问的问题——
+// 目的 (item 5): 关系图此前所有节点都是同一套中性配色, 看的人无法回答图上最值得问的问题
 // **"这些条目在真实查询下是靠什么被找到的"**。图上一条边 (mentions/relates) 存在, 不等于
 // 检索时真的走得通: 图通道可能对它没贡献, 字面通道可能才是真正把它捞上来的那把钩子。
 //
 // 一条**不可妥协**的边界: 预览脚本承诺只读 (见 graph-preview.ts 头注释)。
-// 而检索需要 FTS5 索引 —— 直接对真实库跑检索会在 ~/.dsh/hx-memory 下建/改 index.sqlite,
+// 而检索需要 FTS5 索引  直接对真实库跑检索会在 ~/.dsh/hx-memory 下建/改 index.sqlite,
 // 那就是写。做法: 把语料**复制**进临时库 (mkdtemp) 再检索, 真实根目录一个字节都不碰。
 // 代价是多一次全量写盘; 收益是"只读"这个承诺仍然是字面为真的。
 //
@@ -42,7 +42,7 @@ export interface ChannelProbeResult {
   retrievals: number;
   /**
    * 覆盖率读数。必须报告而不是隐藏: 如果大部分条目从未被召回, 那么"按通道着色"图上会有
-   * 大片灰 —— 那是**真实结论** (这些条目在当前问题分布下不可达), 不是渲染失败。
+   * 大片灰  那是**真实结论** (这些条目在当前问题分布下不可达), 不是渲染失败。
    */
   covered: number;
   total: number;
@@ -67,13 +67,21 @@ export function probeChannels(input: ChannelProbeInput): ChannelProbeResult {
   if (queries.length === 0 || input.entries.length === 0) return empty;
 
   const root = mkdtempSync(join(tmpdir(), "hxmem-probe-"));
+  /**
+   * 索引侧判据的硬化 (tags / 实体 / 跨层契约)
+   * .agents/notes/implemented/bug-fix/2026-09-18-index-side-predicate-hardening.md
+   */
   const channels = new Map<string, Set<Channel>>();
   const hits = new Map<string, string[]>();
   let retrievals = 0;
   try {
+    /**
+     * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+     * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+     */
     const store = new FileBackend({ root });
     try {
-      // 逐条重建: 保留 id / relations / 实体 / 标签 / 时间 —— 通道依赖这些字段。
+      // 逐条重建: 保留 id / relations / 实体 / 标签 / 时间  通道依赖这些字段。
       for (const e of input.entries) {
         try {
           store.add({ ...e });
@@ -81,16 +89,22 @@ export function probeChannels(input: ChannelProbeInput): ChannelProbeResult {
           // 单条失败不影响整体 (预览是尽力而为)
         }
       }
+      /**
+       * 用真实检索给关系图节点标通道
+       * .agents/notes/implemented/architecture/2026-09-13-graph-channel-coloring.md
+       * 记忆关系图预览 (单文件 HTML) + 评测补 H@k
+       * .agents/notes/implemented/feature/2026-09-12-memory-graph-preview.md
+       */
       const retriever = new HybridRetriever(store);
       for (const q of queries) {
         retrievals++;
         let result;
         try {
           // 用 retrieveSync 而不是 retrieve: 预览是**同步脚本**, 且本地检索路径本就是同步的
-          // (retrieve 只是它的 async 包装)。异步投影类索引不参与 —— 预览不联网。
+          // (retrieve 只是它的 async 包装)。异步投影类索引不参与  预览不联网。
           result = retriever.retrieveSync({
             text: q,
-            // recall 语义: 关掉规则保底通道 —— 否则"哪条靠规则进来"会把所有查询读数都染成 rules,
+            // recall 语义: 关掉规则保底通道  否则"哪条靠规则进来"会把所有查询读数都染成 rules,
             // 而这里要问的是"这条记忆与这个问题有没有实质关联" (见 RetrievalRequest.purpose 说明)。
             purpose: "recall",
             limit: input.topK ?? 5,

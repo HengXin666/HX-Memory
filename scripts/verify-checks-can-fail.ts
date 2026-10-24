@@ -1,13 +1,13 @@
 // scripts/verify-checks-can-fail.ts — **检查器自身的元验证**: 每个判定项都必须能真的失败。
 //
 // 为什么需要它 (2026-09-18, §716): `verify-structure.ts` 里现在有 16 个判定项
-// (12 个 `SINGLETON_FUNCS` + 4 个 `FORBIDDEN_PATTERNS`)。而**一个永远不触发的检查等于没有** ——
+// (12 个 `SINGLETON_FUNCS` + 4 个 `FORBIDDEN_PATTERNS`)。而**一个永远不触发的检查等于没有** 
 // pattern 写错一个字符、属主路径改了、正则的引号层级不对, 它就会**静默地永远通过**。
 //
 // 本脚本对**每一项**做一次反驳: 在某个文件里注入该判据的"违规形态", 跑检查, 看它是否报出来,
 // **无论结果如何立刻还原**。任何一项没被抓住就以非 0 退出。
 //
-// ⚠ **它必须只读地跑** (注入→检查→还原都在 finally 里), 且**只改一个文件一次** ——
+// ⚠ **它必须只读地跑** (注入→检查→还原都在 finally 里), 且**只改一个文件一次** 
 // 与 `mutation-probe` 同一种"故意破坏看它红不红"的思路, 只是对象换成了**检查器自己**。
 //
 // 用法: node --experimental-strip-types scripts/verify-checks-can-fail.ts [--list]
@@ -79,15 +79,15 @@ if (args.includes("--list")) {
 // ⚠ **先核对清单是否与 verify-structure 对齐** (2026-09-18, §725 实测: 我加了新判定项
 // 却忘了在这里加探针 ⇒ **元验证静默少探一项**, 而它自己是绿的)。
 // 判据: 从 `verify-structure.ts` 的源码里数出它声明了几个判定项 (SINGLETON + FORBIDDEN),
-// 与 PROBES 数比对 —— 少了就报错。**一个"永远比被验证对象少一项"的元验证等于漏网。**
+// 与 PROBES 数比对  少了就报错。**一个"永远比被验证对象少一项"的元验证等于漏网。**
 {
   const vsSrc = readFileSync(join(ROOT, "scripts", "verify-structure.ts"), "utf8");
   // ⚠ 计数要按**三类判据的声明总数**: 用 `{ name: "` 会漏掉 SINGLETON_MARKERS 的缩进形态
-  // (它在数组元素里另起一行) —— 第一版就漏了它, 于是报"12 vs 17"的假不同步。
+  // (它在数组元素里另起一行)  第一版就漏了它, 于是报"12 vs 17"的假不同步。
   const declared = (vsSrc.match(/^\s*\{?\s*name: "/gm) ?? []).length;
   if (declared !== PROBES.length) {
     console.error(
-      "verify-checks-can-fail: **清单不同步** —— verify-structure 声明了 " +
+      "verify-checks-can-fail: **清单不同步**  verify-structure 声明了 " +
         declared + " 个判定项, 而本脚本只探 " + PROBES.length + " 个。",
     );
     console.error("  ⇒ 补上缺失的探针, 否则那个判定项**从未被证明能失败**。");
@@ -120,7 +120,7 @@ for (const p of PROBES) {
 }
 
 if (missed.length) {
-  console.error("verify-checks-can-fail: **" + missed.length + " 个判定项抓不到它该抓的东西** —— pattern 写错或属主变了:");
+  console.error("verify-checks-can-fail: **" + missed.length + " 个判定项抓不到它该抓的东西**  pattern 写错或属主变了:");
   for (const m of missed) console.error("  " + m);
   process.exit(1);
 }

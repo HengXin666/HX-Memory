@@ -135,7 +135,7 @@
         };
         var SCOPE_COLORS = { global: "#ff88ff", project: "#4ade80", agent: "#60a5fa" };
         /* 检索通道配色 (item 5): 每条通道一个可区分色相; 未命中任何通道 = 灰。
-           灰不是"缺数据", 而是"这组问题下召回不到它" —— 图上看得出这一点本身就是信息。 */
+           灰不是"缺数据", 而是"这组问题下召回不到它"  图上看得出这一点本身就是信息。 */
         var CHANNEL_COLORS = {
           rules: "#ff5c8a", bm25: "#5b9dff", vector: "#22d3ee", graph: "#a855f7",
           tag: "#f59e0b", entity: "#34d399", recency: "#94a3b8"
@@ -204,7 +204,7 @@
         if (colorMode === "channel") {
           var ch = n.d.channels;
           if (!ch || !ch.length) return NO_CHANNEL_COLOR;
-          /* 多通道命中时取"排序最靠前的那条" —— 单一颜色必须有确定性的选择规则,
+          /* 多通道命中时取"排序最靠前的那条"  单一颜色必须有确定性的选择规则,
              否则同一张图两次渲染可能长得不一样 (颜色抖动比"取第一个"更难排查)。 */
           for (var ci = 0; ci < CHANNEL_ORDER.length; ci++) {
             if (ch.indexOf(CHANNEL_ORDER[ci]) >= 0) return CHANNEL_COLORS[CHANNEL_ORDER[ci]];
@@ -453,7 +453,7 @@
             out.push("<span class=\"warn\" title=\"" + esc(s.danglingNote || "") + "\">悬空边 " + s.danglingEdges + "</span>");
           }
           if (s.truncated) out.push("<span class=\"warn\">已截断 (共 " + s.totalEntries + " 条, 只渲染 " + nodes.length + ")</span>");
-          /* 通道覆盖读数: 明确写出"N/M 条被这组问题召回" —— 灰节点多时这是解释, 不是故障。 */
+          /* 通道覆盖读数: 明确写出"N/M 条被这组问题召回"  灰节点多时这是解释, 不是故障。 */
           if (s.channelProbe) {
             out.push("<span title=\"用真实检索器跑的问题集合; 未覆盖的条目渲染为灰色\">通道覆盖 <b>" +
               s.channelProbe.covered + "</b>/" + s.channelProbe.total +
@@ -537,7 +537,7 @@
           out += "<dt>来源</dt><dd>" + esc(d.source || "-") + "</dd>";
           out += "</dl>";
           if (d.channels) {
-            // 这一维回答"它为什么会被找到"; 以及"它根本没被找到时是怎么进图的" ——
+            // 这一维回答"它为什么会被找到"; 以及"它根本没被找到时是怎么进图的" 
             // 图给它画了边, 但没有任何通道通向它, 那个落差才是最值得看的。
             out += "<div class=\"sect\">检索通道</div><div class=\"kicker\">";
             if (!d.channels.length) {

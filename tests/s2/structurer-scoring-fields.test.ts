@@ -1,7 +1,7 @@
 // tests/s2/structurer-scoring-fields.test.ts — 抽取层产出的 `importance`/`confidence` 必须**走到条目上**。
 //
 // 为什么需要它 (2026-09-18, §765): 这两个字段自 ADR 起就声明在 `MemoryEntry` 上, 而**从未有
-// 任何一层产出过它们** —— 真库实测 **475/475 全为 null**。两个具体后果:
+// 任何一层产出过它们**  真库实测 **475/475 全为 null**。两个具体后果:
 //
 // | 字段 | 未被产出时的后果 |
 // | --- | --- |
@@ -9,9 +9,9 @@
 // | `confidence` | `adjudicator` 里 "候选置信度不低于目标才允许取代" 两边都取缺省 0.7 ⇒ 差恒为 0 ⇒ **那条判据从不生效** |
 //
 // **⇒ 后者更值得修**: "一个设计好的判据恒不触发" 比 "字段空着" 严重。
-// (`entities` 有同样的历史: 它加载取层后填充率从 0% 起来 —— 见 structurer.ts 的注释。)
+// (`entities` 有同样的历史: 它加载取层后填充率从 0% 起来  见 structurer.ts 的注释。)
 //
-// 本测试走**真实路径** (`CapturePipeline.run`), 而不是直接调内部方法 ——
+// 本测试走**真实路径** (`CapturePipeline.run`), 而不是直接调内部方法 
 // 因为要守的正是"抽取层的产出**确实透传到了落盘的条目上**"这条链。
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -64,7 +64,7 @@ describe("抽取层 → 落盘条目: 评分字段的透传", () => {
   it("### 边界: **importance=1 与 confidence=0 也要透传** (不能按真假值判断)", async () => {
     const all = await run({ importance: 1, confidence: 0 });
     const hit = all.find((e) => e.content === "一条明确的结论");
-    // ⚠ 用 `if (s.confidence)` 会漏掉 0 —— 而 0 是一个**合法**的低置信值。
+    // ⚠ 用 `if (s.confidence)` 会漏掉 0  而 0 是一个**合法**的低置信值。
     expect(hit!.importance).toBe(1);
     expect(hit!.confidence).toBe(0);
   });

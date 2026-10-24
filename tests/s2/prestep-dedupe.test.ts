@@ -231,7 +231,7 @@ describe("injectMode: first (只在首轮注入一次)", () => {
     expect(texts(decision).some((t) => t.includes("并发上限"))).toBe(false);
   });
 
-  it("只有指引 (无 id 标记) 时首轮仍然注入 —— 判据是条目块, 不是'注入过任何东西'", async () => {
+  it("只有指引 (无 id 标记) 时首轮仍然注入  判据是条目块, 不是'注入过任何东西'", async () => {
     const events = [
       {
         type: "user/message",

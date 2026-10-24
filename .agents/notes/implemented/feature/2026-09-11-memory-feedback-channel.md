@@ -2,6 +2,14 @@
 
 Status: implemented
 
+Decision-ID: memory-feedback-channel
+
+## Code
+
+- `src/adapters/dsh/index.ts`
+- `src/app/facade.ts`
+- `src/kernel/ranking.ts`
+
 ## Problem
 
 HX-Memory 此前没有"这条召回到底有没有用"的信号。唯一的回路是在**返回时无条件计数**:
@@ -15,14 +23,14 @@ HX-Memory 此前没有"这条召回到底有没有用"的信号。唯一的回�
 | rule | 6 | **24.0** |
 | lesson | 8 | **0.1** |
 
-6 条规则全是 `24` 且 `lastHitAt` 完全相同 —— 它们只是被 always-on 每轮无脑注入。
+6 条规则全是 `24` 且 `lastHitAt` 完全相同  它们只是被 always-on 每轮无脑注入。
 
 **但它精确度量了"曝光次数"** (带 60s 合并窗口 ≈ 被展示过的轮次数)。失真的是"把它当质量分"。
 因此本次**不废弃它, 而是给它正确的角色**: 质量判断的分母。
 
 ### 谁有资格评价
 
-**只有用它的 agent 能判断。** 人既不掌握 agent 当时的上下文, 也不可能逐条审核 ——
+**只有用它的 agent 能判断。** 人既不掌握 agent 当时的上下文, 也不可能逐条审核 
 记忆量到千级时人工审核在物理上不可行。让 agent 自己操心"该记什么、哪条没记好"才是它该做的适配,
 人只保留"错误记忆的最终裁决"这类低频、需担责的动作。
 
@@ -49,7 +57,7 @@ HXLoLis 项目全部会话日志统计 (解压 zstd 多帧后逐事件解析, �
 
 `kernel/format-frame.ts` 新增 `memoryEntryHint(language)`, 由 `adapters/dsh/prestep.ts` 追加在注入块末尾:
 "以上若与当前任务不相关或不够具体, 可调用 memory_search 换关键词再查 (可选, 不适用就忽略)。"
-注入块是模型唯一一定会读到、且与记忆直接相关的位置 —— 把"还能继续查"做成每轮可见的**选项**。
+注入块是模型唯一一定会读到、且与记忆直接相关的位置  把"还能继续查"做成每轮可见的**选项**。
 选它而非 runner 钩子: 不依赖宿主钩子能力 (无版本漂移风险), 且天然与"可选"相容。
 
 ### 第二部分: agent 自评召回质量
@@ -67,7 +75,7 @@ interface RecallFeedback { irrelevant: number; wrong: number; }
 ```
 
 自评**沿用用户当前配置的默认模型** (与 structurer/abstractor 同源), 不新增模型配置项。
-覆盖范围**只到显式 memory_search 的召回**, 不含 always-on 注入 ——
+覆盖范围**只到显式 memory_search 的召回**, 不含 always-on 注入 
 后者是每轮无差别注入的常驻集合, 要求 agent 对它逐条表态会直接触发原则一所否掉的义务感。
 
 ### 第三部分: 标注真的影响检索
@@ -75,23 +83,25 @@ interface RecallFeedback { irrelevant: number; wrong: number; }
 - **排序** (`kernel/feedback.ts` + `kernel/ranking.ts`): 因子
   `1 - (bad + α·prior) / (exposure + α)`, α=4, prior=0.2, 下限 0.2。
   贝叶斯平滑使小样本向中性收缩; 零曝光与零坏评都恒为 1 (老数据行为不变);
-  下限保证"只降权不消失" —— 丢弃是治理动作, 不是排序动作。
+  下限保证"只降权不消失"  丢弃是治理动作, 不是排序动作。
 - **治理** (`app/governance.ts`): `exposure >= 5` 且 `bad/exposure >= 0.5` 时产出 review 队列提议,
   **绝不自动改动记忆**。用比例而非绝对次数: 比例自带最小样本量约束, 避免"曝光 2 次错 2 次"就动手。
 - **可见** (`gateway.flaggedMemories` + 面板"标注记录" tab): 展示每条被标注记忆的
-  bad / 曝光 / 质量因子 —— 降权必须可解释, 治理动作不能是黑箱。
+  bad / 曝光 / 质量因子  降权必须可解释, 治理动作不能是黑箱。
 
 **重构**: `facade.ts` 因此超过 400 行上限, 治理动作的实现抽到 `app/governance.ts`
 (facade 只留门面与编排), 与另两条职责线 (remember/recall、stats/digest) 分开。
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **人在面板上对记忆点赞/点踩 (本方案初稿的方向)。**
 否掉。①发起者错了: 人不知道 agent 当时的上下文; ②不可扩展: 千级记忆人工逐条审核物理上不可行;
 ③方向错位: 这是把 agent 该做的适配工作转移给人。人保留的角色只有"错误记忆的最终裁决"。
 
 **要求 agent 对每条召回都给出判定 (含"这条有用")。**
-否掉。好的不需要反馈 —— 那是默认状态, 逐条确认信息量为零却要付 token;
+否掉。好的不需要反馈  那是默认状态, 逐条确认信息量为零却要付 token;
 更糟的是它把可选变成义务, 模型为交差而编造评价。**只记坏的, 沉默即正常**。
 
 **由系统在检索后自动发起一次强制自评调用。**
@@ -124,7 +134,7 @@ interface RecallFeedback { irrelevant: number; wrong: number; }
 `facade.ts` 因此拆分出 `app/governance.ts`。
 
 诚实边界:
-- **本方案不能回答"记忆整体有没有用"** —— 只收负面仍是有偏采样
+- **本方案不能回答"记忆整体有没有用"**  只收负面仍是有偏采样
   (没被标注不代表没问题, 可能只是 agent 没注意)。真正的效果度量要靠可复现的对照实验
   (用 `hx-record-session-replay` 技能)。
 - **天花板是调用率**: `memory_flag` 与 `memory_search` 共享同一个 0/7440 风险。

@@ -1,14 +1,14 @@
 // tests/s2/abstain-sample-validity.test.ts — 弃权样本的**成立前提**必须被机器守住。
 //
 // 为什么需要它 (2026-09-18, §424): 弃权样本成立的唯一前提是"它问的东西库里确实没有"。
-// 而**库会增长** —— 曾经的库外主题 (rust / tokio / kubernetes) 后来进了库。
+// 而**库会增长**  曾经的库外主题 (rust / tokio / kubernetes) 后来进了库。
 // 旧实现只把这件事写成 note 里的中文文字, 评分侧照样把它算进弃权率 ⇒ **指标被系统性低估**
 // (实测: 40 条里 8 条已失效, 修前弃权率 0.65, 修后 0.8125)。
 //
 // 本文件钉住三件事:
-//   ① **`mentions` 用词边界**: 否则 "ada" 会命中 "loaded"、"gas" 会命中 "gasket" —— 假阳性;
+//   ① **`mentions` 用词边界**: 否则 "ada" 会命中 "loaded"、"gas" 会命中 "gasket"  假阳性;
 //   ② **泄漏的样本必须带 `exclude: true`** (机器可读, 不靠人读 note);
-//   ③ **不泄漏的样本不许带 `exclude`** —— 否则会静默丢掉有效样本。
+//   ③ **不泄漏的样本不许带 `exclude`**  否则会静默丢掉有效样本。
 import { describe, expect, it } from "vitest";
 import { buildCases, mentions } from "../../bench/lib/cases.ts";
 import type { Corpus } from "../../bench/lib/corpus.ts";

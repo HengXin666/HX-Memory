@@ -53,7 +53,7 @@ export class IndexMaintenance {
 
   /**
    * 重建实体倒排 (T1 级重建: memories → entities)。幂等。
-   * 存在的理由与 FTS 回填相同 —— 兜底抽取器上线前入库的条目, 否则反查对它们永远空转。
+   * 存在的理由与 FTS 回填相同  兜底抽取器上线前入库的条目, 否则反查对它们永远空转。
    */
   repopulateEntities(): number {
     this.db.exec("DELETE FROM entities");

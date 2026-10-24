@@ -1,7 +1,7 @@
 # DSH 插件安装路径 (profile 的插件从哪来, 哪种写法真能用)
 
 > 目的: 把 DSH 插件的安装通道、`dsh plugin` 的真实行为、以及本仓库实测通过/失败的写法,
-> 写成一份可核对的清单 —— 避免照着"看起来是一句话"的教程安装, 结果静默装不上或装上一个加载不了的包。
+> 写成一份可核对的清单  避免照着"看起来是一句话"的教程安装, 结果静默装不上或装上一个加载不了的包。
 > 边界 (不写什么): 不写 HX-Memory 的记忆机制与面板用法 (见 [README](../README.md) 与 [architecture-v2.md](architecture-v2.md));
 > 不写宿主触发点清单 (见 [dsh-trigger-points.md](dsh-trigger-points.md))。
 > 与代码的关系: 安装写入的是宿主 home 下的 profile 目录 (`~/.dsh/profiles/<name>/`), 不落在本仓库;
@@ -17,7 +17,7 @@ pnpm 跑完之后, 它扫描 profile 的依赖, 把声明了 `dsh.bundle` 的依
 1. **首次使用会初始化 profile**: 目录不存在 `package.json` 时按模板写入。`web` / `headless` / `acp` / `sdk` 有各自的模板,
    其余名字落到默认模板 (`dsh.profile.bundles = ["@deepseek-ai/dsh-base"]`)。
 2. **相对路径按当前工作目录改写成绝对路径**: 在插件仓库里执行 `add .` 装的是这个仓库;
-   在别处执行 `add ../plugin` 按那个位置解析 —— 不是按 profile 目录解析 (否则 profile 会被自己 link 成依赖)。
+   在别处执行 `add ../plugin` 按那个位置解析  不是按 profile 目录解析 (否则 profile 会被自己 link 成依赖)。
 3. **在 profile 目录里执行 `pnpm <参数>`**。所以 `add` / `remove` / `update` / `install` 都是 pnpm 的原义。
 4. **按"已安装状态"对账层级列表**: 依赖解析出的包声明了 `dsh.bundle.patch` 就加入 `dsh.profile.bundles`;
    被移除、或新版本不再声明, 就移出。未声明 `dsh.bundle` 的依赖只装为普通依赖, 并打印一条 warning (不是错误)。
@@ -76,7 +76,7 @@ cd <本仓库目录> && dsh plugin --profile web add .
   两次构建之间若新增或删除过文件, 结果是新旧混杂。可靠做法是先删安装副本再装, 细节见 [README](../README.md) 的快速上手一节。
 
   > **这条不是"建议", 忘记重装会以最难看的方式炸**: pnpm 装 `file:` 依赖时**硬链接**到源目录
-  > (实测安装副本 86 个 `.js` 全部与仓库 `dist/` 同 inode)。于是重新构建会**原地改写这些共享 inode** ——
+  > (实测安装副本 86 个 `.js` 全部与仓库 `dist/` 同 inode)。于是重新构建会**原地改写这些共享 inode** 
   > 改过内容的**旧文件静默变成新版**, 而**新增的文件根本不会出现在安装副本里**。
   > 结果是一个自相矛盾的半成品: 新的入口文件里写着 `import "./capture-log.js"`, 而那个文件不存在。
   > 运行中的宿主不受影响 (模块已进内存), 但**下一次重启直接 `ERR_MODULE_NOT_FOUND` 起不来**。 <!-- verify-docs:allow (实测报错原文) -->

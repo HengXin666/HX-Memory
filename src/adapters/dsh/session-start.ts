@@ -2,7 +2,7 @@
 //
 // 为什么独立成模块: index.ts 是**组装根** (只接线, 不装策略), 而"会话开始时做什么"
 // 本身就是一段有判定的策略 (subagent 过滤 / 开关 / 判重)。
-// 它此前长在 index.ts 里, 把组装根顶过了仓库的 400 行上限 (verify-structure) ——
+// 它此前长在 index.ts 里, 把组装根顶过了仓库的 400 行上限 (verify-structure) 
 // 上限的用意正是"超过 400 行通常是两个职责被塞进了一个文件"。
 //
 // ⚠ **这里不再注入任何东西** (2026-09, 用户实测 "别注入2次, 就只能注入一次"):
@@ -10,7 +10,7 @@
 // 现在**唯一的注入点是 pre-step** (见 prestep.ts 的"单一注入点"注释): 指引与条目被组装进
 // 同一个块, 一次会话里只出现一次。
 //
-// 那为什么这个模块还留着: 会话开始仍然要做一件**只有这里能做**的事 —— 把指引**塞进 agent**,
+// 那为什么这个模块还留着: 会话开始仍然要做一件**只有这里能做**的事  把指引**塞进 agent**,
 // 让它在**首轮预步**时随块发出。理由是预步才是"知道用户问什么"的时刻:
 //   · 指引说一次就够, 且它必须与条目同块 (分开就是两块, 正是用户要消掉的形态);
 //   · 条目按真实用户文本排序/裁预算, 比"会话开始时还不知道要问什么"更准。
@@ -33,7 +33,7 @@ export interface SessionStartDeps {
 /**
  * 待发指引 (会话级): 会话开始时装入, 首轮预步取走后清空。
  *
- * 为什么用容器而不是直接写进会话: 写进会话就是"注入" —— 而注入必须**只**发生在预步那一个点。
+ * 为什么用容器而不是直接写进会话: 写进会话就是"注入"  而注入必须**只**发生在预步那一个点。
  * 容器还有一个副作用是正面的: 取走即清空, 于是"指引只出现一次"由数据形状保证,
  * 不依赖任何一处的判重条件写对。
  *
@@ -83,7 +83,7 @@ export function makeSessionStartHandler(deps: SessionStartDeps) {
  * (全树 grep 0 命中; 0.2.0 的 agent/* 事件全集为 created/disposed/status/pre-step/
  * request/request-error/assistant-stream/turn-stopping/error)。而 cordis 的 `ctx.on`
  * 对未知事件名**静默不报错** (`_hooks[name] ||= []` → 永不触发), 于是插件表面完全正常:
- * fiber active、工具可用、pre-step 注入照跑 —— 只有"会话开始登记"这一支整体哑掉。
+ * fiber active、工具可用、pre-step 注入照跑  只有"会话开始登记"这一支整体哑掉。
  *
  * 后果链 (逐条实测):
  *   · `runtime.onSessionStart` 从不执行 ⇒ lastSessionId/lastProject/lastLineage 恒 undefined;
@@ -93,6 +93,6 @@ export function makeSessionStartHandler(deps: SessionStartDeps) {
  *
  * 0.2.0 的等价钩子是 `agent/created` (权威范例: `@deepseek-ai/dsh-hooks-claude-code`
  * 用它承接 SessionStart)。两个名字**都注册** (旧名永不触发也无害) 才能同时支持
- * 0.1.7 与 0.2.0 —— 插件声明支持两条通路就要真的都能用。
+ * 0.1.7 与 0.2.0  插件声明支持两条通路就要真的都能用。
  */
 export const SESSION_START_EVENTS = ["agent/created", "agent/session-start"] as const;

@@ -1,8 +1,8 @@
 // scripts/verify-client-contract.ts — 面板渲染的字段, 服务端**必须提供**。
 //
-// 为什么需要它 (2026-09-18, §568): §565 修了一个缺陷 —— 面板渲染 `{b.content}`,
+// 为什么需要它 (2026-09-18, §568): §565 修了一个缺陷  面板渲染 `{b.content}`,
 // 而服务端投影层**硬编码了 `content: ""`**。**类型上它合法** (`content: string`),
-// 所以 tsc 不报错, 测试也没覆盖到 —— 而**用户只看到空白**。
+// 所以 tsc 不报错, 测试也没覆盖到  而**用户只看到空白**。
 //
 // 这类缺陷的共同形态是: **客户端读一个字段, 而服务端没给/给了占位值**。
 // tsc 挡不住 (两侧类型是各自声明的), 所以需要一道**跨层检查**:
@@ -65,7 +65,7 @@ for (const [field, files] of fields) {
   if (!declared) {
     violations.push(
       "客户端契约: 面板渲染 {" + files[0]!.replace(/\.tsx$/, "") + "} 里的字段 \"" + field +
-        "\", 但**全服务端面 (src/adapters + src/app) 没有任何声明** —— 面板会渲染 undefined",
+        "\", 但**全服务端面 (src/adapters + src/app) 没有任何声明**  面板会渲染 undefined",
     );
   }
 }

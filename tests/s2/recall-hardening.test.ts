@@ -70,7 +70,7 @@ describe("规则注入的确认闸门", () => {
   });
 
   it("没有确认记录的 rule 不会被当作跨项目规则注入 (召回侧独立校验)", () => {
-    // 存储层会拒绝写入未确认 rule, 所以这里用 stub 直接喂给 RecallService ——
+    // 存储层会拒绝写入未确认 rule, 所以这里用 stub 直接喂给 RecallService 
     // 召回侧必须自己再校验一次, 挡住任何来源的 rule 条目。
     const unconfirmed = {
       id: "bad1",

@@ -1,7 +1,7 @@
 // kernel/hashing.ts — 哈希与向量归一化的**唯一实现**。
 //
 // 为什么要独立一个文件: 这些函数曾在 `retrieval/embedding.ts`、`embedding-lexical.ts`、
-// `vector.ts`、`vector-projected.ts` 里各写一份 (jscpd 实测 4 处 clone)。它们的语义必须完全一致 ——
+// `vector.ts`、`vector-projected.ts` 里各写一份 (jscpd 实测 4 处 clone)。它们的语义必须完全一致 
 // 内容指纹用于"要不要重嵌"的判定, 哈希用于把 token 映射到向量维度; 两处分叉会导致
 // "看着没变却重嵌了"或"以为变了却没重嵌"这类**静默**行为差异。
 //
@@ -22,7 +22,9 @@ export function fnv1a32(input: string): number {
   return h >>> 0;
 }
 
-/** 内容指纹 (带长度后缀): 只用于判断"内容变了没有", 不参与检索排序。 */
+/** 内容指纹 (带长度后缀): 只用于判断"内容变了没有", 不参与检索排序。 
+ * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+ */
 export function contentFingerprint(text: string): string {
   return fnv1a32(text).toString(36) + ":" + text.length;
 }

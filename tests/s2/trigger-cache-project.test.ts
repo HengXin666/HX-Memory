@@ -1,7 +1,7 @@
 // tests/s2/trigger-cache-project.test.ts — always-on 缓存必须**按项目**隔离。
 //
 // 真实缺陷 (2026-09): 缓存只有一对 cache/cachedRevision, 失效判据是"写版本号变了"。
-// 同一版本里第一个来热身的项目把它自己项目的 always-on 灌进去, 之后所有项目都命中这份缓存 ——
+// 同一版本里第一个来热身的项目把它自己项目的 always-on 灌进去, 之后所有项目都命中这份缓存 
 // A 项目的私有决策被注入给 B 项目, 直到某次写入顶掉版本号才重算。
 // 实测: 一次无 project 的 alwaysOn 调用返回了 8 个项目的条目 (53 条项目内候选)。
 //
@@ -16,6 +16,10 @@ import type { MemoryEntry } from "../../src/kernel/types.ts";
 
 const T = { validAt: "2026-06-01T00:00:00.000Z", assertedAt: "2026-06-01T00:00:00.000Z" };
 
+/**
+ * 项目祖先链可见性 (嵌套仓库不再被切成两半)
+ * .agents/notes/implemented/architecture/2026-09-18-project-lineage-visibility.md
+ */
 function decision(id: string, project: string, content: string): MemoryEntry {
   return { id, kind: "decision", scope: "project", project, content, source: "s", ts: T };
 }

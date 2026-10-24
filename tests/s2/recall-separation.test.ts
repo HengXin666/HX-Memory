@@ -94,7 +94,7 @@ describe("检索分层: recall (显式搜索) vs inject (注入)", () => {
     expect(hits.hits.map((h) => h.entry.id)).toContain("r-conc");
   });
 
-  it("inject (默认): 规则保底没有被破坏 —— 无关查询也会带上已确认规则", () => {
+  it("inject (默认): 规则保底没有被破坏  无关查询也会带上已确认规则", () => {
     seed();
     const retriever = new HybridRetriever(store);
     const hits = retriever.retrieveSync({
@@ -155,6 +155,10 @@ describe("always-on 预算分仓: 规则不能吃光预算", () => {
       rule("r4", 20),
       fact("f1", "本项目用 pnpm 而不是 npm"),
     ];
+    /**
+     * 检索目的分层 (inject/recall) 与 always-on 预算分仓
+     * .agents/notes/implemented/architecture/2026-09-11-retrieval-purpose-and-alwayson-budget.md
+     */
     const picked = selectAlwaysOn(entries, { project: "api", budgetTokens: 400, estimate });
     const ids = picked.map((e) => e.id);
     expect(ids).toContain("f1");
@@ -244,7 +248,7 @@ describe("always-on 预算分仓: 规则不能吃光预算", () => {
     expect(selectAlwaysOn([mine, theirs], { project: "api", budgetTokens: 400, estimate }).map((e) => e.id)).toEqual(
       ["dMine"],
     );
-    // 不知道是哪个项目时: 一条项目内条目都不给 (此前是"全都给" —— 实测泄漏 8 个项目的记忆)。
+    // 不知道是哪个项目时: 一条项目内条目都不给 (此前是"全都给"  实测泄漏 8 个项目的记忆)。
     expect(selectAlwaysOn([mine, theirs], { budgetTokens: 400, estimate })).toEqual([]);
   });
 

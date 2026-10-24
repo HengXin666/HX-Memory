@@ -2,7 +2,7 @@
 // 所有宿主调用走 ./rpc.js (通道/endpoint/payload/解包只在那里定义一次)。
 //
 // 三个页签: 推广提议 / 新沉淀 / 调用记录。
-// "推广提议"页顶部是批次状态栏 —— 它回答用户"为什么效果不好":
+// "推广提议"页顶部是批次状态栏  它回答用户"为什么效果不好":
 //   轮询 generalizationStatus, 显示上次批次真实数字 (考虑/聚类/提议/耗时/是否 LLM),
 //   以及队列计数; abstractor 未挂载时明确警告"只能产出草稿规则, 需人工重写"。
 import { useCallback, useEffect, useState } from "react";
@@ -25,7 +25,7 @@ interface ReviewView {
   status: "proposed" | "confirmed" | "rejected";
   rule: string;
   /**
-   * 被这条提议概括的实例。**新宿主给 id 数组, 旧宿主给计数** —— 面板必须两种都收
+   * 被这条提议概括的实例。**新宿主给 id 数组, 旧宿主给计数**  面板必须两种都收
    * (类型标成 unknown, 由 readCovers 归一化): 宿主进程比面板活得久, 只重建 dist 不重启
    * 宿主时就会遇到旧契约, 直接 .slice() 会抛 TypeError (实测)。见 review-covers.ts。
    */
@@ -62,7 +62,7 @@ interface RecentView {
 /**
  * 一条记忆的证据链 (与 facade.evidenceChain 同形)。
  *
- * 为什么面板需要它: "可溯源"是本产品的核心承诺, 而此前**人侧没有任何入口** ——
+ * 为什么面板需要它: "可溯源"是本产品的核心承诺, 而此前**人侧没有任何入口** 
  * 只有 agent 能通过 memory_evidence 工具追到原话。人看到一条结论却查不到它的出处,
  * 就没法判断该不该改它, 也就谈不上"用户握有最终编辑权"。
  */
@@ -89,7 +89,7 @@ interface EvidenceChainView {
 /**
  * 注入预览 (服务端 alwaysOnPreview 的投影)。
  *
- * `blocked` 是本出口存在的原因: 规则是用户确认过的不变量, 而保底通道的承诺是无条件注入 ——
+ * `blocked` 是本出口存在的原因: 规则是用户确认过的不变量, 而保底通道的承诺是无条件注入 
  * 实测真实库 9 条已确认规则里 **2 条因配额永远注入不进**, 且完全静默。
  * 面板必须把它们列出来 (含成因), 否则用户只能看到"我确认过这条规则, 但它好像没生效"。
  */
@@ -347,13 +347,13 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
   const [report, setReport] = useState<BatchReport | null>(null);
   const [status, setStatus] = useState<GenStatus | null>(null);
   const [statusErr, setStatusErr] = useState("");
-  /** 已展开的提议 id (展开时按需取原文, 不是全量预取 —— 队列可能很长)。 */
+  /** 已展开的提议 id (展开时按需取原文, 不是全量预取  队列可能很长)。 */
   const [open, setOpen] = useState<Record<string, ReviewEntryView[] | "loading" | "error">>({});
   /** 宿主不认识 entriesByIds (面板比宿主新, 通常是宿主没重启): 提示一次, 不再逐条报错。 */
   const [staleHost, setStaleHost] = useState(false);
   /**
    * 已展开证据链的记忆 id → 链路或状态。
-   * 按需取 (不是全量预取): 每条都要读 episode 日志, 全量预取会把面板拖垮 ——
+   * 按需取 (不是全量预取): 每条都要读 episode 日志, 全量预取会把面板拖垮 
    * 与 open (审阅展开) 同一取舍。
    */
   const [evidence, setEvidence] = useState<
@@ -379,7 +379,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
 
   /**
    * 面板打开期间也要跟着变: 记忆捕获、推广批次、别处确认都可能改变后端状态。
-   * 只挂载时拉一次会让显示长期陈旧 —— 用户唯一的办法是重启宿主 (真实反馈)。
+   * 只挂载时拉一次会让显示长期陈旧  用户唯一的办法是重启宿主 (真实反馈)。
    * 三重刷新: 窗口重新获得焦点 / 面板重新可见 / 定时轮询 (切到后台时停, 不浪费请求)。
    */
   useEffect(() => {
@@ -400,7 +400,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
 
   /**
    * 批次状态栏: 同一套 focus/visibility/5s 轮询, 只在"推广提议"页签且面板可见时生效。
-   * 失败写进 statusErr 而不是抛出去 —— 老 gateway 没有这个方法时页面照常可用。
+   * 失败写进 statusErr 而不是抛出去  老 gateway 没有这个方法时页面照常可用。
    */
   const refreshStatus = useCallback(async () => {
     try {
@@ -461,7 +461,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
    * 展开一条提议: 把它概括的实例原文取回来。
    *
    * 为什么必须能展开: 提议行本身只有一句被抽象出来的规则, 而人审要判断的恰恰是
-   * "它概括的那几条到底在说什么"。此前接口只回 covers 计数 —— 用户看到
+   * "它概括的那几条到底在说什么"。此前接口只回 covers 计数  用户看到
    * "覆盖 3 条实例" 时无从判断该确认还是驳回 (实测的真实困扰, 也是本页要消灭的
    * 那一类"不可解释")。取回的内容会缓存, 收起再展开不重复请求。
    */
@@ -557,9 +557,9 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
 
   const refreshInjection = useCallback(async () => {
     try {
-      // 浏览器侧的 rpc 只有 { call }, 读不到 cwd —— 项目名必须走 currentProject (与绑定页同一做法;
+      // 浏览器侧的 rpc 只有 { call }, 读不到 cwd  项目名必须走 currentProject (与绑定页同一做法;
       // 面板曾试图读 rpc.cwd 这个不存在的字段, 于是自动建行永远不生效)。
-      // 项目为空时端点按"没有项目"处理 (只给跨项目规则) —— 那是正确降级, 不是错误。
+      // 项目为空时端点按"没有项目"处理 (只给跨项目规则)  那是正确降级, 不是错误。
       const cur = await callHxMemory<{ project?: string }>(rpc, "currentProject");
       setInjectView(
         await callHxMemory<InjectionPreviewView>(rpc, "alwaysOnPreview", { project: cur?.project ?? "" }),
@@ -624,7 +624,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
    * 展开/收起一条记忆的证据链 (追到产生它的原始对话原话)。
    *
    * 降级要可见: 宿主未重启 (不认识该端点) 时给出与 staleHost 同类的一次性提示,
-   * 而不是逐条报错 —— 宿主进程比面板活得久是常态。
+   * 而不是逐条报错  宿主进程比面板活得久是常态。
    */
   const toggleEvidence = async (id: string) => {
     if (evidence[id] && evidence[id] !== "loading") {
@@ -645,7 +645,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
     }
   };
 
-  /** 拉取待审队列 (按需, 切到该 tab 时才读 —— 与其它 tab 同一取舍)。 */
+  /** 拉取待审队列 (按需, 切到该 tab 时才读  与其它 tab 同一取舍)。 */
   const refreshCaptureReview = useCallback(async () => {
     try {
       const res = await callHxMemory<{ available: boolean; items: CaptureReviewView[] }>(
@@ -803,7 +803,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
                 ))}
               </ul>
               {/* 被配额挡掉的**必须显式列出**: 规则承诺无条件注入, 静默失效是用户唯一
-                  无法自行发现的故障 —— 他只会觉得"我确认过这条, 但它好像没生效"。 */}
+                  无法自行发现的故障  他只会觉得"我确认过这条, 但它好像没生效"。 */}
               {injectView.blocked.length ? (
                 <>
                   <h4>{t("injBlocked")}</h4>
@@ -843,7 +843,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
           </div>
           <p className="hint">{t("schedHint")}</p>
 
-          {/* 后台维护 (P3 调度器): 它"悄悄发生", 所以必须有一处能看见 —— 没有这块,
+          {/* 后台维护 (P3 调度器): 它"悄悄发生", 所以必须有一处能看见  没有这块,
               用户无法区分"维护在正常工作"和"它从来没跑过"(两者在界面上都一样安静)。 */}
           <h3 className="section-title">{t("maintTitle")}</h3>
           {!maint ? (
@@ -1084,7 +1084,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
                   {r.answerExcerpt ? (
                     <div className="meta">回答节选: {r.answerExcerpt.slice(0, 160)}</div>
                   ) : null}
-                  {/* 处置按钮: 只给"看"不给"做"的队列是半成品 —— 人看懂了原因却无法动作。 */}
+                  {/* 处置按钮: 只给"看"不给"做"的队列是半成品  人看懂了原因却无法动作。 */}
                   <button
                     type="button"
                     className="ghost"
@@ -1367,7 +1367,7 @@ export function ReviewPage({ rpc, t }: Props): JSX.Element {
                     </div>
                     {p.drafted ? <div className="banner warn">{t("draftWarn")}</div> : null}
                     {/* 旧宿主: 只有计数没有 id, 展开做不到。这是**部署状态** (宿主没重启),
-                        必须说出真正原因 —— 否则用户只会看到按钮灰着, 然后以为功能坏了。 */}
+                        必须说出真正原因  否则用户只会看到按钮灰着, 然后以为功能坏了。 */}
                     {covers.legacy || staleHost ? (
                       <div className="banner warn">{t("staleHost")}</div>
                     ) : null}

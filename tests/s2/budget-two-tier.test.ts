@@ -6,7 +6,7 @@
 // 症状 (真实库, tokenBudget=100): 返回 6 条**全部来自 graph/entity**, 单条最大 1400 token
 // (总预算的 14 倍); 而预算内的 primary **一条都没进** ⇒ 注入路径整体超支 5.8 倍 (实测 4994 vs 700)。
 //
-// 修法: extras 只在**预算还有余量**时追加。这与"图/实体必须能被召回"的既有契约**不冲突** ——
+// 修法: extras 只在**预算还有余量**时追加。这与"图/实体必须能被召回"的既有契约**不冲突** 
 // 契约场景不传 tokenBudget (走默认 1200, 余量充足); 而"预算紧张时优先主榜单"是预算机制的应有之义。
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -17,7 +17,7 @@ import { join } from "node:path";
  * ⚠ 临时目录必须登记并在 afterEach 里删除。
  *
  * 为什么 (2026-09-18): 本文件第一版用 `"/tmp/budget-two-tier-" + Math.random()` 做根,
- * **从不删除** —— 每次跑测试泄漏 3 个目录 (实测确认)。这是**我引入的缺陷**, 不是历史遗留。
+ * **从不删除**  每次跑测试泄漏 3 个目录 (实测确认)。这是**我引入的缺陷**, 不是历史遗留。
  * 它属于"验证脚手架污染环境"那一类 (与 §307 的库内残留 / §310 的 106MB 泄漏同源)。
  */
 const tmpRoots: string[] = [];
@@ -38,7 +38,7 @@ const T = { validAt: "2026-01-01T00:00:00Z", assertedAt: "2026-01-01T00:00:00Z" 
 const mk = (id: string, content: string, relations: MemoryEntry["relations"] = []) =>
   ({ id, kind: "lesson", content, source: "t", scope: "agent", ts: T, relations } as MemoryEntry);
 
-/** 长正文的"补位候选" —— 模仿真实库里的长条目。 */
+/** 长正文的"补位候选"  模仿真实库里的长条目。 */
 function longBody(n: number) {
   return ("这是一条很长的记忆正文用于测试预算约束 " + "内容填充".repeat(n));
 }

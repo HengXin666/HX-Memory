@@ -1,6 +1,6 @@
 // src/adapters/dsh/plugin-options.ts — 插件入口的选项形状与默认路径。
 //
-// 为什么从组装根抽出来 (§407 行上限): 这块内容与"记忆怎么工作"无关, 它只回答两个问题 ——
+// 为什么从组装根抽出来 (§407 行上限): 这块内容与"记忆怎么工作"无关, 它只回答两个问题 
 // "宿主可以传哪些参数进来"、"不给参数时记忆根落在哪"。它的变化原因也跟着宿主/部署环境走,
 // 而不是跟着业务走。组装根只再导出一次, 保持 `apply` 的调用方无需改导入路径。
 
@@ -32,3 +32,12 @@ export function defaultMemoryRoot(env: NodeJS.ProcessEnv = process.env): string 
   if (dshHome) return resolve(dshHome, "hx-memory");
   return join(homedir(), ".dsh", "hx-memory");
 }
+
+export function safeAgent<T>(fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+

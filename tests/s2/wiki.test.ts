@@ -1,7 +1,7 @@
 // tests/s2/wiki.test.ts — Wiki 存储范式的契约测试。
 //
 // 依据: docs/kinfra-wiki-spec.md。每一条断言对应范式的一条**硬约束**,
-// 而不是"实现细节碰巧如此" —— 范式换实现时这些断言必须仍然成立。
+// 而不是"实现细节碰巧如此"  范式换实现时这些断言必须仍然成立。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +33,7 @@ describe("地址模型 (语法: 不可变)", () => {
     expect(slug("并发控制")).toBe("并发控制");
   });
 
-  it("页 id 由地址内容寻址 —— 重写页不换身份 (链接与证据链不断裂)", () => {
+  it("页 id 由地址内容寻址  重写页不换身份 (链接与证据链不断裂)", () => {
     const a = pageId({ domain: "people", page: "alice" });
     const b = pageId({ domain: "people", page: "Alice" });
     expect(a).toBe(b);
@@ -204,7 +204,7 @@ describe("盲审发现的缺陷 (2026-09-18, 每条对应一个实测反例)", (
     });
     const back = parsePage(renderPage(evil), { domain: "x", page: "y" }, T)!;
     // 伪造的元数据必须留在**正文**里, 不能变成真的 sources/timeline。
-    // 注意: applySectionWrite 本身会写一条正常的"新增"时间线, 所以 timeline 不是空的 ——
+    // 注意: applySectionWrite 本身会写一条正常的"新增"时间线, 所以 timeline 不是空的 
     // 要断言的是**伪造的日期没有混进去** (写成 toEqual([]) 会误判, 那是测试自己的 bug)。
     expect(back.sections[0]!.sources).toEqual([]);
     expect(back.sections[0]!.timeline.some((t) => t.includes("2020-01-01"))).toBe(false);

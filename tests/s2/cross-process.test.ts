@@ -1,6 +1,6 @@
 // tests/s2/cross-process.test.ts — 跨进程共享索引 (真并发: 同时启动 + 持锁一段时间)。
 // 坑: node:sqlite 默认 busy_timeout=0, 第二个进程在 DDL 阶段就 "database is locked"。
-// 注意: 必须用 spawn (异步) 同时启动 —— execFileSync 是串行的, 那样即使删掉 busy_timeout 也会假通过。
+// 注意: 必须用 spawn (异步) 同时启动  execFileSync 是串行的, 那样即使删掉 busy_timeout 也会假通过。
 import { describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

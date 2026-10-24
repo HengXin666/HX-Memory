@@ -21,7 +21,7 @@ description: "排查「AI 没有查记忆」或「记忆没生效」类问题: �
 
 ## 常见根因 (按顺序查)
 
-1. **项目没配绑定**: 绑定通道空 → 走通用触发通道 (always-on + 意图). 若连 always-on 也为空, 说明库里没有**已确认规则**或本项目关键事实 —— 这属于"确实没内容", 不是 bug
+1. **项目没配绑定**: 绑定通道空 → 走通用触发通道 (always-on + 意图). 若连 always-on 也为空, 说明库里没有**已确认规则**或本项目关键事实  这属于"确实没内容", 不是 bug
 2. **意图没命中**: 提问形状不在库里 → 加一条 pattern (优先匹配句式, 不要加知识关键词)
 3. **注入被去重**: 同一话题连续追问只注一次是**设计行为**; 想验证就换话题再问
 4. **检索没召回**: 触发对了但结果空 → 走 `memory_search` 手动查同一个词; 若也空, 看检索评测 `scripts/eval-retrieval.ts` (语义召回) 与索引状态 (`pnpm run verify` 里的 ftsStatus)
@@ -29,8 +29,8 @@ description: "排查「AI 没有查记忆」或「记忆没生效」类问题: �
 
 ## 调整旋钮
 
-- 意图库: `DEFAULT_INTENTS` (`src/trigger/policy.ts`) —— 扩句式, 不要堆知识词
+- 意图库: `DEFAULT_INTENTS` (`src/trigger/policy.ts`)  扩句式, 不要堆知识词
 - 漂移阈值: `TriggerPolicy({ driftThreshold })` (默认 0.9, 由实测标定: 同话题含改述与长句追问 ≤0.8, 换话题 =1.0)
 - 预算: `alwaysOnBudget` (400) / `intentBudget` (300)
 - 预热时限: 设置项 `semanticWarmupMs` (默认 50ms, 0 = 不预热)
-- always-on 内容范围: `selectAlwaysOn` (规则 + 事实/偏好/决策; **不含** lesson —— lesson 走意图召回). 项目内条目**按 project 过滤** (不传 project = 一条项目内条目都不给; 见 `tests/s2/trigger-cache-project.test.ts`); 机器生成的占位草稿 (`经验: … 已沉淀`) 被挡出常驻通道 (见 `src/kernel/rule-shape.ts`)
+- always-on 内容范围: `selectAlwaysOn` (规则 + 事实/偏好/决策; **不含** lesson  lesson 走意图召回). 项目内条目**按 project 过滤** (不传 project = 一条项目内条目都不给; 见 `tests/s2/trigger-cache-project.test.ts`); 机器生成的占位草稿 (`经验: … 已沉淀`) 被挡出常驻通道 (见 `src/kernel/rule-shape.ts`)

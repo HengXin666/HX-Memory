@@ -3,7 +3,7 @@
 // 为什么需要它 (用户诉求): 记忆此前**每轮**都往上下文里注入一份常驻条目, 用户明确要求
 // "只在第 1 轮注入一次, 至少给个开关"。宿主把插件设置暴露成 settings 命名空间, 但面板
 // 只列**有卡片的命名空间** (dsh-client-ui-settings-plugins: 服务端提供的命名空间 ∩ 注册了
-// settings.plugin.item 的卡片) —— 所以不注册这张卡, 用户在界面上根本看不到也改不了。
+// settings.plugin.item 的卡片)  所以不注册这张卡, 用户在界面上根本看不到也改不了。
 //
 // 写路径不走自家 gateway RPC, 而是宿主的 settingsScope (与 Host 同一份权威值,
 // 带 revision 栅栏): 走 RPC 会绕开宿主的校验与冲突恢复, 两套写路径还会互相覆盖。
@@ -29,7 +29,7 @@ export function InjectionModeCard({ scope, t }: Props): JSX.Element {
     if (mode === current) return;
     setMsg("");
     // 刻意不看 promise 是否 reject: settingsScope 的合同是"冲突时自行恢复并重新广播",
-    // 它 settle 意味着视图已刷新, 成败要看**回调后读回的权威值** ——
+    // 它 settle 意味着视图已刷新, 成败要看**回调后读回的权威值** 
     // 看 reject 会把"面板已回滚到旧值"当成保存成功报给用户。
     void scope.set("injectMode", mode).then(() => {
       const ok = settledTo(scope, mode);

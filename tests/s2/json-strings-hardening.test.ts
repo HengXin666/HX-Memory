@@ -1,13 +1,13 @@
 // tests/s2/json-strings-hardening.test.ts — id 数组解析**不做强转** (与 parseTags 同一口径)。
 //
-// 为什么需要它 (2026-09-18, §538 横向排查): 这是一个**同型缺陷的三处副本** ——
+// 为什么需要它 (2026-09-18, §538 横向排查): 这是一个**同型缺陷的三处副本** 
 // `parsed.map((v) => String(v)).filter(Boolean)` 出现在:
-//   · `parseTags` (已修, §511) —— 服务 tags;
-//   · `jsonStrings` (entry-normalize.ts) —— 服务索引列的 entities/derived_from/merged_from;
-//   · `parseStringArray` (markdown-parse.ts) —— 服务真相文件的同三个字段。
+//   · `parseTags` (已修, §511)  服务 tags;
+//   · `jsonStrings` (entry-normalize.ts)  服务索引列的 entities/derived_from/merged_from;
+//   · `parseStringArray` (markdown-parse.ts)  服务真相文件的同三个字段。
 //
 // `String(null) === "null"` 与 `String(1) === "1"` 都是**非空字符串** ⇒ `filter(Boolean)` 放行。
-// 而 `"null"`/`"undefined"`/`"1"` **既不是实体键也不是记忆 id** —— 一旦进索引就会参与
+// 而 `"null"`/`"undefined"`/`"1"` **既不是实体键也不是记忆 id**  一旦进索引就会参与
 // `byEntities` 反查 (而 `neighbors.ts` 用它**扩大演化裁决的候选面**)。
 //
 // 实测真库这三个字段目前**干净** ⇒ 所以这是**加固**, 不是修既有数据。本文件那个"真库干净"

@@ -5,7 +5,7 @@
 //   - 写入期建边解决不了它 (把共享实体的全部配对都建边, 命中只从 19/104 涨到 22/104);
 //   - 真瓶颈在检索期 (候选池平均 12.9 条, 目标平均排第 8, 而图配额只有 3);
 //   - 以及一个关键读数: **104 条 case 里只有 4 条把实体写在查询里**, 其余 100 条必须先有
-//     字面种子才能反查 —— 所以本通道是"种子驱动"的, 不能只做查询词反查。
+//     字面种子才能反查  所以本通道是"种子驱动"的, 不能只做查询词反查。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,7 +30,7 @@ afterEach(() => {
 const SEED = "prestep.ts 由 Binder 组装, 通道顺序决定了谁先拿到预算。";
 /**
  * 目标: 与查询**字面完全不重合** (覆盖率低于门槛会被 bm25 丢掉), 唯一相同的是实体 prestep.ts。
- * 刻意避开"通道/顺序/预算"这些词 —— 一旦沾上, bm25 自己就能召回它, 这条 case 就测不到反查了
+ * 刻意避开"通道/顺序/预算"这些词  一旦沾上, bm25 自己就能召回它, 这条 case 就测不到反查了
  * (第一版 fixture 就踩了这个坑: 断言"关掉通道目标消失"直接失败, 因为它本来就被词面命中了)。
  */
 const TARGET = "prestep.ts 里 MMR 曾被误当成排名用, 实测分最高的那条排在了第二位。";
@@ -70,7 +70,7 @@ describe("实体反查通道", () => {
 
   it("默认走独立配额的尾巴: **不参与主排序竞争**, 因此不挤掉词面命中", () => {
     seedEntries();
-    // 主榜单 (bm25) 的第一名在两种配置下必须一致 —— 这正是"分层"要保住的性质
+    // 主榜单 (bm25) 的第一名在两种配置下必须一致  这正是"分层"要保住的性质
     // (图通道当初进主排序时把全体 R@1 从 0.684 拉到 0.630, 教训在 channels.ts 里记着)。
     const on = idsOf(make());
     const off = idsOf(make({ entityMaxIds: 0 }));
@@ -125,7 +125,7 @@ describe("实体反查通道", () => {
   it("标定项真的**被透传**到检索器 (踩过的坑: 只存在于构造参数里 = 永远不生效)", () => {
     seedEntries();
     // 用组装根而不是直接 new: 这条断言防的正是"参数只在检索器里, 组装时忘了传"。
-    // 症状是"扫描多组配置得到完全相同的读数", 看起来像参数无影响 —— 实测踩到过。
+    // 症状是"扫描多组配置得到完全相同的读数", 看起来像参数无影响  实测踩到过。
     const root2 = mkdtempSync(join(tmpdir(), "hxmem-entchan-stack-"));
     const stack = openMemoryStack(root2, { embedder: null, entityMaxIds: 0 });
     try {

@@ -2,15 +2,23 @@
 
 Status: implemented
 
+Decision-ID: split-hybrid-assembly
+
+## Code
+
+- `scripts/verify-structure.ts`
+- `src/kernel/ranking.ts`
+- `src/retrieval/hybrid.ts`
+
 ## Problem
 
 加入"图候选第二梯队"之后, `src/retrieval/hybrid.ts` 涨到 **421 行**, 超过 400 行上限,
-`verify-structure` 直接失败。这不是数字洁癖: 该文件当时同时装着两件变化原因不同的事 ——
+`verify-structure` 直接失败。这不是数字洁癖: 该文件当时同时装着两件变化原因不同的事 
 
 - **取数与融合**: 通道增删、权重、RRF (历史上改过多次);
 - **收尾整理**: MMR 去冗余、预算裁剪、图候选补位、返回顺序 (排序缺陷改过三次)。
 
-两者混在一起, 最长的那段会把另一段淹掉 —— 上一轮修"MMR 顺序被当排名"时就是在 400 行文件里
+两者混在一起, 最长的那段会把另一段淹掉  上一轮修"MMR 顺序被当排名"时就是在 400 行文件里
 定位一段收尾逻辑。
 
 ## Decision
@@ -29,13 +37,15 @@ Status: implemented
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **抬高 400 行上限。** 上限是**决策**而非测量 (理由见 `verify-structure.ts` 注释: 超过它通常
 意味着两个职责被塞进一个文件)。为一次改动改规则, 等于把规则变成可以随时绕开的东西。
 
 **把收尾逻辑放到 `kernel/ranking.ts`。** 那里是**纯函数与类型**, 而收尾需要知道"哪些是规则通道"、
 "演化链上溯后是谁"这类上下文, 放进 kernel 会把领域知识漏进最底层。
 
-**不拆, 用 `// prettier-ignore` 或压缩注释压回 400 行以内。** 靠删注释达标是自欺 ——
+**不拆, 用 `// prettier-ignore` 或压缩注释压回 400 行以内。** 靠删注释达标是自欺 
 行数只是症状, 两个职责同处一文件才是问题。
 
 ## Consequences

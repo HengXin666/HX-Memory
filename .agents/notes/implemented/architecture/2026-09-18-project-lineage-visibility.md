@@ -2,6 +2,14 @@
 
 Status: implemented
 
+Decision-ID: project-lineage-visibility
+
+## Code
+
+- `src/adapters/dsh/project-key.ts`
+- `src/kernel/project-lineage.ts`
+- `tests/s2/trigger-cache-project.test.ts`
+
 ## Problem
 
 项目键取 `git rev-parse --show-toplevel` 的目录名, 在一个**嵌套仓库**结构上会把同一个人的
@@ -18,7 +26,7 @@ gitlink 引用)。`git -C components/HX-Memory rev-parse --show-superproject-wor
 返回 `HXLoLis`, 即两者是**真实存在**的父子仓库关系。
 
 这条缺陷的性质是它**不会让任何测试变红**: 两个键各自都是"正确"的 (都符合"仓库名"语义),
-绑定匹配、always-on 过滤、意图召回、面板预填四层口径也完全一致。症状只在真实使用中浮现 ——
+绑定匹配、always-on 过滤、意图召回、面板预填四层口径也完全一致。症状只在真实使用中浮现 
 "在组件里工作时, 父工程沉淀的经验一条都不在", 而这正是"抓不住跨项目共通经验"最具体的机制。
 
 同目录下的 `HX-Sagasu` **不是**独立仓库 (无 `.git`、不在 gitlink 列表、不在 `.gitmodules`),
@@ -43,8 +51,10 @@ gitlink 引用)。`git -C components/HX-Memory rev-parse --show-superproject-wor
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **把项目键改成"最外层仓库名" (合并)。** 否掉: 那样 `HXLoLis` 下 3 个组件仓库会合并成一个键,
-`HX-Memory` 的私有记忆会注入进 `HX-Workflows` 的对话 —— 那是本仓库**已经修过一次**的跨项目
+`HX-Memory` 的私有记忆会注入进 `HX-Workflows` 的对话  那是本仓库**已经修过一次**的跨项目
 泄漏 (`tests/s2/trigger-cache-project.test.ts` 记录了实测: 8 个项目的条目混进一次注入)。
 合并与隔离都是错的, 因为真实关系既不是"同一个"也不是"无关", 而是**祖先与后代**。
 
@@ -53,7 +63,7 @@ gitlink 引用)。`git -C components/HX-Memory rev-parse --show-superproject-wor
 可见性是**读取期**的性质, 不该在写入期被烧死。
 
 **给项目键加一个"继承父工程"的布尔开关。** 否掉: 开关只表达"要不要继承", 表达不了"继承哪一层、"
-"谁是兄弟"; 而且把一个可以从工作区**自动确定**的事实转嫁给用户配置 —— 用户未必知道记忆按仓库分裂,
+"谁是兄弟"; 而且把一个可以从工作区**自动确定**的事实转嫁给用户配置  用户未必知道记忆按仓库分裂,
 这正是"绑定面板让人觉得没用"的一部分。
 
 **解析时用 `git submodule status` 或读 `.gitmodules` 判断父子关系。** 否掉: 那要求当前目录
@@ -67,11 +77,11 @@ gitlink 引用)。`git -C components/HX-Memory rev-parse --show-superproject-wor
 
 - 子仓库会话能看到父工程的记忆: 本机实测可见条目 **27 → 58** (多出 31 条 `HXLoLis` 的 lesson/context),
   同时兄弟/无关仓库泄漏条目数 = **0**。
-- 父工程会话看不到组件私有记忆 (方向性), 兄弟组件之间互不可见 —— 跨项目隔离没有被削弱。
+- 父工程会话看不到组件私有记忆 (方向性), 兄弟组件之间互不可见  跨项目隔离没有被削弱。
 - 存储格式与老数据**零迁移**: 写路径仍只写最内层仓库名; 不给链的调用点行为一字不变。
 - 绑定配在父工程上时对组件内部生效 (此前完全不生效), 就近覆盖: 更具体的声明优先。
 - 代价: 会话开始会多 fork 最多 8 次 git (实际上限是嵌套深度, 通常 1-2 次), 结果按 cwd 缓存;
-  同名仓库 (不同路径下) 的祖先链会合并 —— 与既有"仓库名当键"的取舍一致。
+  同名仓库 (不同路径下) 的祖先链会合并  与既有"仓库名当键"的取舍一致。
 - 未修 (本轮范围外): 同名仓库跨路径合并仍是已知代价; 祖先链不解决"两个不同项目共享同一份
   构建脚本库"这类横向复用需求 (那需要显式的绑定声明, 而非自动继承)。
 

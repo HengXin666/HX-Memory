@@ -2,11 +2,11 @@
 //
 // 为什么单独有一层: 本仓库其它 gateway 测试都**直接调用**方法, 于是绕过了"宿主到底能不能
 // 发现这些方法"这一环。真实故障 (2026-09-14) 恰好落在这一环: 插件与宿主各加载了一份
-// dsh-typert-protocol, 0.1.1-rc.2 用模块私有 WeakMap 存 @Remote 标记 —— 宿主那份读不到,
+// dsh-typert-protocol, 0.1.1-rc.2 用模块私有 WeakMap 存 @Remote 标记  宿主那份读不到,
 // 19 个端点一起 404, 而 fiber 仍是 active、日志干净、单测全绿。
 //
 // 这里不 import 任何 @deepseek-ai 包: marker 的键是协议公开面 (字符串字面量, 跨版本不变),
-// 用字面量读原型属性描述符 —— 换成"宿主那份 remoteMethods()"只会把同一个 bug 再藏一遍。
+// 用字面量读原型属性描述符  换成"宿主那份 remoteMethods()"只会把同一个 bug 再藏一遍。
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -112,7 +112,7 @@ describe("装配期契约校验", () => {
 
 describe("真实 gateway: 宿主能发现的就是声明的那 19 个", () => {
   // 这一条是本次故障的直接回归: 它不依赖任何 @deepseek-ai 包的读取方式,
-  // 也不依赖"方法能不能调通"—— 只问"宿主读原型能读到什么"。
+  // 也不依赖"方法能不能调通" 只问"宿主读原型能读到什么"。
   it("marker 表的方法名集合 == HXMEM_REMOTE_METHODS", () => {
     const gateway = new HxMemoryGateway(stubContext(), {} as never);
     const contract = remoteContract(gateway, HXMEM_REMOTE_METHODS);
@@ -134,7 +134,7 @@ describe("装配根真的接上了这道校验", () => {
   // 少了这一步, 上面就只是"库函数测试", 挡不住"接线漏了"。
   //
   // ⚠ 探测点从 index.ts 迁到 gateway-mount.ts (2026-09-20, §795): 装配块因 index.ts 触及
-  // 400 行上限被抽成独立模块, **判据不变** —— 仍然是"装配 gateway 之后必须调用校验"。
+  // 400 行上限被抽成独立模块, **判据不变**  仍然是"装配 gateway 之后必须调用校验"。
   // (若只在 index.ts 里搜, 抽出之后这个测试会**假红**, 而它想守的东西并没有坏。)
   const source = readFileSync(resolve(repoRoot, "src/adapters/dsh/gateway-mount.ts"), "utf8");
 

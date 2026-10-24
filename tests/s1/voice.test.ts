@@ -2,7 +2,7 @@
 //
 // 为什么值得单独钉: 用户用**语音输入法**, 文本里有错别字/同音字 (绘话=会话, 密等=幂等, 纸agent=子agent)。
 // 这些错字会让"字面"链路整体失效 (意图漏命中 / 同话题被误判成换话题 / 该召回的记忆一条都不召回),
-// 且这类失效**不会报错** —— 只有断言能拦住它悄悄退化。
+// 且这类失效**不会报错**  只有断言能拦住它悄悄退化。
 import { describe, expect, it } from "vitest";
 import { normalizeVoice, voiceVariants } from "../../src/kernel/voice.ts";
 import { detectIntent, topicDriftOf } from "../../src/trigger/policy.ts";

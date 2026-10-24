@@ -2,7 +2,7 @@
 //
 // 1. 组装根 (index.ts) 有 400 行硬上限; 生命周期这段是天然的独立职责。
 // 2. **卸载顺序**是这里唯一容易写错、又最难在评审里看出来的东西:
-//    关 SQLite 必须排在 flush 之后 (flush 还要写库), 而跨 effect 的卸载顺序是隐式的 ——
+//    关 SQLite 必须排在 flush 之后 (flush 还要写库), 而跨 effect 的卸载顺序是隐式的 
 //    所以 flush 与 close 必须在**同一个** disposer 里按序执行。
 //
 // 热重载 (cordis HMR) 的语义是 dispose 旧 fiber → 再 apply() 一次, 于是:
@@ -22,14 +22,14 @@ export interface LifecycleDeps {
   /** 冲刷未落盘的缓冲; 卸载时必须 await (可能含一次最长 15s 的 LLM 调用)。 */
   flushAll: () => Promise<unknown>;
   /**
-   * 存储层句柄 —— **只要 `close` 这一项**, 且从**端口** (`MemoryOperations`) 取而不是具体类。
+   * 存储层句柄  **只要 `close` 这一项**, 且从**端口** (`MemoryOperations`) 取而不是具体类。
    *
-   * 为什么 (2026-09-18, §460): 此前写 `Pick<FileBackend, "close">` —— 那是"借具体类要能力",
+   * 为什么 (2026-09-18, §460): 此前写 `Pick<FileBackend, "close">`  那是"借具体类要能力",
    * 会让**换存储引擎必须改适配层**, 违背"换引擎 = 接线"的目标 (见 ports.ts 的 MemoryOperations
    * 头注与 verify-structure 的端口纯度检查)。端口上已有 `close?(): void`, 所以这是纯收紧。
    */
   store: Pick<MemoryOperations, "close">;
-  /** store 是插件自己建的才关 —— 注入进来的属于调用方 (谁创建谁关闭)。 */
+  /** store 是插件自己建的才关  注入进来的属于调用方 (谁创建谁关闭)。 */
   ownsStore: boolean;
 }
 
@@ -43,7 +43,7 @@ export function wireLifecycle(deps: LifecycleDeps): void {
   let closed = false;
   ctx.effect(() => {
     void warmUp();
-    // 预热放在**启动后台**而不是组装期同步执行 —— 插件是长期驻留的, 启动时补一次就没有
+    // 预热放在**启动后台**而不是组装期同步执行  插件是长期驻留的, 启动时补一次就没有
     // 首次查询毛刺; 但绝不能在 apply() 里同步做 (那会把成本转嫁成插件加载变慢, 对一次性 CLI 尤其亏)。
     // 失败静默: 检索时会自行同步, 行为不变 (只是慢一次)。
     setTimeout(() => {
@@ -60,7 +60,7 @@ export function wireLifecycle(deps: LifecycleDeps): void {
       try {
         await flushAll();
       } finally {
-        // `close` 在端口上是**可选**的 ("不具备的引擎不必假装支持" —— ports.ts 的设计原则),
+        // `close` 在端口上是**可选**的 ("不具备的引擎不必假装支持"  ports.ts 的设计原则),
         // 所以这里判空。自建的 FileBackend 一定实现它, 但适配层只该依赖端口契约。
         if (ownsStore && !closed) {
           closed = true;

@@ -1,6 +1,6 @@
 // tests/s2/atomic-write.test.ts — 真相文件的写入必须是原子的。
 //
-// 为什么需要它 (2026-09-18): `writeFileParts` 此前直接 `writeFileSync` **原地覆盖** ——
+// 为什么需要它 (2026-09-18): `writeFileParts` 此前直接 `writeFileSync` **原地覆盖** 
 // 若进程在写入中途崩溃/断电, 文件会被**截断到写入进度**, 后面的块全部丢失。
 // (盲审也把"读-改-写非原子"列为遗留第 2 条。)
 //
@@ -54,14 +54,14 @@ describe("真相文件的原子写", () => {
     expect(before).toContain("旧内容");
 
     // 模拟"新内容写了一半崩溃": 直接写一个半截的 tmp 文件, 不 rename。
-    // 目标文件必须**完全不受影响** —— 这正是原子写要保证的性质。
+    // 目标文件必须**完全不受影响**  这正是原子写要保证的性质。
     writeFileSync(f + ".tmp-crashed", "---\nid: half\n---\n半截内", "utf8");
     expect(readFileSync(f, "utf8")).toBe(before);
     expect(readFileSync(f, "utf8")).toContain("旧内容");
   });
 
-  it("**写入是 rename 而非原地覆盖** (inode 会变 —— 这是可观测的原子性判据)", () => {
-    // 为什么用 inode: 原子写的本质是"先写 tmp, 再 rename 覆盖" —— rename **会换 inode**;
+  it("**写入是 rename 而非原地覆盖** (inode 会变  这是可观测的原子性判据)", () => {
+    // 为什么用 inode: 原子写的本质是"先写 tmp, 再 rename 覆盖"  rename **会换 inode**;
     // 而原地 writeFileSync 保持同一个 inode, 只是内容被就地改写。
     //
     // 这条断言是**反驳测试逼出来的**: 我最初那 4 条断言在"退回非原子写"时**全部仍然通过**

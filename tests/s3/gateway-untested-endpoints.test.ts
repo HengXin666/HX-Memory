@@ -1,7 +1,7 @@
 // tests/s3/gateway-untested-endpoints.test.ts — 那 5 个**从未被调用过**的 RPC 端点。
 //
 // 为什么需要它 (2026-09-18, §647 全库实测): 从 602 个真实会话里统计 RPC 调用,
-// **5 个端点的调用计数为 0** —— `captureReviewQueue` / `deleteEntry` / `recentCaptures` /
+// **5 个端点的调用计数为 0**  `captureReviewQueue` / `deleteEntry` / `recentCaptures` /
 // `rejectProposal` / `resolveCaptureReview`。它们有面板入口 (不是没接线), 而是**功能从没被点过**。
 //
 // 而测试侧也覆盖不到: `tests/s3/gateway.test.ts` 的头注写明"**不实例化 cordis Context (太重)**,
@@ -9,7 +9,7 @@
 // 都不被实例化** (smoke 只验"插件装得上、宿主能起")。
 //
 // ⇒ 于是那 5 条路径**从未被执行过**。其中 `deleteEntry` 有**真实分支逻辑**
-// (`facade` 在则走 `forget` 撤回; 否则走 `store.remove` 直删) —— 两条分支各自正确,
+// (`facade` 在则走 `forget` 撤回; 否则走 `store.remove` 直删)  两条分支各自正确,
 // 但**"该走哪条"没有测试**。
 //
 // 手法沿用 `tests/s3/dsh-adapter.test.ts` 已验证的 `Object.create(HxMemoryGateway.prototype)`:

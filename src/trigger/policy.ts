@@ -2,32 +2,38 @@
 //
 // 问题 (本模块存在的唯一理由):
 //   模型**无法可靠地知道自己不知道什么**。让它在"需要时"调用 memory_search,
-//   等于把"记忆是否生效"交给一次概率判断 —— 该搜时不搜 (幻觉自足), 不该搜时乱搜。
+//   等于把"记忆是否生效"交给一次概率判断  该搜时不搜 (幻觉自足), 不该搜时乱搜。
 //   实测对照: 同一份记忆, 靠模型自觉的旧线 10 轮命中 6 轮; 代码判定的新线 10/10。
 //
 // 因此触发必须是**四种机制的组合**, 而不是单选:
-//   1. always-on 保底: 跨项目规则 + 项目关键事实/偏好 —— 无条件注入 (受 token 预算约束)。
+//   1. always-on 保底: 跨项目规则 + 项目关键事实/偏好  无条件注入 (受 token 预算约束)。
 //      这是"模型完全没意识到要查"时的兜底, 也是唯一不依赖任何判定的通道。
 //   2. intent 门控: 识别"回忆型提问" (问过去/为什么/上次/约定/踩过坑) → 命中即注入。
 //      模式库可扩展, 且**不依赖项目是否声明过绑定** (没有任何绑定的新项目也能触发)。
 //   3. drift 去重: 同一话题的连续轮次不重复注入 (省预算、避免噪声); 话题切换时强制重查。
-//   4. 预算与可观测: 每次决策都给出 reason/confidence/budget, 落进触发日志 ——
+//   4. 预算与可观测: 每次决策都给出 reason/confidence/budget, 落进触发日志 
 //      "为什么没注入" 必须和 "注入了什么" 一样可查。
 //
 // 纯函数 + 可注入时钟, 无 IO (S1 可测)。
 // 词集统一走 kernel/cjk 的权威实现: 此前这里另写了一份"只取 bigram"的版本,
-// 与检索/去重的口径不一致 —— 同一对文本会在"话题漂移"与"去重裁决"里得出不同相似度。
+// 与检索/去重的口径不一致  同一对文本会在"话题漂移"与"去重裁决"里得出不同相似度。
 import { tokenSet } from "../kernel/cjk.ts";
 // 语音输入的错别字会让字面判定整体失效 (意图漏命中 / 同话题被误判成换话题), 因此先归一再判定。
 import { normalizeVoice } from "../kernel/voice.ts";
 // 意图库与判定已拆到 intents.ts (policy.ts 只留决策与预算)。
 // import 进来自己用 + re-export 出去, 对外 API 完全不变 (调用方仍从 policy.ts 取)。
 import { DEFAULT_INTENTS, detectIntent, type TriggerIntent } from "./intents.ts";
+/**
+ * 触发层 (四通道), 让记忆在"模型没意识到要查"时也生效
+ * .agents/notes/implemented/architecture/2026-09-10-trigger-layer-four-channels.md
+ */
 export { DEFAULT_INTENTS, detectIntent };
 export type { TriggerIntent };
 
 
-/** 触发决策 (可观测: 每次都要说清楚"注入了/没注入、为什么")。 */
+/** 触发决策 (可观测: 每次都要说清楚"注入了/没注入、为什么")。 
+ * .agents/notes/implemented/feature/2026-09-13-injection-schedule-ledger.md
+ */
 export interface TriggerDecision {
   /** 是否应该做检索注入。 */
   inject: boolean;
@@ -52,7 +58,7 @@ export interface TriggerPolicyOptions {
    *
    * 默认 0.5 = **至少一条模式命中** (置信度刻度: 1 条 → 0.50, 2 条 → 0.75, 3 条 → 0.875)。
    * 取 0.5 而不是更低的数字: 更低的阈值永远不会起作用 (置信度的最小值就是 0.50),
-   * 那正是修复前的问题 —— 默认值 0.34 恰好等于旧公式的硬下限, 于是门控对任何命中恒真,
+   * 那正是修复前的问题  默认值 0.34 恰好等于旧公式的硬下限, 于是门控对任何命中恒真,
    * 实测 11/11 命中全部通过、从未拦下过一条。需要"至少两条独立模式"时把这里抬到 0.75。
    */
   minConfidence?: number;
@@ -62,7 +68,7 @@ export interface TriggerPolicyOptions {
    *   drift >= 阈值 → 话题已切换, 强制重查;
    *   drift <  阈值 → 同一话题的连续追问, 若上一轮刚注入过则跳过。
    * 用两条线 (相似线 + 切换线) 会在中文短查询上出现"既不算相似也不算切换"的夹缝,
-   * 实测 Jaccard 0.38 的同话题追问会掉进缝里 —— 所以只保留一条。
+   * 实测 Jaccard 0.38 的同话题追问会掉进缝里  所以只保留一条。
    */
   driftThreshold?: number;
   /** always-on 通道的 token 预算 (默认 400)。 */
@@ -76,13 +82,13 @@ export interface TriggerPolicyOptions {
  *
  * 用**重叠系数** (|A∩B| / min(|A|,|B|)) 而不是 Jaccard: 连续追问往往很短
  * ("那这个下限呢"), 用 Jaccard 时 union 被撑大, 同话题的漂移会被高估到 0.6+
- * 与真正的换话题 (1.0) 挤在一起 —— 实测踩过。重叠系数只看"短的那侧有多少被覆盖",
+ * 与真正的换话题 (1.0) 挤在一起  实测踩过。重叠系数只看"短的那侧有多少被覆盖",
  * 因此短追问不会因为自身短而被误判成换话题。
  */
 /**
  * 指代型追问的标记。中文口语里 "那这个下限呢" / "它呢" 这类追问与上一轮**语义上**同话题,
  * 但字面上可能一个 token 都不重合 (实测 drift = 1.0, 会被误判成换话题)。
- * 这是纯字面度量的固有盲区, 因此显式补一条规则 —— 而不是去调阈值掩盖它。
+ * 这是纯字面度量的固有盲区, 因此显式补一条规则  而不是去调阈值掩盖它。
  */
 const ANAPHORIC_FOLLOWUP =
   /^(那|这|它|他|她|上面|刚才|还有|再|然后|所以|因此)|(这个|那个|上面说的|刚才说的|它的|他们的)/;
@@ -95,6 +101,10 @@ export function topicDriftOf(rawText: string, rawPrevious?: string): number {
   if (!previous?.trim() || !current) return 1;
   // 短 + 指代 → 判定为延续上一话题 (保守: 只对很短的追问生效, 避免吞掉真正的新话题)。
   if (current.length <= 12 && ANAPHORIC_FOLLOWUP.test(current)) return 0;
+  /**
+   * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+   * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+   */
   const a = tokenSet(text);
   const b = tokenSet(previous);
   if (!a.size || !b.size) return 1;
@@ -111,6 +121,10 @@ export class TriggerPolicy {
   private readonly alwaysOnBudget: number;
   private readonly intentBudget: number;
 
+  /**
+   * 单文件 400 行约束与大文件拆分
+   * .agents/notes/implemented/simplification/2026-09-11-400-line-limit-and-split.md
+   */
   constructor(opts: TriggerPolicyOptions = {}) {
     this.intents = opts.intents ?? DEFAULT_INTENTS;
     this.minConfidence = opts.minConfidence ?? 0.5;
@@ -123,7 +137,7 @@ export class TriggerPolicy {
    * 决定这一轮怎么注入。
    *
    * @param text          当前轮用户文本
-   * @param hasAlwaysOn   是否有 always-on 内容 (跨项目规则/项目关键事实) —— 有则无条件注入
+   * @param hasAlwaysOn   是否有 always-on 内容 (跨项目规则/项目关键事实)  有则无条件注入
    * @param previousQuery 同一会话上一轮的查询 (用于话题漂移判定)
    * @param lastInjectedAt 上一次实际注入的时间 (ISO; 无则 null)
    */
@@ -137,7 +151,7 @@ export class TriggerPolicy {
     const detected = detectIntent(input.text, this.intents);
     const confidence = detected?.confidence ?? 0;
 
-    // 通道 1: always-on 保底 —— 不看意图, 无条件注入 (这是"模型没意识"时的唯一保证)。
+    // 通道 1: always-on 保底  不看意图, 无条件注入 (这是"模型没意识"时的唯一保证)。
     if (input.hasAlwaysOn) {
       // 但同一话题的连续追问不重复灌 (上一轮刚注入过且话题没变)。
       if (input.lastInjectedAt && drift < this.driftThreshold) {
@@ -167,7 +181,7 @@ export class TriggerPolicy {
       };
     }
 
-    // 通道 2: 意图门控 —— 识别"回忆型提问", 不依赖项目是否声明过绑定。
+    // 通道 2: 意图门控  识别"回忆型提问", 不依赖项目是否声明过绑定。
     if (detected && confidence >= this.minConfidence) {
       return {
         inject: true,
@@ -187,7 +201,7 @@ export class TriggerPolicy {
       };
     }
 
-    // 通道 3: 话题切换 —— 上一轮注入过但本轮换了话题, 强制重查 (旧上下文可能已失效)。
+    // 通道 3: 话题切换  上一轮注入过但本轮换了话题, 强制重查 (旧上下文可能已失效)。
     if (input.lastInjectedAt && drift >= this.driftThreshold) {
       return {
         inject: true,
@@ -206,7 +220,7 @@ export class TriggerPolicy {
       confidence,
       topicDrift: drift,
       mode: "skip-no-signal",
-      reason: "无 always-on 内容、未命中回忆意图、话题也未切换 —— 不注入 (避免噪声)",
+      reason: "无 always-on 内容、未命中回忆意图、话题也未切换  不注入 (避免噪声)",
       budgetTokens: 0,
     };
   }

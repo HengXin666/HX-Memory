@@ -80,7 +80,11 @@ export class RecallService {
       localQuery.limit = Math.max(limit * 8, 50);
       local.push(
         ...this.queryFn(localQuery)
-          .filter((e) => e.kind === "lesson" || e.kind === "pattern" || e.kind === "decision")
+          .filter(/**
+                   * 保底通道的 kind 白名单被 lineage 绕过 + 排序缺确定性
+                   * .agents/notes/implemented/bug-fix/2026-09-27-alwayson-kind-whitelist-and-determinism.md
+                   */
+                  (e) => e.kind === "lesson" || e.kind === "pattern" || e.kind === "decision")
           .map((e) => ({ e, s: score(e.content, words) }))
           .filter((x) => x.s > 0)
           .sort((a, b) => b.s - a.s)
@@ -94,7 +98,7 @@ export class RecallService {
 
   /**
    * v2 路径: 一次混合检索拿到全部候选, 再按"规则 / 本地经验"分桶。
-   * 规则仍然走保底通道 (在检索器里), 这里只负责分桶与格式化 —— 口径与 v1 输出一致,
+   * 规则仍然走保底通道 (在检索器里), 这里只负责分桶与格式化  口径与 v1 输出一致,
    * 因此 DSH 注入与 Codex AGENTS.md 的消费方无需改动。
    */
   private recallViaRetriever(input: RecallInput): RecallOutput {
@@ -125,17 +129,17 @@ export class RecallService {
 
 /**
  * 注入文本的组装 (v1 与 v2 两条召回路径共用)。
- * 此前这段在两条路径里各写了一遍 —— 任一处改了措辞, 另一个入口的注入就会不一致,
+ * 此前这段在两条路径里各写了一遍  任一处改了措辞, 另一个入口的注入就会不一致,
  * 而这种"两个入口格式不同"的问题不会有任何测试报错 (jscpd 把这类重复标了出来)。
  */
 function formatSections(rules: readonly MemoryEntry[], local: readonly MemoryEntry[]): string {
   const lines: string[] = [];
-  // kind 标记统一由 `formatHitLine` 负责 (此前这里手拼 "[" + e.kind + "] " —— 那会与
+  // kind 标记统一由 `formatHitLine` 负责 (此前这里手拼 "[" + e.kind + "] "  那会与
   // 新的行首标记**双重标记**成 "- [lesson] [lesson] ...")。标记的形态只有一处定义。
   //
   // ⚠ 2026-09-29: 这里用 **带 id** 的 `formatHitLine` 而不是无 id 的 `formatEntryLine`。
   // 判据是本出口的**真实消费者**: `RecallService.injected` 目前只被 codex 适配器的
-  // `memory_search` 工具返回 (adapter.ts:75) —— 那是**模型主动检索**的结果, 它要能引用
+  // `memory_search` 工具返回 (adapter.ts:75)  那是**模型主动检索**的结果, 它要能引用
   // (memory_flag / memory_rule_propose 都按 id 操作)。而被动注入块走 `composeMemoryBlock`,
   // 那条路径的 id 已移到消息 source (省 88 token/块)。两条出口的判据见 formatHitLine 的说明。
   // (codex 的 onPreStep 只把 `injected` 当**判空**用, 真正返回的是结构化 entries, 因此它不受影响。)

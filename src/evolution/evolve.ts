@@ -1,7 +1,7 @@
 // evolution/evolve.ts — 写入期的演化裁决 (在"去重"之上加"更新/冲突").
 //
 // 三件事, 按保守程度从高到低:
-//   1. 去重/合并 (duplicate): 见 associate.ts —— 新内容没有超出老记忆, 只强化不落盘;
+//   1. 去重/合并 (duplicate): 见 associate.ts  新内容没有超出老记忆, 只强化不落盘;
 //   2. 取代 (supersede): **只在用户显式表达更新时** (改为/不再/废弃/替换为...) 才自动写演化链,
 //      新条目 supersedes 旧的, 旧的 status=superseded + supersededBy (不删除, 历史可查);
 //   3. 冲突标记 (contradict): 同一话题但数字/极性矛盾, 且没有显式更新信号 → 只加 contradicts 边,
@@ -84,7 +84,7 @@ export function hasNegation(text: string): boolean {
  * 而真实记忆里**几乎每条都含数字** (日期/版本/计数/端口) ⇒ 任意两条都会被判冲突。
  * 实测 (真实库随机成对): **196/204 (96%) 被判冲突, 其中 99% 字面几乎无关**。
  *
- * **"关于同一件事"的判据 = 骨架覆盖率** (去掉数字后的词集覆盖率) ——
+ * **"关于同一件事"的判据 = 骨架覆盖率** (去掉数字后的词集覆盖率) 
  * 因为冲突的定义是"同一件事说了不同值", 那么**非数字部分应当几乎相同**。
  *
  * 实测分离度 (**完全不重叠**):
@@ -94,7 +94,7 @@ export function hasNegation(text: string): boolean {
  * | 真冲突 (同内容改一个数字) | **min 0.966**, p50 1.000 | 150 |
  * | 假冲突 (真实库相邻成对) | **max 0.349**, p95 0.222 | 206 |
  *
- * 取阈值 **0.8** —— 它落在 0.35~0.97 的空白区中部, 两侧都有充足余量
+ * 取阈值 **0.8**  它落在 0.35~0.97 的空白区中部, 两侧都有充足余量
  * (不用 0.9 是因为真实内容可能有轻微措辞差异; 不用 0.5 是因为那会放进更多噪声)。
  *
  * 注: "数字的上下文重叠"这个候选特征**无效** (真冲突全为 0.000), 已排除。
@@ -111,14 +111,14 @@ export function hardConflict(a: string, b: string): boolean {
     // ⇒ 96% 的成对被误判冲突 (实测 196/204, 其中 99% 字面无关)。
     return skeletonCoverage(a, b) >= CONFLICT_SKELETON_FLOOR;
   }
-  // 极性相反: **不加骨架门控** —— 那是自相矛盾的。
+  // 极性相反: **不加骨架门控**  那是自相矛盾的。
   //
   // 为什么: 否定词 ("不要"/"别"/"禁止") **本身就是骨架的一部分**, 它会拉低覆盖率,
   // 而它恰恰是极性差异的**唯一载体**。实测: "缓存要开启过期" vs "缓存不要开启过期" 的骨架
-  // 覆盖率只有 0.714 (< 0.8 阈值) —— 若加门控会**把真正的极性冲突全部挡掉**。
+  // 覆盖率只有 0.714 (< 0.8 阈值)  若加门控会**把真正的极性冲突全部挡掉**。
   //
   // 而"极性相反"这个判据**本身已隐含同主题**: 不同主题的两句极少恰好一正一负。
-  // (实测过 "部署前必须跑完整测试" vs "不要用 tab 缩进" 这类假极性 —— 那是"必须"与"不要"
+  // (实测过 "部署前必须跑完整测试" vs "不要用 tab 缩进" 这类假极性  那是"必须"与"不要"
   //  的偶然组合, 属罕见情形, 且它与数字分支不同, 无法用骨架区分。暂不处理, 记为已知边界。)
   return hasNegation(a) !== hasNegation(b);
 }
@@ -205,13 +205,13 @@ export function decideEvolution(
   // ⚠ 2026-09-18 定向修正: **字面已经看得出来的差异, 不该被语义兜底覆盖**。
   //
   // 为什么: 兜底的设计目的是"**字面看不出来**但向量很近"(同义改写)。而实测发现
-  // "仅标识符不同的两条"(如端口 60 vs 90, 编号 0 vs 1) 的向量余弦也在 0.82~0.99 ——
+  // "仅标识符不同的两条"(如端口 60 vs 90, 编号 0 vs 1) 的向量余弦也在 0.82~0.99 
   // 于是被判成重复而**静默吞并**。但那类内容的字面覆盖率高达 0.875~0.917,
   // 即**字面明明看得出来**。
   //
   // 数据 (2026-09-18 可区分性检验):
-  //   同义改写: 字面覆盖率 0.000~0.385 (低) —— 这是兜底该管的;
-  //   值差异:   字面覆盖率 0.875~0.917 (高) 且新增词含标识符 —— 这是兜底**不该覆盖的**。
+  //   同义改写: 字面覆盖率 0.000~0.385 (低)  这是兜底该管的;
+  //   值差异:   字面覆盖率 0.875~0.917 (高) 且新增词含标识符  这是兜底**不该覆盖的**。
   //   **两类的字面覆盖率区间完全不重叠**, 而语义余弦区间重叠 (0.467~0.956 vs 0.820~0.849)
   //   ⇒ 判据必须建立在**字面覆盖率**上, 而不是调语义阈值 (那会误伤某一类)。
   //
@@ -266,6 +266,10 @@ export function decideEvolution(
   }
 
   // 冲突/取代判定的覆盖率门槛: 取代用 supersedeFloor, 冲突用 conflictFloor (两者可分别配)。
+  /**
+   * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+   * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+   */
   const decisiveFloor = Math.min(supersedeFloor, conflictFloor);
   if (
     best &&
@@ -274,10 +278,14 @@ export function decideEvolution(
   ) {
     const target = best.entry;
     const signal = hasUpdateSignal(candidate.content, opts.updateSignals);
+    /**
+     * 写入期演化分三档 (合并 / 显式取代 / 冲突标记), 规则豁免
+     * .agents/notes/implemented/architecture/2026-09-10-write-time-evolution-three-tiers.md
+     */
     const timeOk = candidate.ts === undefined || candidate.ts.validAt >= target.ts.validAt;
     const kindOk = target.kind === candidate.kind;
     // 目标不是 rule (规则只能由人改), 且四条同时成立才自动取代。
-    // 取代要求达到 supersedeFloor (比冲突判定更严) —— 门槛不同是刻意的: 标记冲突比推翻结论安全。
+    // 取代要求达到 supersedeFloor (比冲突判定更严)  门槛不同是刻意的: 标记冲突比推翻结论安全。
     if (signal && timeOk && kindOk && target.kind !== "rule" && best.coverage >= supersedeFloor) {
       return {
         action: "supersede",
@@ -290,7 +298,7 @@ export function decideEvolution(
     if (hardConflict(candidate.content, target.content)) {
       const verdict = opts.adjudication?.(target.id);
       // 双保险: 即使裁决器说 supersede, 目标若是 rule 也绝不取代 (人工闸门, ADR-003)。
-      // 硬约束不该只依赖注入的实现 —— 裁决器换成一个更激进的实现时, 这里必须仍然拦住。
+      // 硬约束不该只依赖注入的实现  裁决器换成一个更激进的实现时, 这里必须仍然拦住。
       if (verdict?.verdict === "supersede" && target.kind !== "rule") {
         return {
           action: "supersede",

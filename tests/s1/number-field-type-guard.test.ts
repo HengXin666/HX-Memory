@@ -1,16 +1,16 @@
 // tests/s1/number-field-type-guard.test.ts — `numberField` 必须**拒收布尔值**。
 //
-// 为什么需要它 (2026-09-18, §768 实测): 上一轮给 `StructuredTurn` 加了 `importance`/`confidence` ——
+// 为什么需要它 (2026-09-18, §768 实测): 上一轮给 `StructuredTurn` 加了 `importance`/`confidence` 
 // 它们由 **LLM** 产出, 而 LLM 的 JSON 里 `true`/`false` 是常见的坏输出。
 //
 // 旧实现的路径:
 //
 // ```ts
 // const n = typeof value === "number" ? value : Number(value);   // Number(true) === 1
-// return Math.min(max, Math.max(min, n));                        // clamp 到 1 —— 合法区间内!
+// return Math.min(max, Math.max(min, n));                        // clamp 到 1  合法区间内!
 // ```
 //
-// **⇒ `{"importance": true}` 静默落成 `importance = 1`, 而 1 表示"**最不重要**"** ——
+// **⇒ `{"importance": true}` 静默落成 `importance = 1`, 而 1 表示"**最不重要**"** 
 // 语义**完全相反**, 且**无任何告警**。`false` 同样落成 1。
 //
 // ⚠ 而**字符串数字 `"9"` 必须继续被接受**: 那是 LLM 的**表示差异**而非语义错误,

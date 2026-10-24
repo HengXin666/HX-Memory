@@ -2,11 +2,19 @@
 
 Status: implemented
 
+Decision-ID: live-settings-and-doc-gates
+
+## Code
+
+- `scripts/verify-docs.ts`
+- `src/adapters/dsh/runtime.ts`
+- `src/app/facade.ts`
+
 ## Problem
 
 三件互相关联的可靠性缺口, 都来自"只做了一次就假设永远有效":
 
-1. **设置必须重启才生效**。用户在 DSH 设置面板改 `captureEpisodes`/`episodeRetentionDays`/`autoEvolve` 之后当轮不生效, 只有重启插件才行 —— 因为这三项在**插件构造时被读了一次**并固化进对象 (EpisodeStore 的 retention、facade 的 autoEvolve、runtime 的 episodes 实例)。设置源本身是实时的 (`settingsSource.read()` 每次都求值), 但消费者把快照存下来了。
+1. **设置必须重启才生效**。用户在 DSH 设置面板改 `captureEpisodes`/`episodeRetentionDays`/`autoEvolve` 之后当轮不生效, 只有重启插件才行  因为这三项在**插件构造时被读了一次**并固化进对象 (EpisodeStore 的 retention、facade 的 autoEvolve、runtime 的 episodes 实例)。设置源本身是实时的 (`settingsSource.read()` 每次都求值), 但消费者把快照存下来了。
 2. **面板显示陈旧**。两个设置页 (审阅/绑定) 只在**挂载时**拉一次数据; 记忆在会话里持续产生、绑定可能被 CLI 或另一个窗口改动, 于是面板长期显示旧状态, 用户唯一的办法是重启宿主。
 3. **文档与技能缺少同步机制**。文档里引用的路径在重命名/移动/删除后**静默失效**而无人发现; 也没有沉淀"怎么验证宿主接线"的可复用流程。
 
@@ -29,23 +37,25 @@ Status: implemented
 只保留最有效的两条, 挂在 `scripts/verify.sh` 与 CI 上:
 
 - **引用可达性**: 文档里的仓库内路径必须存在。解析顺序刻意宽松 (文档所在目录 → 仓库根 → `src/` → 纯文件名索引), 避免把"提到文件名"误判成坏引用。
-- **结构合规**: `docs/` 下每份文档声明"目的 / 边界 / 与代码的关系"; 无 TODO/FIXME **标记形状**残留 (散文里讨论"不留 TODO"不算 —— 旧版规则真误伤过一次)。
+- **结构合规**: `docs/` 下每份文档声明"目的 / 边界 / 与代码的关系"; 无 TODO/FIXME **标记形状**残留 (散文里讨论"不留 TODO"不算  旧版规则真误伤过一次)。
 
 站外引用 (上游仓库路径、运行时数据文件) 必须用行末 `<!-- verify-docs:allow (原因) -->` **显式声明**。宁可让作者声明, 也不让 gate 猜。
 
 **不做**: 字数预算 (本仓库文档小而变动频繁, 预算会变噪声)、外部 URL 校验 (网络抖动 → flaky gate)。
 
-配套: 补 `tests/s1/architecture.test.ts` 把 `docs/architecture-v2.md` 声明的分层铁律变成可失败的断言 (kernel 不依赖存储/宿主、应用层不依赖适配层、引擎层不依赖上层、kernel 不引入 node:fs/sqlite)。此前文档承诺了这条测试但**文件并不存在** —— 正是本门禁要抓的那类失效。
+配套: 补 `tests/s1/architecture.test.ts` 把 `docs/architecture-v2.md` 声明的分层铁律变成可失败的断言 (kernel 不依赖存储/宿主、应用层不依赖适配层、引擎层不依赖上层、kernel 不引入 node:fs/sqlite)。此前文档承诺了这条测试但**文件并不存在**  正是本门禁要抓的那类失效。
 
 ### 4. 技能库 (`.agents/skills/`)
 
 三个 skill, 把"怎么做"从对话里固化下来:
 
-- `hx-record-session-replay`: **录制-回放**方法论 —— 录一次真实会话的事件帧, 之后离线回放做回归。适用于依赖真实宿主时序/进程边界/插件组合的行为; 明确列出本仓库五个既有录制点与三条纪律 (不联网、要能失败、帧要能读)。
+- `hx-record-session-replay`: **录制-回放**方法论  录一次真实会话的事件帧, 之后离线回放做回归。适用于依赖真实宿主时序/进程边界/插件组合的行为; 明确列出本仓库五个既有录制点与三条纪律 (不联网、要能失败、帧要能读)。
 - `hx-doc-sync`: 改完代码/文档后的同步清单 (gate + 人工四问 + "一个事实一个家"的归属表 + 站外引用怎么标)。
 - `hx-memory-trigger`: 排查"记忆不生效"的决策表 (按 `TriggerDecision.mode` 定位是保底/意图/漂移/去重哪一环) 与调参旋钮。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **让宿主在设置变更时重建插件**。看似最彻底, 但重启插件会丢运行态 (未冲刷的捕获缓冲), 且宿主不会为每个命名空间做这件事; 依赖"实时求值"更小也更可控。
 

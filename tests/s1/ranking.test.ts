@@ -10,6 +10,7 @@ import {
   reinforcementFactor,
   rrfFuse,
   timeDecayFactor,
+  kindFactor,
 } from "../../src/kernel/ranking.ts";
 import type { MemoryEntry } from "../../src/kernel/types.ts";
 
@@ -125,5 +126,31 @@ describe("kernel/ranking", () => {
     expect(estimateTokens("四个汉字")).toBe(4);
     expect(estimateTokens("abcdefgh")).toBe(2);
     expect(estimateTokens("")).toBe(0);
+  });
+});
+
+// ---- 2026-10-05: 转录类条目的排序降权 ----
+//
+// `context` 实测占真库 50% (561/1074)、平均 117 字, 内容是"用户某句话被原样存下来"。
+// 它们词面易撞 (通用词多), 于是能挤在真知识前面。降权的目标是让 lesson/decision/rule
+// 稳定排前, 而**不删除** context (其中有些是"这一轮在做什么"的有效上下文)。
+describe("kindFactor: 转录类降权", () => {
+  it("context / event 降权; 知识类不降", () => {
+    expect(kindFactor("context")).toBeLessThan(1);
+    expect(kindFactor("event")).toBeLessThan(1);
+    for (const k of ["lesson", "decision", "rule", "fact", "preference", "pattern"] as const) {
+      expect(kindFactor(k), k).toBe(1);
+    }
+  });
+
+  it("**同分数时知识类必须排在 context 前** (这是降权存在的唯一理由)", () => {
+    const mk = (kind: "context" | "lesson") => ({
+      id: "x", kind, content: "同一个查询词", source: "s", scope: "project" as const,
+      ts: { validAt: "2026-10-05T00:00:00Z", assertedAt: "2026-10-05T00:00:00Z" },
+    });
+    const now = "2026-10-05T00:00:00Z";
+    const ctx = compositeScore({ entry: mk("context") as never, now, base: 1 });
+    const les = compositeScore({ entry: mk("lesson") as never, now, base: 1 });
+    expect(les).toBeGreaterThan(ctx);
   });
 });

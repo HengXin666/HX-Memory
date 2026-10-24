@@ -98,7 +98,7 @@ describe("实体抽取 → 结构建边", () => {
   });
 
   it("建边失败不影响落盘 (增强不是门槛)", async () => {
-    // 只让 all() 抛错, 其余方法透传真实 store —— 否则测的是"整个 store 坏了"。
+    // 只让 all() 抛错, 其余方法透传真实 store  否则测的是"整个 store 坏了"。
     const broken = new Proxy(store, {
       get(target, prop, receiver) {
         if (prop === "all") return async () => { throw new Error("store down"); };

@@ -1,8 +1,8 @@
 // tests/s2/stack-option-passthrough.test.ts — openMemoryStack 的检索标定参数必须真的透传。
 //
 // 为什么单独钉住 (2026-09-18 实测踩坑): 我扫描 bm25 权重 1→12、以及四种极端配置 (0.01/1000),
-// **top1 分数完全相同** —— 差点被读成"权重对结果无影响"。实际是 `channelWeights` 只存在于
-// HybridRetriever 的构造参数里, 而所有生产路径都经 openMemoryStack 组装 —— **不透传等于永远无法调整**。
+// **top1 分数完全相同**  差点被读成"权重对结果无影响"。实际是 `channelWeights` 只存在于
+// HybridRetriever 的构造参数里, 而所有生产路径都经 openMemoryStack 组装  **不透传等于永远无法调整**。
 //
 // 这是**同一类缺口的第二次**: entityMaxIds/entityMinShared/entityMode 此前补过一次
 // (见 stack.ts 的注释 "不透传等于这些设置永远不生效")。故立此测试防复发。

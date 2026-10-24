@@ -2,15 +2,22 @@
 
 Status: implemented
 
+Decision-ID: capture-cost-ledger
+
+## Code
+
+- `src/adapters/dsh/llm-agent.ts`
+- `src/capture/engine.ts`
+
 ## Problem
 
 捕获链路一直是**异步**的: 接线处写的是 `void runtime.capture(...)`, 而 DSH 的 `session/event` 派发
 (`dsh-session` 的 `invokeContainedSessionObservers`) 只是调用监听器然后把返回的 promise 挂一个
-`.catch` 丢掉, 从不 await。因此"捕获阻塞对话"这个说法在**调用序**上是错的 —— 但它掩盖了一个真实问题:
+`.catch` 丢掉, 从不 await。因此"捕获阻塞对话"这个说法在**调用序**上是错的  但它掩盖了一个真实问题:
 
 **异步不等于免费。** 捕获与对话跑在同一个进程、同一个 event loop 上, 而它自己会:
 
-- 调一次真实模型做结构化 (`llm-structurer.ts`, 超时 10s, 用的是宿主的 `agentDefaultModel` —— 与主对话**同一个上游**);
+- 调一次真实模型做结构化 (`llm-structurer.ts`, 超时 10s, 用的是宿主的 `agentDefaultModel`  与主对话**同一个上游**);
 - 读全库做共现比较来建边 (`pipeline.withStructuralLinks` → `store.all()`);
 - 用**同步**的 `node:sqlite` 写索引与真相文件。
 
@@ -36,12 +43,12 @@ Status: implemented
 
 1. **测量点在 pipeline, 记录点在 adapter**。分段耗时只有 pipeline 知道 (它才知道 enrich/link/store
    各自花了多久); 而"这条属于哪个会话、第几轮、哪个项目"只有 runtime 知道。因此 pipeline 只
-   **测量并回报** (`CaptureOptions.onTiming`), 账本形状由 `capture-ledger.ts` 单独产出 ——
+   **测量并回报** (`CaptureOptions.onTiming`), 账本形状由 `capture-ledger.ts` 单独产出 
    两处各拼一遍 record 就会分叉, 而分叉的表现是"有些轮次的耗时字段恒为 0", 静默且难查。
 
 2. **落盘语义收敛成一份 (`jsonl-ledger.ts`)**。`schedule-log` 已经在做"按天分文件 / 只追加 /
    单日行数上限 / 保留期 / best-effort"这一整套; 抄第二遍不只是会被 `verify-structure` 的 jscpd
-   判成重复, 更要紧的是它会**分叉** —— 保留期或失败语义只改了一处, 另一处静默保持旧行为,
+   判成重复, 更要紧的是它会**分叉**  保留期或失败语义只改了一处, 另一处静默保持旧行为,
    而账本的失效恰恰是静默的。两个账本现在各自只剩"记录形状 + 聚合视图"。
 
 3. **runtime 拆成三份**。加完测量点后它到了 469 行 (上限 400)。按职责切开:
@@ -50,11 +57,13 @@ Status: implemented
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **只在 `llm-agent.ts` 的日志里补更多字段。** 那是宿主日志, 按时间戳混在所有其它日志里,
-无法按会话/轮次取; 而且它只覆盖 LLM 一段 —— 而 `episodeMs` 与 `storeMs` 恰恰是"异步捕获也会
+无法按会话/轮次取; 而且它只覆盖 LLM 一段  而 `episodeMs` 与 `storeMs` 恰恰是"异步捕获也会
 占住 event loop"的那部分。排查类问题发生在重启之后, 日志卷不完这些。
 
-**用内存环形缓冲 (像 `InvocationLog`)。** 更便宜, 面板也够用 —— 但"昨天那几轮为什么慢"是跨重启
+**用内存环形缓冲 (像 `InvocationLog`)。** 更便宜, 面板也够用  但"昨天那几轮为什么慢"是跨重启
 问题, 内存缓冲在那一问上等于零; 并且它与"真相在文件"这条仓库不变量冲突 (同 `schedule-log` 的取舍)。
 
 **让 pipeline 直接持有 CaptureLog。** 最省事, 但会把内核层 (`src/capture/`) 反向依赖到 DSH adapter,
@@ -63,7 +72,7 @@ Status: implemented
 **把耗时记成 episodes 的一部分。** episode 是**重放输入**, 数量级与生命周期都由"重建"决定;
 耗时是观测数据, 两者混在一起会让 T2 重建多背一份无关载荷, 也会让保留期互相绑架。
 
-**不做账本, 先凭直觉优化 (换模型 / 调 interval)。** 那样无法验证任何一条优化有没有生效 ——
+**不做账本, 先凭直觉优化 (换模型 / 调 interval)。** 那样无法验证任何一条优化有没有生效 
 这正是本仓库反复拒绝的形态: 先有可观察的证据, 再谈优化。
 
 ## Consequences
@@ -77,7 +86,7 @@ Status: implemented
   面板提示与 `docs/capture-and-distillation.md` 里都写明了。
 - 它有自己的开关 (`captureLog`) 与保留期 (`captureRetentionDays`, 默认 7 天), **不挂在**
   `autoCapture` 或 `scheduleLog` 上: 三条是不同的事情, 关掉其中一个不应连带失去另一个的观测。
-- 未覆盖: 宿主在 `turn/end` **之前**的时间 (模型思考、工具执行) 不在账本里 —— 它不是捕获的成本。
+- 未覆盖: 宿主在 `turn/end` **之前**的时间 (模型思考、工具执行) 不在账本里  它不是捕获的成本。
   同样未覆盖: 结构化那次 LLM 调用是否命中上游限流 (账本只看到它花了多久)。
 
 ## Testing
@@ -88,7 +97,7 @@ Status: implemented
   跳过的轮次不进耗时统计但要能被计数。
   运行时接线部分覆盖全部五种跳过原因 (落盘 / 读不出结论 / 没形成问答 / 捕获关着 / subagent)、
   落盘抛错记 `error` 行, 以及"不注入账本时行为完全不变且磁盘上不出现 `capture/` 目录"。
-- `tests/s2/settings-adoption.test.ts`: 端到端 —— 真的跑 `apply()`, 走一轮完整问答, 断言
+- `tests/s2/settings-adoption.test.ts`: 端到端  真的跑 `apply()`, 走一轮完整问答, 断言
   `<root>/capture/*.jsonl` 出现完整记录 (含宿主给的轮次号与字符数), 且把 `captureLog` 关掉后
   **不再写新行、但捕获照常工作** (设置当轮生效)。
 - `tests/s2/remote-methods.test.ts`: 新 RPC `captureLog` 纳入"客户端只许调用声明过的方法"这条契约。

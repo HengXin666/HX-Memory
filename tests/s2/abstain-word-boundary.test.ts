@@ -2,7 +2,7 @@
 //
 // 为什么需要它 (2026-09-18, §430): 弃权判据问的是"查询里的拉丁专名在这个库里存在吗"。
 // 它此前用**朴素 includes**, 于是:
-//   · `ada` 在库里子串命中 **44** 次 (而词边界只 **4** 次) —— 差额全是 `loaded`/`decade` 这类词的片段;
+//   · `ada` 在库里子串命中 **44** 次 (而词边界只 **4** 次)  差额全是 `loaded`/`decade` 这类词的片段;
 //   · `cycle` (3→**0**) 与 `variant` (1→**0**) 更极端: 朴素口径下"库里有这个词"完全成立。
 // 后果: 查询 "Ada 的 tasking 怎么做并发" / "VHDL 的 delta cycle 是什么" **永不弃权**。
 //
@@ -22,11 +22,11 @@ const hit = (content: string, channels: string[] = ["bm25"]) =>
 
 describe("弃权判据: 词边界与通用词表", () => {
   it("**子串不算命中**: ada 不该命中 adapter / readability", () => {
-    // ⚠ 我第一版这里写的是 "the config was loaded from disk" —— **那是个错的词例**:
+    // ⚠ 我第一版这里写的是 "the config was loaded from disk"  **那是个错的词例**:
     //   "loaded" 里根本没有 "ada" 子串 (它是 loa-ded), 于是那条测试在朴素 includes 下也通过,
     //   完全没起到反驳作用 (反驳测试暴露的)。
     //   实测真实库: `ada` 的子串命中来自 **adapter(55) / adapters / readability / threadAdapter**
-    //   —— 这里用真实形态。
+    //    这里用真实形态。
     expect(shouldAbstain([hit("统一适配器层: threadAdapter 与 adapter 的职责划分")], ["ada"])).toBe(true);
     expect(shouldAbstain([hit("readability_extract 的可读性评分")], ["ada"])).toBe(true);
   });

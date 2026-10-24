@@ -2,43 +2,44 @@
 
 Status: implemented
 
+Decision-ID: agent-note-sedimentation-flow
+
+## Code
+
+- `scripts/redlines/agent_notes.py`
+- `scripts/verify-agent-note-coverage.ts`
+- `scripts/lib/legacy-note-coverage.ts`
+
 ## Problem
 
-本仓库此前的方案记录只有 `docs/adr.md`: 它是**编号决策日志**, 逐条追加, 但不记录"否决了哪些替代方案", 也没有任何机制保证"改了非平凡代码就必须留记录"。结果是: 一个决策在本会话里被讨论了三次 (改分层、改索引方案、换嵌入器), 前两次的结论与理由只存在于对话里 —— 换一个 agent、换一次会话就全部丢失, 于是同一个问题被反复重新争论。
+本仓此前只用 `docs/adr.md` 逐条追加编号决策, 没有强制记录被否掉的替代方案或把理由绑定到真实声明. 分层, 索引和嵌入器选择在跨会话协作中反复争论, 已有结论容易丢失
 
-上游 deepseek-harness 用 `.agents/notes/` 解决了这件事: 一篇 Note 一个主题, 记录动机、决策、**被否掉的替代方案**、代价, 由 `scripts/verify-agent-note-{classification,format}.ts` 两个 gate 强制格式与分类。
+格式与分类检查可以约束文档形状, 但不能证明代码与决策双向对应. 把没有源码约束的记录另存一套参考目录还会分散维护入口
 
 ## Decision
 
-在本仓库实装同构的沉淀流, 并把它做成**比上游更强的硬约束** (上游的"非平凡改动必须带 Note"靠 AGENTS.md 说明 + 自觉, CI 只校验已有 Note 的格式):
+本仓使用 v2 双向图记录同一条决策的当前理由, 每篇 active note 有唯一 Decision-ID, 精确 Code 列表及对应 AST 声明锚点. 决策统一维护在 `.agents/notes`, 失去本仓有效代码约束的记录直接退役, 有指导价值的理由先迁入存活决策并修复入站引用. 冻结 archived 内容保持原样, 新流程不新增永久归档
 
-- **树**: `.agents/notes/{proposed,implemented,rejected,archived}/{class}/yyyy-mm-dd-topic.md`。lifecycle 是状态 (会移动), class 是决策类别。
-- **分类封闭集合** (定义在 `scripts/agent-note-tree.ts`, 拼错目录名当场拒绝): `feature`、`bug-fix`、`simplification`、`architecture`、`process`、`testing`。
-- **三个 gate, 都挂进 `scripts/verify.sh` 与 CI**:
-  1. `verify-agent-note-classification.ts` — 路径/文件名/封闭集合, 并禁止历史路径 (`docs/rfc` 等) 复活;
-  2. `verify-agent-note-format.ts` — 头部三行 (标题 / 空行 / Status)、Status 与目录**交叉校验**、第一节必须是 `## Problem`、按生命周期的必需章节 (proposed: Proposal/Acceptance criteria/Risks; implemented: Decision/Consequences; rejected: Proposal)、implemented 禁提案期措辞、`## Alternatives considered` 必填、只允许一行 Status;
-  3. `verify-agent-note-coverage.ts` — **上游没有的机械判定**: 基于 git diff, 改到 `src/**`、`.agents/rules/**`、`scripts/**`、`dsh/**`、`.github/workflows/**`、`package.json`、`tsconfig*.json` 时, 同一批改动里必须出现 Note, 否则退出码 1。
-- **低摩擦入口**: `pnpm run notes:new -- --lifecycle ... --class ... --title "..." --slug ...` 生成合规骨架 (人只填内容)。
-- **本地硬拦**: pre-commit hook (`.agents/hooks/check_agent_notes.sh`) 跑同样三条; `bash scripts/install-commit-hook.sh` 同时装 commit-msg 与 pre-commit。
-- **冻结区**: `archived/` 只进不改, 归档动作是唯一允许的内容变更 (补 `Archived: YYYY-MM-DD`)。
-- **与 ADR 的分工**: 新决策只写 Agent Note; `docs/adr.md` 保留为可编号引用的历史档案, 需要时加一行指向 Note, 不写双份全文。
+本地 `scripts/redlines/agent_notes.py` 委托 vendored 实现, diff / all / staged 使用同一严格扫描器. package scripts, pre-commit 和 Stop hook 均调用它, 不通过 allow-missing 或跳过环境变量放行. 旧 TypeScript 命令也委托 v2, 历史 fixture helper 仅为归档浏览与旧测试保留, 不承担当前判定
+
+GitHub Diff / Full 保存完整诊断, Report 在代码片段评论. 综合代码验证中的 Agent Notes 步骤在 GitHub 使用同一收集器, 依赖故障与违规都保留报告并容错完成; 本地保持非零退出码. 新迁移边界见 [v2 adoption](2026-10-08-repository-agent-notes-v2-adoption.md)
 
 ## Alternatives considered
 
-**只更新 `docs/adr.md`, 不建新树。** 最省事, 但 ADR 格式没有"被否掉的替代方案"的强制位, 也没有任何 gate —— 而恰恰是"否决了什么"最能防止重复争论。且 ADR 的编号序列会无限增长, 无法按主题检索。
-
-**照抄上游的"自觉 + 格式 gate", 不做覆盖率 gate。** 上游确实只做格式与分类校验, 靠 AGENTS.md 说明约束 agent。但本仓库是单人 + 多 agent 协作, 没有 PR review 兜底; 实测"自觉"在这种情况下会退化成"忘记写"。因此加了基于 diff 的机械判定。
-
-**引入 `tsx` 依赖来跑 gates。** 上游用 `tsx scripts/*.ts`。本仓库坚持零运行时依赖, 且 Node 24 的 strip-only 模式能直接跑 TS —— 用 `node --experimental-strip-types` 即可 (代价: 不能使用 TS 参数属性等非可擦除语法, 已由既有踩坑记录覆盖)。
-
-**用文件数量/字数阈值决定是否归档。** 已被上游明确否定: 判断标准应是"理由是否还能指导后续工作"(被否的替代方案、所有权边界、负向保证、安全规则、重新引入条件), 不是体量。
+- 什么都不做 / 复用现有: 不增加维护成本, 但编号日志和宽松格式检查不能证明声明与理由互相对应, 无关 note 仍能掩盖代码变更
+- 只检查格式与分类: 接入成本低, 但不能识别断链和单边改动, 因此使用精确路径, AST 归属与旧新关系图
+- 只靠自觉更新记录: 不需要工具依赖, 但跨会话协作容易漏写, 因此本地 hook 与 CI 共用扫描器
+- 另建参考记录目录: 能保留没有源码落点的旧材料, 但会分散当前决策和测试证据, 因此使用现有 notes 树和 Git 历史
+- 按年龄或数量自动归档: 清理容易自动化, 但会删除仍然有指导价值的理由, 因此退役前核对现存约束并迁移有效理由
 
 ## Consequences
 
-方案记录从"对话里的临时共识"变成"仓库里可检索、可 diff、被 gate 保护的资产"; 同一个问题不会在被遗忘后重新争论。代价有三: ①每次非平凡改动多一步写 Note 的成本 (收益是它强制你想清楚否决了什么); ②gate 本身需要维护 (新增类别要同时改 `agent-note-tree.ts` 与 README); ③CI 里的覆盖率判定必须给比较基线 (工作区在 CI 是干净的), 已用 `HX_NOTE_COVERAGE_BASE` 处理。
+理由成为精确关联源码的当前决策资产. 代价是固定版本 parser 的开发工具依赖和双边维护成本; 发布库的运行时依赖仍保持原有契约. CI 成功表示报告流程完成, 不证明决策语义已被独立审核
 
 ## Testing
 
-`tests/s1/agent-note-gates.test.ts` (18 项): 逐个构造违规样本并断言 gate **真的拒绝** —— 错误标题、Status 与目录不一致、第一节不是 Problem、缺 Decision/Consequences、implemented 里的提案期措辞、缺 Alternatives、重复 Status、未知 lifecycle/class、深度错误、无日期文件名、INDEX.md、归档缺 Archived 行; 同时断言合法样本通过 (防止过严到无法落地)。
-`tests/s1/agent-note-coverage.test.ts` (8 项): src 改动无 Note → 拒绝; 带 Note → 通过; 纯测试/文档 → 豁免; 规则/脚本/CI/包配置 → 非平凡。
-端到端证据: 注入一篇违规 Note 时 `verify-agent-note-format` 退出码 1 并逐条指出问题; pre-commit 在"改了 `src/kernel/ranking.ts` 但没带 Note"时退出码 1, 加上 Note 后通过。
+vendored Python 与报告器测试验证真双链, 断链, 单边变更, 精确暂存区及 CI 容错. 原有 TypeScript fixture 测试只验证历史读者 API, 不作为 v2 放行证据
+
+2026-10-08 的独立隔离试验中, 有效迁移提交 `a0bebad8f5e20df7bd7a5fac5dd73acfa243b27b` 的 all, diff, staged 均退出 0. 故障提交 `6ca1068f28ec4a40ed8825c6668409d5b1f0a19d` 删除类型声明的反向引用, 三个本地模式均退出 1 并报告 anchor-cardinality 和两项 code-only-diff. CI 对同一故障退出 0, JSON 保留 `ok:false` 与原始诊断
+
+18 项报告器测试使用模拟 GitHub API, 验证行内评论, 提交评论与失败处理, 未发送真实评论. 原始试验提交位于 `/tmp/hx-agent-notes-v2-adoption-19r60tjd`, 门禁证据读取本篇现存决策

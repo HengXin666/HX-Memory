@@ -1,9 +1,9 @@
 // tests/s2/flag-recall.test.ts — 负面标注的端到端 (s2, 真实文件 IO)。
 //
 // 钉住三件在真实使用里会静默变坏的事:
-//   1. 标注必须**落盘且可重建** —— 只写在索引里的质量数据, 删索引就没了;
-//   2. 坏评超标的记忆**只提议、不改动** —— "这条是错的"是需要人担责的判断 (治理铁律);
-//   3. 零标注时**零副作用** —— 沉默是默认状态, 不能凭空产生队列项。
+//   1. 标注必须**落盘且可重建**  只写在索引里的质量数据, 删索引就没了;
+//   2. 坏评超标的记忆**只提议、不改动**  "这条是错的"是需要人担责的判断 (治理铁律);
+//   3. 零标注时**零副作用**  沉默是默认状态, 不能凭空产生队列项。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -108,7 +108,7 @@ describe("坏评超标: 只提议、不改动记忆", () => {
 
   it("曝光够且占比够 → 产出提议, 且目标记忆本身未被改动", async () => {
     const { store, facade, proposals } = make();
-    // 曝光 (reinforcement) 是阈值的分母: 从未被展示过的条目不该被人审 —— 先给足曝光。
+    // 曝光 (reinforcement) 是阈值的分母: 从未被展示过的条目不该被人审  先给足曝光。
     await store.update("mFlag1", { reinforcement: REVIEW_MIN_EXPOSURE });
     const before = await store.get("mFlag1");
     for (let i = 0; i < REVIEW_MIN_EXPOSURE; i++) await facade.flagRecall("mFlag1", "wrong");

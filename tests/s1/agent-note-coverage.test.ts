@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyChange } from "../../scripts/verify-agent-note-coverage.ts";
 
-describe("Agent Note 覆盖判定", () => {
+describe("v1 historical change fixture classifier", () => {
   it("改了 src 且带了 Note → 通过", () => {
     const result = classifyChange([
       "src/kernel/ports.ts",

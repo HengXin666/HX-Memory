@@ -10,7 +10,7 @@
 //   revise/forget/link/history = 治理与审计入口 (撤回是 shadow, 永不物理删除)
 //   stats     = 给面板/CLI 的可观测面
 // 拆分后本文件只保留**编排**所需的导入: 写入裁决链在 remember-flow.ts (见其头注),
-// 纯查询在 facade-queries.ts, 证据链在 evidence.ts —— 三者各自的依赖不再经过这里。
+// 纯查询在 facade-queries.ts, 证据链在 evidence.ts  三者各自的依赖不再经过这里。
 import type { MemoryEntry, RelationType } from "../kernel/types.ts";
 import type { RetrievalRequest, SyncRetriever } from "../kernel/ports.ts";
 import { formatRetrieval } from "./format.ts";
@@ -87,6 +87,12 @@ export class MemoryFacade {
   /** 治理出口: 坏评超标 → 人审提议。缺省时纯标注 (不产生提议)。 */
   private generalizer?: GeneralizerBridge;
 
+  /**
+   * 设置热更新 + 面板自刷新 + 文档同步门禁与技能库
+   * .agents/notes/implemented/process/2026-09-10-live-settings-and-doc-gates.md
+   * 单文件 400 行约束与大文件拆分
+   * .agents/notes/implemented/simplification/2026-09-11-400-line-limit-and-split.md
+   */
   constructor(deps: { store: FacadeStore; retriever: SyncRetriever }, opts: FacadeOptions = {}) {
     this.store = deps.store;
     this.retriever = deps.retriever;
@@ -168,6 +174,10 @@ export class MemoryFacade {
     };
   }
 
+  /**
+   * 记忆反馈通道 — 由 agent 标注召回质量
+   * .agents/notes/implemented/feature/2026-09-11-memory-feedback-channel.md
+   */
   async get(id: string): Promise<MemoryEntry | null> {
     return await this.store.get(id);
   }
@@ -183,7 +193,7 @@ export class MemoryFacade {
   /**
    * 生成一份"现在大概知道什么"的摘要 (Panel/CLI/注入都能用)。
    * 默认走确定性启发式 (只吃 active, 按 出现次数×importance 排序); 宿主有模型时可换 DigestBuilder 实现。
-   * 摘要**不落盘** —— 它是派生视图, 每次按当前库现算, 避免"摘要陈旧"这一类失效。
+   * 摘要**不落盘**  它是派生视图, 每次按当前库现算, 避免"摘要陈旧"这一类失效。
    */
   async digest(opts: { project?: string } = {}): Promise<Digest> {
     return await queryDigest(this.store, this.digestBuilder, opts);
@@ -236,7 +246,7 @@ export class MemoryFacade {
   }
 
   /**
-   * agent 对召回质量的**负面**标注 (只记坏的 —— 好的不记, 沉默是默认状态)。
+   * agent 对召回质量的**负面**标注 (只记坏的  好的不记, 沉默是默认状态)。
    * 完整理由 (为何只收负面、为何两类分开) 见 app/governance.ts 的 applyFlag。
    */
   async flagRecall(id: string, reason: RecallReason, note?: string): Promise<FlagResult> {
@@ -259,7 +269,7 @@ export class MemoryFacade {
     return await queryStats(this.store, this.indexStatus);
   }
 
-  /** 可选: 审计钩子 (撤回理由等)。缺省静默 —— 审计不该拖垮调用方。 */
+  /** 可选: 审计钩子 (撤回理由等)。缺省静默  审计不该拖垮调用方。 */
   onAudit(handler: (event: string, payload: Record<string, unknown>) => void): void {
     this.audit = handler;
   }

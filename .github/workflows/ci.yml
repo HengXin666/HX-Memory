@@ -5,6 +5,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
       - uses: pnpm/action-setup@v4
         # 版本跟随 package.json 的 "packageManager" 字段, 避免与 version 冲突
       - uses: actions/setup-node@v4

@@ -1,6 +1,6 @@
 // tests/s2/capture-review-resolve.test.ts — 待审裁决的端到端契约 (接受/丢弃真的生效)。
 //
-// 为什么有它: 队列只有"看"没有"处置"是半成品 —— 人看懂了原因却无法动作,
+// 为什么有它: 队列只有"看"没有"处置"是半成品  人看懂了原因却无法动作,
 // 待审就只是把"事后清理"换成了"事后围观"。本文件钉住两个动作的**真实效果**。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -84,7 +84,7 @@ describe("resolveCaptureReview: 两个动作", () => {
 
   it("**drop 真的把它从可用记忆里剔除** (写 shadow, 不是只出队)", async () => {
     // ⚠ 2026-10-05 语义反转的核心: 旧 `reject` 只改队列状态, 而条目**本来就没入库**;
-    // 新契约下条目已入库, 因此"剔除"必须真的发生 —— 否则这个动作是一句空话。
+    // 新契约下条目已入库, 因此"剔除"必须真的发生  否则这个动作是一句空话。
     const ep = stack_episodes();
     const e1 = ep.append({ session: "s", turn: 1, role: "user", text: "记住: 缓存过期统一设为 60 秒" });
     enqueueCaptureReview(root, {
@@ -108,7 +108,7 @@ describe("resolveCaptureReview: 两个动作", () => {
     expect(res.ok).toBe(true);
     // ① 队列状态变 rejected (裁决可审计)
     expect(readCaptureReview(root)[0]!.status).toBe("rejected");
-    // ② ★ 条目真的不可见了 (shadow) —— 检索与 all() 都不再给
+    // ② ★ 条目真的不可见了 (shadow)  检索与 all() 都不再给
     const live = stack.store.all().filter((e: { id: string }) => e.id === "c2");
     expect(live.length).toBe(0);
     // ③ 但**行还在** (truth-in-files: 撤回是 shadow 而不是物理删除)
@@ -121,7 +121,7 @@ describe("resolveCaptureReview: 两个动作", () => {
   });
 
   it("旧动作名 accept/reject 仍可用, 且映射到**新语义**", async () => {
-    // 为什么必须兼容: 面板与既有调用点按旧名调 —— 让它们**做正确的新动作**,
+    // 为什么必须兼容: 面板与既有调用点按旧名调  让它们**做正确的新动作**,
     // 比改名后留下一批静默失效的调用点安全 (见 gateway-memory.ts 的说明)。
     seedQueue();
     const stack = openMemoryStack(root, { episodeRetentionDays: 0, embedder: null });
@@ -157,7 +157,7 @@ describe("resolveCaptureReview: 两个动作", () => {
         item: () => ({ id: "c-empty", question: "   ", conclusion: "", session: "s1" }),
       };
       expect((await resolveCaptureReview(stack.facade, empty, "c-empty", "keep")).ok).toBe(true);
-      // drop 同样不需要内容 —— 剔除一条空待审项是合法的。
+      // drop 同样不需要内容  剔除一条空待审项是合法的。
       expect((await resolveCaptureReview(stack.facade, empty, "c-empty", "drop")).ok).toBe(true);
     } finally {
       stack.close();

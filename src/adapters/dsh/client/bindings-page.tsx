@@ -60,7 +60,7 @@ function compact<T extends Record<string, unknown>>(obj: T): T {
 /**
  * 问宿主要当前会话的项目键 (cwd 的目录名)。
  *
- * 注意: 浏览器侧的 rpc 只有 { call }, 读不到 cwd —— 项目名必须走 currentProject 这个
+ * 注意: 浏览器侧的 rpc 只有 { call }, 读不到 cwd  项目名必须走 currentProject 这个
  * gateway 方法 (VCP 的 binding project 键 = 会话目录名)。拿不到 (没有活动会话 / 方法还不存在 /
  * 网络失败) 一律返回空串: 面板照常可用, 只是不自动建行, 也不弹错误横幅。
  */
@@ -88,7 +88,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
   const load = useCallback(async () => {
     try {
       const list = await callHxMemory<ProjectBindings[]>(rpc, "listBindings");
-      // 首次拉取时若当前项目还没有行, 就地补一行空项目 —— 新用户才有"一键可用"的落点。
+      // 首次拉取时若当前项目还没有行, 就地补一行空项目  新用户才有"一键可用"的落点。
       let next = list ?? [];
       const auto = autoRef.current;
       if (!loadedRef.current && auto && !next.some((c) => c.project === auto)) {
@@ -105,7 +105,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
   }, [rpc]);
 
   // 当前项目名只在挂载时算一次 (会话切换会重挂载这个面板, 不需要订阅)。
-  // 先拿到名字再拉绑定列表 —— 否则首次 load 时 autoRef 还是空的, 自动行会错过。
+  // 先拿到名字再拉绑定列表  否则首次 load 时 autoRef 还是空的, 自动行会错过。
   useEffect(() => {
     let alive = true;
     void fetchCurrentProject(rpc).then((name) => {
@@ -122,7 +122,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
   /**
    * 打开期间跟随后端变化 (别的窗口/CLI 改了绑定也应该看到)。
    * 与审阅页同一策略: focus + visibilitychange + 可见时轮询。
-   * 注意: 用户正在编辑时**不要**覆盖输入框 —— 有未保存改动就跳过自动刷新。
+   * 注意: 用户正在编辑时**不要**覆盖输入框  有未保存改动就跳过自动刷新。
    */
   useEffect(() => {
     const auto = () => {
@@ -184,7 +184,7 @@ export function BindingsPage({ rpc, t }: Props): JSX.Element {
   /**
    * 一键模板: 追加到当前项目行。
    * 没匹配到项目 (用户改了名字/删了行) 就落到"第一个项目", 一个都没有才新建。
-   * 同 id 已存在时不重复追加, 只提示 —— 避免连点两下产生重复绑定。
+   * 同 id 已存在时不重复追加, 只提示  避免连点两下产生重复绑定。
    */
   const applyPreset = (preset: (typeof PRESETS)[number]) => {
     const named = autoProject;

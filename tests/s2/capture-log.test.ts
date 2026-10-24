@@ -2,7 +2,7 @@
 //
 // 为什么必须有这些断言: 捕获对宿主是异步的 (index.ts 用 void 丢掉, DSH 的事件派发也不 await),
 // 但它与对话同进程同 event loop, 且自己会调一次 LLM 做结构化。于是"这一轮怎么比平时慢"
-// 在证据上此前完全无法回答 —— 唯一的计时证据是宿主日志里的一行 ctx.logger, 与"哪一轮对不上号",
+// 在证据上此前完全无法回答  唯一的计时证据是宿主日志里的一行 ctx.logger, 与"哪一轮对不上号",
 // 重启后也拿不到。这些断言把"能回答"变成可执行事实。
 //
 // 最后两条测的是**不变量**而不是功能: 账本写入是 best-effort, 且关掉它不许改变捕获行为。
@@ -137,7 +137,7 @@ describe("CaptureLog: 汇总 (分位数, 不是平均)", () => {
     expect(stats.totalMs.p95).toBe(19);
     expect(stats.totalMs.max).toBe(20);
     expect(stats.mean.storeMs).toBe(1);
-    // 最慢的一条必须能被指出来 —— 只给汇总回答不了"是哪一轮"。
+    // 最慢的一条必须能被指出来  只给汇总回答不了"是哪一轮"。
     expect(stats.slowest?.turn).toBe(20);
   });
 

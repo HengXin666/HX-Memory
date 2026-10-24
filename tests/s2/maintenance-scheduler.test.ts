@@ -1,6 +1,6 @@
 // tests/s2/maintenance-scheduler.test.ts — S2: P3 后台维护的调度策略与端到端执行。
 //
-// 补的缺口: 衰减/TTL 扫描 (`consolidate`) 此前**只有 CLI 能触发** —— 只通过面板/对话使用记忆的
+// 补的缺口: 衰减/TTL 扫描 (`consolidate`) 此前**只有 CLI 能触发**  只通过面板/对话使用记忆的
 // 用户永远不会整合过一次, 事件类条目从不衰减。本文件钉住三件事:
 //   1. 判定的两个闸门 (周期 + 空闲窗) 各自的边界; 周期 0 真的关掉;
 //   2. 执行失败**留证据** (踩过的坑: 记录里只有 "exit:1", 看不出原因; 更早还漏传过 --root,
@@ -212,7 +212,7 @@ describe("CLI 执行器", () => {
     const res = await runner.run({ root, timeoutMs: 10_000, episodeRetentionDays: 0 });
     expect(res.ok).toBe(true);
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
-    // 唯一子命令: 早期传的是任务名数组, 而 CLI 只认第一个位置参数 ——
+    // 唯一子命令: 早期传的是任务名数组, 而 CLI 只认第一个位置参数 
     // 第二个 ("prune") 被静默忽略且进程仍 exit 0, episode 清理从未发生。见 MAINTENANCE_COMMAND。
     expect(argv).toContain("maintain");
     expect(argv).toContain("--root");
@@ -252,7 +252,7 @@ describe("CLI 执行器", () => {
 });
 
 describe("端到端: 调度器 → 子进程 → CLI → 真相文件", () => {
-  /** 造一条**真实** episode (用 append API, 而不是手写 JSON —— 计数的是 episode 条数而非文件数)。 */
+  /** 造一条**真实** episode (用 append API, 而不是手写 JSON  计数的是 episode 条数而非文件数)。 */
   function seedOldEpisode(root: string): string {
     const store = new EpisodeStore({ root, retentionDays: 0 });
     store.append({
@@ -267,7 +267,7 @@ describe("端到端: 调度器 → 子进程 → CLI → 真相文件", () => {
 
   it("保留期被真的传给子进程, 过期 episode 日志被清掉 (默认 0 = 静默 no-op, 踩过)", async () => {
     // 本模块最隐蔽的一类失效: prune 在子进程里"成功但什么都没做"。
-    // EpisodeStore 的缺省保留期是 0 (永久), 而子进程自建 stack 拿不到面板里的设置 ——
+    // EpisodeStore 的缺省保留期是 0 (永久), 而子进程自建 stack 拿不到面板里的设置 
     // 于是每次维护都是 prunedEpisodes: 0 且 exit 0。必须显式把保留期传下去。
     const root = mkdtempSync(join(tmpdir(), "hxmem-maint-prune-"));
     const file = seedOldEpisode(root);
@@ -278,7 +278,7 @@ describe("端到端: 调度器 → 子进程 → CLI → 真相文件", () => {
         episodeRetentionDays: 30,
       });
       expect(res.ok).toBe(true);
-      // prunedEpisodes 数的是 **episode 条数**(不是文件数) —— 手写一行 JSON 会让计数恒为 0,
+      // prunedEpisodes 数的是 **episode 条数**(不是文件数)  手写一行 JSON 会让计数恒为 0,
       // 于是这个测试会在"删除真的发生了"的情况下假红 (踩过)。
       expect(res.output).toContain('"prunedEpisodes":1');
       expect(existsSync(file)).toBe(false);

@@ -1,22 +1,22 @@
 // kernel/entity.ts — 实体的**提取与规范化键** (全仓库唯一实现)。
 //
-// 为什么需要它 (实测依据): `entities` 字段自 v2 引入以来**填充率长期为 0%** ——
+// 为什么需要它 (实测依据): `entities` 字段自 v2 引入以来**填充率长期为 0%** 
 // 只有 LLM 结构化器会写它, 而结构化器在多数会话里不可用, 于是库里的实体永远为空,
 // 依赖实体的建边与图召回都是空转 (真库 82 条: entities 0/82, 边 13 条全是 generalizes)。
 // 而"确定性抽取"本来就可以覆盖实体的一大类: **可复用的专名** (文件/模块/库/工具/缩写)。
 //
 // 两条边界 (与 DEFAULT_STRUCTURER_PROMPT 的规则一致, 因为错的实体比没有更糟):
 //   1. 只抽**标识符形状**的专名 (带分隔符的路径名、CamelCase、全大写缩写);
-//   2. 不抽泛指词、整句话、纯中文普通名词 —— 规则无法可靠判断它们是不是专名, 宁可留空。
+//   2. 不抽泛指词、整句话、纯中文普通名词  规则无法可靠判断它们是不是专名, 宁可留空。
 // 因此它是**索引侧**的兜底 (与 tags 一样: 索引里补, 不写回真相文件), 结构化器给出权威值时以它为准。
 //
-// 不变量: 索引写入与查询**共用** `entityKey` —— 实体键一旦两侧口径分叉, 反查会静默失效
+// 不变量: 索引写入与查询**共用** `entityKey`  实体键一旦两侧口径分叉, 反查会静默失效
 // (同一类问题在分词上已经踩过一次, 见 kernel/cjk.ts 的注释)。
 import type { MemoryEntry } from "./types.ts";
 
 /**
  * 实体键 (匹配用): NFKC + 小写 + 去首尾标点。
- * 展示名保留原形, 匹配键统一 —— 同一实体两种写法会让共现/反查匹配失效。
+ * 展示名保留原形, 匹配键统一  同一实体两种写法会让共现/反查匹配失效。
  */
 export function entityKey(name: string): string {
   return name
@@ -30,7 +30,7 @@ export function entityKey(name: string): string {
 export const DEFAULT_ENTITY_LIMIT = 16;
 
 /**
- * 实体抽取器版本。抽取逻辑改变时必须 +1 —— 存储层据此判定"实体倒排该重算了",
+ * 实体抽取器版本。抽取逻辑改变时必须 +1  存储层据此判定"实体倒排该重算了",
  * 否则老条目会永远停在旧口径上, 而反查**不会报错**, 只会静默少召回。
  * 与 kernel/cjk.ts 的 TOKENIZER_VERSION 是同一机制 (派生物认版本, 认不出就重建)。
  */
@@ -41,7 +41,7 @@ const PATTERNS: ReadonlyArray<RegExp> = [
   // 带分隔符的标识符: prestep.ts / hx-memory / bge-small-zh / dsh-client-ui-settings / 2026-09-12
   /[A-Za-z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)+/g,
   // 驼峰 (含前导大写串): MemoryFacade / retrievalOnly / **HXLoLi** / iPhone。
-  // 前导大写串必须允许 —— 实测漏掉 HXLoLi 会让 104 条 entity_only case 里 19 条的桥断掉
+  // 前导大写串必须允许  实测漏掉 HXLoLi 会让 104 条 entity_only case 里 19 条的桥断掉
   // (产品名恰好是"HX"+驼峰的形状, 而"首字母大写 + 后续小写"的老写法匹配不到它)。
   /\b[A-Za-z][A-Za-z0-9]*[A-Z][a-z0-9]+\b/g,
   // 全大写缩写 (>=2 字母, 避免把 "A"/"I" 当实体): DSH / MMR / ADR / SQLite 走上面那条
@@ -70,7 +70,7 @@ export interface ExtractEntityOptions {
    * 最多几个 (默认 16)。
    *
    * 为什么不是 8: 实测在 104 条 entity_only case 上, 上限 8 时桥断在 35 条上 (覆盖 69/104),
-   * 12 → 103/104, 16 → 104/104 且此后不再增长 (平均实体/条 6.6)。上限不是"越小越干净"——
+   * 12 → 103/104, 16 → 104/104 且此后不再增长 (平均实体/条 6.6)。上限不是"越小越干净"
    * 它直接决定反查能答对多少查询, 而这个数字是测出来的, 不是拍的。
    */
   limit?: number;
@@ -90,7 +90,7 @@ export function extractEntities(text: string, opts: ExtractEntityOptions = {}): 
 
   // **按出现位置**合并, 而不是"按 pattern 依次取满"。
   // 后者是一个实测到的真实缺陷: 先跑的分隔符 pattern 会把 8 个名额吃光, 全大写缩写
-  // (DSH/MCP) 永远轮不到 —— 同一个缩写在一段文本里能不能被抽到, 取决于同段有多少
+  // (DSH/MCP) 永远轮不到  同一个缩写在一段文本里能不能被抽到, 取决于同段有多少
   // "xxx.ts" 形状的名字。按位置排序后, 抽样的口径变成"文本里先出现的专名优先",
   // 与 pattern 的书写顺序无关。
   const found: Array<{ at: number; raw: string; key: string }> = [];
@@ -107,7 +107,7 @@ export function extractEntities(text: string, opts: ExtractEntityOptions = {}): 
       if (!key || key.length < 2 || key.length > maxLength) continue;
       if (STOPWORDS.has(key)) continue;
       if (isCjkOnly(raw)) continue;
-      // 必须是"含字母"的形状 —— 纯数字/纯标点 (形如 1.2.3) 不可复用。
+      // 必须是"含字母"的形状  纯数字/纯标点 (形如 1.2.3) 不可复用。
       if (!/[a-z]/.test(key)) continue;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -123,7 +123,9 @@ export function extractEntities(text: string, opts: ExtractEntityOptions = {}): 
  *
  * 为什么兜底在**索引侧**而不是写回真相文件: 实体是**派生物** (可从 content 重算),
  * 而真相文件是人的资产、由重建路径重放。把它当 tags 一样"索引里补"意味着换抽取器时
- * 只要重建索引即可, 不需要迁移任何人的文件 —— 见 agent note 里的取舍记录。
+ * 只要重建索引即可, 不需要迁移任何人的文件  见 agent note 里的取舍记录。
+ 
+ * .agents/notes/implemented/feature/2026-09-12-entity-extraction-and-linking.md
  */
 export function entitiesOf(entry: Pick<MemoryEntry, "entities"> & { content?: string }): string[] {
   const explicit = (entry.entities ?? []).map((e) => String(e).trim()).filter(Boolean);

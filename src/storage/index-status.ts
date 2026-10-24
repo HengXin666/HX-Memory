@@ -1,7 +1,7 @@
 // storage/index-status.ts — 派生索引的**只读自述面** (能力 / 自检 / FTS 状态)。
 //
 // 为什么独立: 这些方法一个字节都不写, 只回答"现在的索引是什么状态"。
-// 它们的消费者是面板、CLI 与运维 —— 变化原因是"要观测什么", 而不是"怎么存"。
+// 它们的消费者是面板、CLI 与运维  变化原因是"要观测什么", 而不是"怎么存"。
 // 拆出去之后 file-store.ts 只剩读写编排与端口实现。
 //
 // 一条贯穿的原则: **降级必须可观测**。宁可如实说"现在是 LIKE 而不是 FTS", 也不要假装健康。
@@ -23,7 +23,7 @@ export class IndexStatus {
   }
 
   /**
-   * 全文索引状态。注意 semantic:false 是**诚实**的 —— 没有 embedding 通道就不要宣称语义检索,
+   * 全文索引状态。注意 semantic:false 是**诚实**的  没有 embedding 通道就不要宣称语义检索,
    * 上层据此决定降级策略 (而不是猜)。
    */
   capabilities(): RetrievalCapabilities {

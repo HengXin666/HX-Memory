@@ -1,7 +1,7 @@
 // tests/s1/architecture.test.ts — 分层铁律: 依赖方向单向, 越层即失败。
 //
 // 为什么需要: docs/architecture-v2.md 声明 "L3 → L2 → L1 ← L0 单向, 任何一层 import 上一层 = bug"。
-// 这条声明如果没有测试, 就会在第一次"图省事直接 import 引擎"时静默失效 —— 而那正是 v1 的老问题
+// 这条声明如果没有测试, 就会在第一次"图省事直接 import 引擎"时静默失效  而那正是 v1 的老问题
 // (DSH 的工具直接调 FileBackend)。这里用源码文本扫描把它变成可失败的断言。
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";

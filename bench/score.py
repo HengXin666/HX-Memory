@@ -1,6 +1,6 @@
 # bench/score.py — 统一打分器: 所有系统同一口径, 输出对比表 + 配对显著性。
 #
-# 为什么必须统一: 各自口径会让结论直接翻转。本项目踩过两次 ——
+# 为什么必须统一: 各自口径会让结论直接翻转。本项目踩过两次 
 # ① HX-Memory 侧把 abstention 的空 gold 按 rr=0 计入 MRR, mem0 侧却排除, 同一批 case 两套算法;
 # ② mem0 的 LLM 抽取会把一条源条目拆成多条, 同一 id 在 top-k 里重复出现, nDCG 因此重复计分 (dcg>idcg)。
 # 这里统一: 检索指标只在有 gold 的 case 上算; 同一源条目去重; 弃权单独统计。
@@ -8,11 +8,19 @@
 # 用法: python3 bench/score.py --runs FILE [--runs FILE ...] [--cases FILE]
 import argparse, json, math, pathlib, random, sys
 
+# Agent Notes: 记忆关系图预览 (单文件 HTML) + 评测补 H@k
+# 
+# Agent Notes: 记忆关系图预览 (单文件 HTML) + 评测补 H@k
+# .agents/notes/implemented/feature/2026-09-12-memory-graph-preview.md
 HERE = pathlib.Path(__file__).resolve().parents[1]
 
 
+# Agent Notes: 融合权重按通道作用标定 + MMR 两项归一到同量纲
+# 
 def dedupe(ranked):
-    """同一源条目可能因抽取被拆成多条而重复出现; 不去重会让 nDCG 重复计分。"""
+    """
+    .agents/notes/implemented/bug-fix/2026-09-12-fusion-weights-and-mmr-scale.md
+同一源条目可能因抽取被拆成多条而重复出现; 不去重会让 nDCG 重复计分。"""
     seen, out = set(), []
     for x in ranked:
         if x in seen:

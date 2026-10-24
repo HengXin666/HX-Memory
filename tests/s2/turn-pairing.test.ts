@@ -2,7 +2,7 @@
 //
 // 为什么必须有 (2026-09-18 独立盲审怀疑 + 我方直读状态复现的真实缺陷):
 // runtime 在 turn/start 时此前**只重置 messages 不清 answers**, 于是上一轮的回答会带进下一轮。
-// 后果不是"少记一条", 而是**错误配对落盘** —— 若某轮在两轮之间结束, 写入的是
+// 后果不是"少记一条", 而是**错误配对落盘**  若某轮在两轮之间结束, 写入的是
 // "(本轮的问题 + 上一轮的回答)"。两侧都是真实文本, 事后极难察觉。
 //
 // 这类缺陷单测最容易漏 (只测单轮永远发现不了), 因此本文件专测**跨轮**行为。
@@ -52,7 +52,7 @@ describe("轮次配对: 回答不跨轮累积", () => {
     await rt.capture(session, { type: "turn/start", data: {} } as never);
     const st = peek(rt, "s-pair")!;
     expect(st.messages).toEqual([]);
-    expect(st.answers).toEqual([]); // 修复前这里是 ["回答一"] —— 跨轮串台
+    expect(st.answers).toEqual([]); // 修复前这里是 ["回答一"]  跨轮串台
     store.close();
   });
 

@@ -1,7 +1,7 @@
 // bench/lib/entity-cases.ts — 生成 entity_only case: 只有"实体反查"才可能答对的查询。
 //
 // 为什么需要它: `lib/graph-cases.ts` 依赖库里**已存的 relations**, 而库里的边少且多为
-// generalizes, 最终只生成出 4 条 —— 样本太小, 任何策略差异都测不出来 (实测三种建边策略
+// generalizes, 最终只生成出 4 条  样本太小, 任何策略差异都测不出来 (实测三种建边策略
 // 在那 4 条上结果完全相同)。本文件绕开"已存的边", 直接按**实体共享 + 字面不重合**配对:
 //
 //   query  = A 的唯一探针 (字面只指向 A)
@@ -55,7 +55,7 @@ for (const a of corpus.entries) {
     if (a.id===b.id) continue;
     const shared = ea.filter(x=>ents.get(b.id)!.includes(x));
     if (!shared.length) continue;
-    // 只保留**字面不重合**的配对 —— 否则 b 本来就能被词面找到, 不构成图专属 case
+    // 只保留**字面不重合**的配对  否则 b 本来就能被词面找到, 不构成图专属 case
     const ov = overlapOf(a.content, b.content);
     if (ov > 0.12) continue;
     const probe = uniqueProbe(a.content, allText.replace(a.content,""));

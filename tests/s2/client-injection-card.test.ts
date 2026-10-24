@@ -3,11 +3,11 @@
 // 为什么必须钉住它: 宿主只渲染"服务端提供的命名空间 ∩ 有卡片认领的命名空间"
 // (dsh-client-ui-settings-plugins 的 ConfigurablePluginsTabController), 而认领的方式是
 // settings.plugin.item 槽位上 **key = 设置命名空间** 的注册。key 写错 = 开关在界面上
-// 完全不存在 —— 而"看不到"与"没实现"在用户眼里是同一件事 (本仓库真实踩过)。
+// 完全不存在  而"看不到"与"没实现"在用户眼里是同一件事 (本仓库真实踩过)。
 //
 // 为什么只 import 纯 .ts 模块 (不 import .tsx): 仓库的 kernel tsconfig 不含 DOM lib,
 // 只要 node 环境的测试碰一下 .tsx, 整棵组件树就被拉进类型检查并报 "Cannot find name
-// 'document'" —— 所以注册逻辑与显示判定都被刻意抽到无 JSX 的模块里, 这里就能直接断言。
+// 'document'"  所以注册逻辑与显示判定都被刻意抽到无 JSX 的模块里, 这里就能直接断言。
 import { describe, expect, it } from "vitest";
 import { modeOf, settledTo } from "../../src/adapters/dsh/client/injection-mode.ts";
 import {
@@ -101,7 +101,7 @@ describe("记忆注入卡接在宿主设置面板上", () => {
     expect(injected.scope).toBeDefined();
     expect(typeof injected.t).toBe("function");
     // 两代宿主都按**同一个命名空间**取作用域: 0.1.7+ 走 configForms.get(entryId),
-    // 旧宿主走 settingsScope.bind({ namespace }) —— 前者优先, 故这里按能力断言哪个被问到。
+    // 旧宿主走 settingsScope.bind({ namespace })  前者优先, 故这里按能力断言哪个被问到。
     expect(requested.length > 0 || bound.length > 0, "必须按命名空间取作用域").toBe(true);
     expect(requested.every((id) => id === MEMORY_SETTINGS_NAMESPACE)).toBe(true);
     expect(bound.every((ns) => ns === MEMORY_SETTINGS_NAMESPACE)).toBe(true);
@@ -124,7 +124,7 @@ describe("记忆注入卡接在宿主设置面板上", () => {
     const { ctx } = makeHost();
     const scope = resolveSettingsScope(ctx as never);
     expect(scope, "configForms 优先于 settingsScope").toBeDefined();
-    // 卡片只依赖这四个方法 —— 两代作用域在此交集上一致, 所以组件不用分支。
+    // 卡片只依赖这四个方法  两代作用域在此交集上一致, 所以组件不用分支。
     for (const m of ["getSnapshot", "subscribe", "set", "unset"]) {
       expect(typeof (scope as never as Record<string, unknown>)[m], "缺方法: " + m).toBe("function");
     }
@@ -132,7 +132,7 @@ describe("记忆注入卡接在宿主设置面板上", () => {
 
   it("注册时承载服务的插件还没加载完 → 仍然注册, 渲染时才解析 (避免卡片静默消失)", () => {
     // 真实风险: 客户端插件之间没有声明依赖, apply 完全可能与承载服务的插件加载交错。
-    // 若在 apply 时就要求 scope 存在, 那时拿到 undefined 的插件会**永远**没有卡片 —— 且无报错。
+    // 若在 apply 时就要求 scope 存在, 那时拿到 undefined 的插件会**永远**没有卡片  且无报错。
     const { ctx, registrations, lateMount } = makeHost({ withScope: false });
     registerInjectionCard(ctx as never, { component, t });
     expect(registrations.some((r) => r.name === "plugins.bundle.config")).toBe(true);
@@ -153,14 +153,14 @@ describe("卡片把「当前模式」读对", () => {
   it("first 就是 first, 其余 (未加载/未知) 一律按 every-turn 显示", () => {
     expect(modeOf({ value: { injectMode: "first" } })).toBe("first");
     expect(modeOf({ value: { injectMode: "every-turn" } })).toBe("every-turn");
-    // 关键: 值还没加载出来时**不能**显示成 first —— 那会让用户以为开关已经生效。
+    // 关键: 值还没加载出来时**不能**显示成 first  那会让用户以为开关已经生效。
     expect(modeOf({ status: "loading" })).toBe("every-turn");
     expect(modeOf({ value: {} })).toBe("every-turn");
     expect(modeOf({ value: { injectMode: "garbage" } })).toBe("every-turn");
   });
 
   it("写成功与否看**回调后读回的权威值**, 不看 promise 有没有 reject", () => {
-    // 宿主冲突时会自行回滚并重新广播: 这种情况下 set() 正常 settle, 但值还是旧的 ——
+    // 宿主冲突时会自行回滚并重新广播: 这种情况下 set() 正常 settle, 但值还是旧的 
     // 只认 settle 就会把"其实没改成"报成"已保存"。
     const reverted = { getSnapshot: () => ({ value: { injectMode: "every-turn" } }) };
     const applied = { getSnapshot: () => ({ value: { injectMode: "first" } }) };

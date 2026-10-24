@@ -1,10 +1,10 @@
 // retrieval/embedding-http.ts — OpenAI 兼容的远端嵌入器 (真·语义检索的接入点)。
 //
-// 为什么是"OpenAI 兼容"这一种协议: 它是事实上标准 —— OpenAI、Ollama、LM Studio、vLLM、
+// 为什么是"OpenAI 兼容"这一种协议: 它是事实上标准  OpenAI、Ollama、LM Studio、vLLM、
 // TEI、以及多数自建服务都提供 POST {baseUrl}/embeddings 且返回 {data:[{embedding:[...]}]}。
 // 实现一个协议就覆盖了本地/自建/云三类部署, 且不引入任何 SDK 依赖 (只用 fetch)。
 //
-// 定位: 这是**可选**引擎 —— 默认仍是本地零依赖的 HashingEmbedder; 配好端点即升级为真语义。
+// 定位: 这是**可选**引擎  默认仍是本地零依赖的 HashingEmbedder; 配好端点即升级为真语义。
 // 它是异步的, 因此配套 ProjectedVectorIndex 使用 (预步注入同步读投影, 见 ADR-025)。
 import type { Embedder } from "../kernel/ports.ts";
 

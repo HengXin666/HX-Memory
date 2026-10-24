@@ -1,16 +1,16 @@
 // src/adapters/dsh/capture-log.ts — 捕获耗时账本 (回答"沉淀有没有把对话拖慢")。
 //
-// 为什么需要它 (真实缺口): 捕获链路对宿主是**异步**的 —— index.ts 用 `void runtime.capture(...)`
+// 为什么需要它 (真实缺口): 捕获链路对宿主是**异步**的  index.ts 用 `void runtime.capture(...)`
 // 把它丢掉, DSH 的 session/event 派发也不 await 监听器。但"不阻塞"不等于"不花时间": 它与对话跑在
 // 同一个进程、同一个 event loop 上, 而且它自己会调一次 LLM 做结构化。于是"这一轮怎么比平时慢"
-// 在证据上完全无法回答 —— 唯一的计时证据是 llm-agent.ts 里的一行 ctx.logger, 而那是宿主日志,
+// 在证据上完全无法回答  唯一的计时证据是 llm-agent.ts 里的一行 ctx.logger, 而那是宿主日志,
 // 与"这一轮对话"对不上号, 重启后也拿不到。这正是 schedule-log 当年解决的同一类问题
 // (判定没有落盘 → 只能读源码猜), 只是换到了耗时轴。
 //
 // 形状 (与 schedule-log 同构, 共享 jsonl-ledger.ts):
 //   - 一条 turn **一行**, 记录该轮从入队到落盘结束的**每一段**耗时与结果;
 //   - 账本是真相文件: 只追加、永不改写, 因此没有重建路径, 只有保留期 (默认 7 天, 单日 4000 行);
-//   - 写入 best-effort: append 不抛错, 失败只置 hasWriteFailed() —— 记时间的动作不许自身成为故障源。
+//   - 写入 best-effort: append 不抛错, 失败只置 hasWriteFailed()  记时间的动作不许自身成为故障源。
 //
 // 一段不能省的话: 宿主**没有**"这一轮对话总共花了多久"的稳定接口, 因此本账本刻意不自称端到端
 // 性能。`totalMs` 记的是"捕获自己在 turn/end 之后又占用了多久", 它才是"记忆层拖慢下一轮"的
@@ -69,7 +69,7 @@ export interface CaptureRecord {
    * 本轮的结构化**是否来自"能出结论的实现"** (`TurnStructurer.canConclude`)。
    *
    * 为什么记它 (2026-09-18): 只有 `enrichMs` 时,"结构化器的 10 秒时限该不该调"
-   * **无法判定** —— 看得出"调了多久", 看不出"超时回退后沉淀质量是否变差"。
+   * **无法判定**  看得出"调了多久", 看不出"超时回退后沉淀质量是否变差"。
    * 有了它, `enrichMs` (耗时) + 本字段 (路径) + `outcome` (结果) 三者才能算
    * "某时限下多少轮被截断、其中多少仍沉淀"。
    *
@@ -134,7 +134,7 @@ export class CaptureLog {
    * 汇总视图: 最近 limit 条记录的分位数与分阶段均值。
    *
    * 为什么给分位数而不是只给平均: 慢捕获是**长尾**现象 (LLM 超时/上游排队), 平均值会被
-   * 大量 1ms 的正常轮次稀释到看不出问题 —— 而需要回答的恰恰是"最慢的那些有多慢"。
+   * 大量 1ms 的正常轮次稀释到看不出问题  而需要回答的恰恰是"最慢的那些有多慢"。
    */
   stats(limit = 500): CaptureStats {
     // 全部记录交给 summarize: 耗时只统计有耗时意义的那些, 但"跳过了几轮/错了几轮"
@@ -232,7 +232,7 @@ export function parseCaptureRecord(line: string): CaptureRecord | null {
       storeMs: num(raw.storeMs),
       totalMs: num(raw.totalMs),
       ...(typeof raw.detail === "string" ? { detail: raw.detail } : {}),
-      // 旧记录没有这个字段 ⇒ 保持 undefined (而不是填 false) ——
+      // 旧记录没有这个字段 ⇒ 保持 undefined (而不是填 false) 
       // "当时没记"与"当时明确走了启发式"是两件事。
       ...(typeof raw.concludeCapable === "boolean" ? { concludeCapable: raw.concludeCapable } : {}),
     };

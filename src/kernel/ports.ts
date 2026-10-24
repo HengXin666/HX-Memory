@@ -26,14 +26,14 @@ export interface MemoryStore {
   /**
    * 按 id 取**单个**条目。
    *
-   * ⚠ **可见性口径与列表访问器相反**: 它**不做任何状态过滤** —— `shadow` / `merged` / `expired`
+   * ⚠ **可见性口径与列表访问器相反**: 它**不做任何状态过滤**  `shadow` / `merged` / `expired`
    * 一律能取到 (§783 实测)。
    *
-   * 为什么必须如此: 治理动作**先读后写** —— `forget` 要取到条目才能把它置为 `shadow`;
+   * 为什么必须如此: 治理动作**先读后写**  `forget` 要取到条目才能把它置为 `shadow`;
    * `revise` 要取到才能改; `link` 要取到两端才能建边。若这里也过滤 shadow,
    * **撤回过的条目就再也治理不了** (取不到 ⇒ 改不了)。
    *
-   * **⇒ 所以消费方要"活着的条目"时必须自己判 `isLiveEntry` (/ `status === "active"`) ——**
+   * **⇒ 所以消费方要"活着的条目"时必须自己判 `isLiveEntry` (/ `status === "active"`) **
    * 那与列表访问器 (`all`/`query`/`recent`/`searchText`) 的默认不同, 是这里最容易踩的一处。
    */
   get(id: string): Awaitable<MemoryEntry | null>;
@@ -41,9 +41,9 @@ export interface MemoryStore {
   /**
    * 全量读取: **去重集回填**等需要"扫一遍全部条目"的调用点用它。
    *
-   * ⚠ **它不是"把库里所有行给你"** —— 实测 (2026-09-18, §680/§683):
+   * ⚠ **它不是"把库里所有行给你"**  实测 (2026-09-18, §680/§683):
    *   · **排除** `shadow` (撤回的条目不参与检索, 但**真相文件里仍在**);
-   *   · **不排除** `merged` / `expired` —— 它们**会**出现在返回值里 (实测确认)。
+   *   · **不排除** `merged` / `expired`  它们**会**出现在返回值里 (实测确认)。
    *
    * 实现是 `query({ limit: MAX_SAFE_INTEGER })` ⇒ 继承 `query` 的可见性口径
    * (`index-reader.ts`: 默认 `status != 'shadow'`)。
@@ -53,7 +53,7 @@ export interface MemoryStore {
    * 而 `codex export` **刻意不过滤** (导出就该含全部)。
    *
    * 为什么把这段话写在端口上 (而不是留给我自己记): 我在 §674/§680 两次按"`all()` = 全部"
-   * 下结论, 两次都错 —— 而契约注释当时只说了"不截断", 读起来像"完整集合"。
+   * 下结论, 两次都错  而契约注释当时只说了"不截断", 读起来像"完整集合"。
    */
   all(): Awaitable<MemoryEntry[]>;
   /** Walk relations from an entry (e.g. supersedes chain expansion). */
@@ -75,9 +75,11 @@ export interface SyncMemoryStore {
  * 适配层需要的**最小存储面**: 比 MemoryStore 多三项"运维/展示"能力, 但依然只依赖端口。
  *
  * 为什么需要它: 适配层 (面板网关、工具、Codex CLI) 此前直接 import `FileBackend` 这个**具体类**,
- * 只为了用 recent / ftsStatus / close —— 这是"端口有缺口"导致的耦合, 会让换存储引擎必须改适配层。
+ * 只为了用 recent / ftsStatus / close  这是"端口有缺口"导致的耦合, 会让换存储引擎必须改适配层。
  * 把这三项提成端口上的可选能力后, 适配层只依赖端口 (由 verify-structure 的端口纯度检查强制)。
- * 三项全部可选: 不具备的引擎不必假装支持, 降级由调用方判断 —— 不谎报能力是既有原则。
+ * 三项全部可选: 不具备的引擎不必假装支持, 降级由调用方判断  不谎报能力是既有原则。
+ 
+ * .agents/notes/implemented/simplification/2026-09-11-400-line-limit-and-split.md
  */
 export interface MemoryOperations extends SyncMemoryStore {
   /** 按 id 取一条 (缺失返回 null)。 */
@@ -151,7 +153,7 @@ export interface Generalizer {
 
 /** 单簇抽象端口 (LLM 或启发式)。 */
 export interface Abstractor {
-  abstract(cluster: { theme: string; contents: string[]; sources: string[] }): Promise<{
+  "abstract"(cluster: { theme: string; contents: string[]; sources: string[] }): Promise<{
     rule: string;
     confidence: number;
   }>;
@@ -189,7 +191,7 @@ export interface RetrievalSource {
   searchText(text: string, limit?: number): MemoryEntry[];
   /** 结构化条件过滤。默认排除 `shadow`/`merged`/`expired`; 传 `includeShadow` 放行 `shadow`。 */
   query(q: Query): MemoryEntry[];
-  /** 按 id 取: **不过滤** (与 `get` 的端口契约一致 —— 治理需要能取到已撤回的条目)。 */
+  /** 按 id 取: **不过滤** (与 `get` 的端口契约一致  治理需要能取到已撤回的条目)。 */
   get(id: string): MemoryEntry | null;
   /** 关系遍历 (图扩展的基础)。 */
   traverse(fromId: string, relationType: string): MemoryEntry[];
@@ -227,6 +229,10 @@ export interface RetrievalCapabilities {
   multiProcess: boolean;
 }
 
+/**
+ * 检索目的分层 (inject/recall) 与 always-on 预算分仓
+ * .agents/notes/implemented/architecture/2026-09-11-retrieval-purpose-and-alwayson-budget.md
+ */
 export interface RetrievalRequest {
   /** 当前任务文本 (用户最近一条消息 / 会话首条)。 */
   text?: string;
@@ -234,11 +240,11 @@ export interface RetrievalRequest {
    * 检索目的: "inject" (默认) 或 "recall"。
    *
    * 为什么要分开: 规则保底通道对**注入**是对的 (跨项目不变量必须永远在场, 见 ADR-006),
-   * 但同一个语义被"显式搜索/面板浏览/意图召回"复用后, 前几条永远是那几条规则 ——
+   * 但同一个语义被"显式搜索/面板浏览/意图召回"复用后, 前几条永远是那几条规则 
    * 规则通道不受覆盖率过滤, 通道权重 1.5 + boost 0.5, 数学上碾压所有字面命中。
    * 规则本来就已由 always-on 通道单独注入, 在这些路径再垫一遍纯属重复占位。
    *
-   * "recall" 语义: 关掉规则保底通道与相应 boost, 只按相关性排 ——
+   * "recall" 语义: 关掉规则保底通道与相应 boost, 只按相关性排 
    * 调用方要回答的是"哪条记忆最相关"。仍可显式传 channels.rules.enabled 覆盖。
    */
   purpose?: "inject" | "recall";
@@ -246,12 +252,12 @@ export interface RetrievalRequest {
    * 覆盖率词表的严格度: "precision" (默认) 或 "candidate"。
    *
    * 为什么需要分开 (2026-09-17 实测, 一次真实的回归): 查询侧的覆盖率词表剔除了虚词与
-   * 单字碎片 (见 kernel/function-words.ts), 这对**给模型看的结果**是对的 —— 实测
+   * 单字碎片 (见 kernel/function-words.ts), 这对**给模型看的结果**是对的  实测
    * "如何用 Rust 写一个 WebSocket 服务器" 在一条完全无关的条目上得到 cov=0.63, 命中的
    * 全是 用/写/一个 这类词。但同一套门槛也被**写入期的近邻查找**复用 (app/neighbors.ts),
    * 那里要的是"字面沾边就拿来裁决"的召回: 裁决器自己会按 coverage>=0.75 (duplicate) /
    * >=0.5 (supersede) 严格判定。剔除虚词后, 一对真实的同义重述 (上线前做回归测试 /
-   * 部署前跑全量回归校验) 只剩一个共享词, 命中数从 2 掉到 1, 近邻查找直接找不到对方 ——
+   * 部署前跑全量回归校验) 只剩一个共享词, 命中数从 2 掉到 1, 近邻查找直接找不到对方 
    * 语义去重静默失效 (tests/s2/facade-evolution.test.ts 当场变红)。
    *
    * 结论: **读要精度, 写要召回**, 两者不能共用同一个门槛。默认 "precision" 保持读路径的
@@ -265,7 +271,7 @@ export interface RetrievalRequest {
    * **本调用要求项目范围**: 给了它且没有工作区上下文时, `scope:"project"` 的条目一律不可见。
    *
    * ⚠ 为什么需要这个开关 (2026-09-27, 真实缺陷): `projectEntryVisible` 在 **scope 缺失时
-   * 返回 true (全放行)** —— 那是给**面板 / CLI 搜索**用的语义 (它们是管理面, 用户要看全库)。
+   * 返回 true (全放行)**  那是给**面板 / CLI 搜索**用的语义 (它们是管理面, 用户要看全库)。
    * 但 agent 侧检索不能这样: 实测 `memory_search` 不带 scope 时召回 **7/9 条属于别的项目**
    * (HX-OutlookRegister / HX-Jungle / ds-test), 于是"这个项目定了什么"被别的项目的结论回答。
    *
@@ -324,13 +330,13 @@ export interface Clock {
 
 /**
  * 检索预热端口 (可选能力)。异步嵌入器的向量由后台补齐, 宿主可以在**注入前带硬时限**地热身:
- *   await warmup(50) —— 最多等 50ms, 补多少算多少, 永不阻塞对话。
+ *   await warmup(50)  最多等 50ms, 补多少算多少, 永不阻塞对话。
  * 同步引擎 (FTS/本地哈希) 不需要实现它 (没有它 = 已经就绪)。
  */
 export interface RetrievalWarmup {
   /**
    * 在 deadlineMs 内尽量补齐投影; 超时/未就绪都不算失败 (调用方只需知道"尽力了")。
-   * query 用于把"这一轮要查的文本"一起嵌好 —— 否则首轮查询注定没有语义召回。
+   * query 用于把"这一轮要查的文本"一起嵌好  否则首轮查询注定没有语义召回。
    */
   warm(deadlineMs: number, query?: string): Promise<void>;
   /** 是否已就绪 (未就绪时注入结果会带降级说明)。 */
@@ -353,7 +359,7 @@ export interface EpisodeStore {
    * 按 id 批量取原文 (溯源链的最后一跳: 记忆条目 → 产生它的那轮对话)。
    *
    * 为什么必须存在: `MemoryEntry.derivedFrom` 存了 episode id, 但此前没有任何按 id 查询的
-   * 公开路径 —— 于是"这条结论来自哪一轮对话"在产品层不可回答 (盲审 2026-09-18 指出)。
+   * 公开路径  于是"这条结论来自哪一轮对话"在产品层不可回答 (盲审 2026-09-18 指出)。
    * 只提供**批量**形态: 一条记忆天然对应多轮 (user + assistant), 单 id 版本由调用方传单元素数组,
    * 避免同一段逻辑写两遍。找不到的 id 直接缺席返回 (不抛错, 不拿其它内容冒充原话)。
    */
@@ -381,12 +387,16 @@ export interface VerifyReport {
 export interface Rebuildable {
   /** 派生 schema/身份版本 (如 "format2+tokenizer1"); 不符即重建, 不许混用 (ADR-023)。 */
   readonly schemaVersion: string;
-  /** 从真相全量重建派生索引 (T1), 幂等; 返回重建的条目数。 */
+  /** 从真相全量重建派生索引 (T1), 幂等; 返回重建的条目数。 
+   * .agents/notes/implemented/architecture/2026-09-10-truth-in-files-and-tiered-rebuild.md
+   */
   rebuildFromTruth(): Awaitable<number>;
-  /** 一致性自检 (索引 ↔ 真相)。 */
+  /** 一致性自检 (索引 ↔ 真相)。 
+   * .agents/notes/implemented/architecture/2026-09-29-decision-port-foundation.md
+   */
   verify(): Awaitable<VerifyReport>;
 }
-// 引擎侧端口 (嵌入 / 向量索引 / 派生索引同步面) 拆到 ports-engines.ts ——
+// 引擎侧端口 (嵌入 / 向量索引 / 派生索引同步面) 拆到 ports-engines.ts 
 // 它们的读者是"要接进来的引擎", 与本文其余端口的读者 (内核编排 / 宿主适配层) 不同。
 // 这里 re-export 以保持既有 import 路径不变 (调用方无需改动)。
 export type {
@@ -396,4 +406,8 @@ export type {
   IndexDoc,
   IndexableSource,
 } from "./ports-engines.ts";
+/**
+ * 四层切面 (Surface / Application / Ports / Engines)
+ * .agents/notes/implemented/architecture/2026-09-10-four-layer-seams.md
+ */
 export { asSyncEmbedder } from "./ports-engines.ts";

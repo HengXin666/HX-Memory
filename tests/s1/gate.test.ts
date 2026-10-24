@@ -1,9 +1,9 @@
 // tests/s1/gate.test.ts — 检索两道闸门的直接契约。
 //
-// 为什么值得直接测: 这两道闸门各自踩过一次坑, 且都**只在中文真实数据上才暴露** ——
+// 为什么值得直接测: 这两道闸门各自踩过一次坑, 且都**只在中文真实数据上才暴露** 
 //   ① 弃权闸门用">= 3 字才算具体词"的判据, 而中文短语几乎全是 2 字, 于是 `specific` 恒为空、
 //      闸门在中文上整体失效 (实测 "量子退相干实验装置校准" 对真库返回了 5 条无关记忆);
-//   ② 规则保底通道的条目 (rules) 因正文不含查询词而被判"无支持", 导致**整份结果被清空** ——
+//   ② 规则保底通道的条目 (rules) 因正文不含查询词而被判"无支持", 导致**整份结果被清空** 
 //      而规则是"必须永远在场"的一类, 它们的在场不该由当前查询的相关性决定。
 // 间接测试 (paraphrase-recall / abstention 用例) 都没覆盖到这两条, 所以这里直接断言判据本身。
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import {
   ABSTAIN_REASON,
   qualifiesCandidate,
   shouldAbstain,
+  qualifiesForRead,
 } from "../../src/retrieval/gate.ts";
 import type { MemoryEntry } from "../../src/kernel/types.ts";
 
@@ -119,5 +120,44 @@ describe("弃权闸门", () => {
 
   it("弃权原因可审计 (不是空字符串)", () => {
     expect(ABSTAIN_REASON).toContain("abstain:");
+  });
+});
+
+// ---- 2026-10-05: 转录类条目的读取加严 + 覆盖率分母去重 ----
+//
+// 现场 (用户实测报的): 一次探针查询 "工具调用 测试 哪些工具可用" 返回前排是
+// `[context] "hi / 你熟悉一下，看看怎么调用这个工具"`  零信息量的用户原话转录。
+// 两个叠加的真缺陷: ①`weighted` 里词重复导致覆盖率分母虚高; ②转录类条目用虚词算覆盖率。
+
+describe("转录类条目的读取资格 (qualifiesForRead)", () => {
+  const bad = "hi\n你熟悉一下，看看怎么调用这个工具，你看看你能调用哪些工具。";
+  const gateTerms = ["工具", "调", "用", "测试", "哪些", "可用"]; // 读路径的真实词表 (keepFunctionWords)
+
+  it("**零信息量的 context 转录不再进读取路径** (现场那句话)", () => {
+    expect(qualifiesForRead("context", bad, gateTerms, gateTerms, 0.15)).toBe(false);
+  });
+
+  it("同一段文本对**非转录类**仍按普通门槛 (不能顺手把知识也拦掉)", () => {
+    // lesson/decision 等是知识, 它们不该被这条加严波及  那是"多召回"而非"精排"的取舍。
+    expect(qualifiesForRead("lesson", bad, gateTerms, gateTerms, 0.15)).toBe(true);
+  });
+
+  it("覆盖率**必须剔除虚词与单字碎片** (否则分母虚高, 浅撞也能过关)", () => {
+    // 上面 gateTerms 的 6 个词里, 真正有区分度的只有 工具/测试/可用 三个。
+    // 若用原表算: bad 命中 工具+用 ⇒ 2/6 = 0.33, 恰好越过 0.34 之下的一档;
+    // 若用剔虚词后的表: 命中 工具 ⇒ 1/3 = 0.33  但分母小反而更严格地暴露"只沾了一个词"。
+    // 关键断言是上面的 false: 它证明剔虚词这条路真的改变了结论。
+    expect(qualifiesForRead("context", bad, gateTerms, gateTerms, 0.15)).toBe(false);
+  });
+
+  it("真正在讲同一件事的 context **仍然放行** (加严不是过滤)", () => {
+    const good = "工具调用测试: 逐个试 glob/grep/read/bash 这些工具, 记录哪些可用。";
+    expect(qualifiesForRead("context", good, gateTerms, gateTerms, 0.15)).toBe(true);
+  });
+
+  it("单字查询**退回原词表** (剔虚词后为空时不短路)", () => {
+    // "卡" 这类单字查询: 没有"更有区分度"的词可选, 必须用原表判定 
+    // 否则所有单字查询都会命中"无词"分支而被放行。
+    expect(qualifiesForRead("context", "网卡配置", ["卡"], ["卡"], 0.15)).toBe(true);
   });
 });

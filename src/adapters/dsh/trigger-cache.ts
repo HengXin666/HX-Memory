@@ -11,6 +11,8 @@
 //      先扣掉 always-on 已占预算, 剩下的给意图通道, 避免两条通道互相挤占。
 import type { MemoryEntry } from "../../kernel/types.ts";
 import { estimateTokens } from "../../kernel/ranking.ts";
+// 形状闸门 (未完成的祈使句不自动注入); 判据与 always-on 那道同源, 见 kernel/completion-shape。
+import { looksUnfinished } from "../../kernel/completion-shape.ts";
 import type { MemoryFacade } from "../../app/facade.ts";
 import type { TriggerDecision } from "../../trigger/policy.ts";
 import {
@@ -30,12 +32,12 @@ export interface TriggerCacheDeps {
    * always-on 的**条数上限** (默认 3)。
    *
    * 为什么默认收到 3 (2026-09-29, 用户实测 "太多无用上下文"): 真实首轮注入 9 条 / 581 token,
-   * 其中 41% 是包装。token 闸只管总长度, 管不住"9 条平铺各自占用注意力" —— 而保底通道的
+   * 其中 41% 是包装。token 闸只管总长度, 管不住"9 条平铺各自占用注意力"  而保底通道的
    * 目的是**不变量**, 不是"把库里所有规则都倒出来"。留 3 条的取法是"分最高的 3 条"
    * (selectAlwaysOnDetailed 已按分数降序 + id tiebreak 排好), 被挡的会进 blocked 报告,
    * 面板可解释"为什么只注入了这几条"。设 0 表示不限制 (恢复旧行为)。
    *
-   * 可以是**函数**: 面板改设置后不需要重启 (与 autoEvolve/episodeRetentionDays 同一约定 ——
+   * 可以是**函数**: 面板改设置后不需要重启 (与 autoEvolve/episodeRetentionDays 同一约定 
    * 本项目实测过"只读一次快照 ⇒ 改了不生效"这类缺陷)。
    */
   maxEntries?: number | (() => number);
@@ -59,7 +61,7 @@ type CacheKey = string;
 
 /**
  * 缓存键: 有链用链 (链决定可见集合), 无链用单值项目键。
- * 链用 NUL 编码 (见 kernel/project-lineage 的 encodeLineage) —— 可打印分隔符会碰撞。
+ * 链用 NUL 编码 (见 kernel/project-lineage 的 encodeLineage)  可打印分隔符会碰撞。
  */
 function scopeKey(scope?: ProjectScope): CacheKey {
   if (!scope) return "";
@@ -67,10 +69,14 @@ function scopeKey(scope?: ProjectScope): CacheKey {
   return scope.project ?? "";
 }
 
+/**
+ * always-on 的项目隔离 (兜底通道此前丢掉了 project)
+ * .agents/notes/implemented/bug-fix/2026-09-15-alwayson-project-isolation.md
+ */
 export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
   const budget = deps.budgetTokens ?? 400;
   // 0 视为"不限制" (与"不传"不同: 它显式要求恢复旧行为, 便于用户与测试对照)。
-  // 0 视为"不限制" —— 每次求值 (面板改动当轮生效)。
+  // 0 视为"不限制"  每次求值 (面板改动当轮生效)。
   const maxEntriesNow = (): number | undefined => {
     const raw = deps.maxEntries === undefined ? 3 : typeof deps.maxEntries === "function" ? deps.maxEntries() : deps.maxEntries;
     return raw > 0 ? raw : undefined;
@@ -79,11 +85,11 @@ export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
   //
   // 为什么必须分开 (真实缺陷): 此前只有一对 cache/cachedRevision, 且失效判据是
   // "写版本号变了"。同一版本里第一个来热身的项目会把**它自己项目的**always-on 灌进去,
-  // 之后所有项目都直接命中这份缓存 —— 于是 A 项目的私有决策被注入给 B 项目, 直到某次写入
+  // 之后所有项目都直接命中这份缓存  于是 A 项目的私有决策被注入给 B 项目, 直到某次写入
   // 把版本号顶掉才重算 (实测: 8 个项目的条目混在同一次注入里)。
   // 版本号仍然必要 (变了才重算), 但它是**每个项目各自**的失效依据。
   // 缓存里同时记**当时的条数上限**: 它是选取的输入之一, 不进键的话"面板改了条数"会命中旧缓存,
-  // 表现是"改了不生效" —— 正是本仓反复踩过的那类静默缺陷 (见 deps.maxEntries 的说明)。
+  // 表现是"改了不生效"  正是本仓反复踩过的那类静默缺陷 (见 deps.maxEntries 的说明)。
   const caches = new Map<CacheKey, { entries: MemoryEntry[]; revision: number; maxEntries?: number }>();
   const inflight = new Map<CacheKey, Promise<void>>();
   const keyOf = (scope?: ProjectScopeArg): CacheKey => scopeKey(normalizeScopeArg(scope));
@@ -128,7 +134,7 @@ export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
       const entry = caches.get(keyOf(scopeArg))?.entries ?? [];
       const out = new Map<string, MemoryEntry>();
       for (const e of entry) out.set(e.id, e);
-      // ⚠ 2026-09-18 修复: 此前用 **content.length (字符数) + 8** 当 token 数 —— 量纲不一致。
+      // ⚠ 2026-09-18 修复: 此前用 **content.length (字符数) + 8** 当 token 数  量纲不一致。
       // 而 decision.budgetTokens 是 **token 预算**, 两者相减没有意义。
       // 实测该错误使剩余预算被**低估约 10%** (字符 364 vs token 331), 虽方向保守 (偏小),
       // 但它与下游 recall 的 tokenBudget 单位不同 ⇒ 两处口径分叉 (本项目反复强调的坑)。
@@ -139,9 +145,13 @@ export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
         // 意图召回**必须**带工作区范围 (祖先链优先, 老调用点退化为单值)。
         //
         // 为什么必须在这里修 (真实缺陷): 这条路径此前完全不带 scope, 于是意图通道
-        // 召回的是**全库**条目 —— always-on 通道辛苦做的项目隔离, 被紧跟着的召回
+        // 召回的是**全库**条目  always-on 通道辛苦做的项目隔离, 被紧跟着的召回
         // 原样漏掉; 症状是"父工程的记忆看不见"与"别的项目的记忆却混进来"同时消失
         // 在半隔离的表象下。范围参数在这里的作用是让两个通道口径一致。
+        /**
+         * memory_search 跨项目泄露 (agent 侧检索缺省必须"不给")
+         * .agents/notes/implemented/bug-fix/2026-09-27-memory-search-cross-project-leak.md
+         */
         const ranged: { project?: string; lineage?: readonly string[] } = {
           ...(scope?.project ? { project: scope.project } : {}),
           ...(scope?.lineage?.length ? { lineage: scope.lineage } : {}),
@@ -153,6 +163,17 @@ export function createTriggerCache(deps: TriggerCacheDeps): TriggerCache {
           tokenBudget: intentsBudget,
           ...(Object.keys(ranged).length ? { scope: ranged } : {}),
         }).hits) {
+          // ⚠ 2026-10-06 新增形状闸门: **形状上是「还没办的祈使句」的条目不自动注入**。
+          //
+          // 为什么闸门必须也设在这里 (实测归因, 见 docs/memory-failure-audit-20261006.md 第五节):
+          // 真库 1187 条 active 里, 含祈使/未完成语气且无收尾断言的条目被**自动注入过 171 次**;
+          // 逐条回溯它们的通道  **它们全部来自这一支 (意图召回)**, 一条都不来自 always-on
+          // (保底通道实际只选得出跨项目规则与 agent 偏好)。因此只在 always-on 设闸门等于没修。
+          //
+          // 与 always-on 那道闸门同源同判据 (kernel/completion-shape 的 looksUnfinished);
+          // 差别只在**代价**: 这里被挡掉的东西, 模型仍可用 memory_search 显式取回 
+          // 而"每轮被自动塞一句已经作废的指令"没有这个退路, 它每轮都在把模型往旧任务上拽。
+          if (looksUnfinished(hit.entry.content)) continue;
           out.set(hit.entry.id, hit.entry);
         }
       }

@@ -1,6 +1,6 @@
 // tests/s2/review-projection.test.ts — 人审面的两条投影 + gateway 出口 (人审必须看得见依据)。
 //
-// 为什么钉在这里: 提议行只回一个 covers 计数时, "该不该确认"无法回答 —— 判断依据是被
+// 为什么钉在这里: 提议行只回一个 covers 计数时, "该不该确认"无法回答  判断依据是被
 // 概括的那几条原文。这条契约跨三处 (队列行 → 投影 → 面板), 前两处是纯逻辑, 在这里断言;
 // 面板渲染由 tsc -p tsconfig.client.json + build:client 门禁覆盖。
 import { describe, expect, it } from "vitest";

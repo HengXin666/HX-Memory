@@ -1,13 +1,13 @@
 // src/capture/review-queue.ts — 捕获侧的**待审队列**: 可疑落盘的候选先进这里, 由人决定去留。
 //
-// 为什么需要它 (2026-09-18 独立盲审指出 + 我方证实): 捕获路径此前**没有任何撤回前置机制** ——
+// 为什么需要它 (2026-09-18 独立盲审指出 + 我方证实): 捕获路径此前**没有任何撤回前置机制** 
 // 结构化器读出什么就直接 active 落盘。后果可量化: 真库里自动捕获通道 55 条被人工撤回 **28 条 (51%)**,
 // 而工具通道 (memory_save) 110 条仅撤回 2 条 (2%)。净结论: **自动通道精确率约 60%**。
-// 撤回是人在事后一条条做的, 而那本可以更早发生 —— 把"直接落盘"改成"可疑的先待审",
+// 撤回是人在事后一条条做的, 而那本可以更早发生  把"直接落盘"改成"可疑的先待审",
 // 是把人的工作从"事后清理"前移到"事前裁决"。
 //
 // 判据 (三条, 全部来自实测的"低可信落盘"特征):
-//   1. 无结论: 结构化器没读出 conclusion, 条目内容只能是原文转录 —— 那正是"用户原话被当记忆"。
+//   1. 无结论: 结构化器没读出 conclusion, 条目内容只能是原文转录  那正是"用户原话被当记忆"。
 //   2. 与原文字符重合度过高 (>0.9): 说明没有任何提炼, 只是把用户那句搬了过来。
 //   3. 不含来自 answer 的具体标识符: 结论没有引用任何本轮产出的具体东西 (路径/端口/文件名),
 //      说明它可能只是复述了问题。
@@ -41,7 +41,7 @@ export interface CaptureReviewItem {
   project?: string;
   session: string;
   /**
-   * 该轮对应的 episode id (**保留溯源** —— 待审条目也能接进证据链)。
+   * 该轮对应的 episode id (**保留溯源**  待审条目也能接进证据链)。
    *
    * 为什么必须记: 待审的意义是"交给人裁决", 而人裁决时需要能追到原话判断真伪。
    * 若不记, accept 后这条记忆的 source 只能是 `panel:captureReview` 这类无信息的值,
@@ -75,7 +75,7 @@ export function reviewReasons(input: {
   /**
    * 本轮是否走过**可提炼实现** (默认 true)。
    *
-   * 为 false 时"无结论"是**能力缺失** (heuristic 兜底 / LLM 调用失败回退), 不是可疑 ——
+   * 为 false 时"无结论"是**能力缺失** (heuristic 兜底 / LLM 调用失败回退), 不是可疑 
    * 此时不该产出 no-conclusion 这条原因 (否则无 LLM 环境的候选会全部进队列)。
    */
   expectConclusion?: boolean;
@@ -86,10 +86,10 @@ export function reviewReasons(input: {
 
   // 能力缺失时**整体跳过**可信度检查 (2026-09-18 实测修复)。
   //
-  // 此前 expectConclusion 只守住了"无结论"这一条判据, 另两条**不受它管** ——
+  // 此前 expectConclusion 只守住了"无结论"这一条判据, 另两条**不受它管** 
   // 而它们在没有提炼能力时同样会误触发: 启发式兜底让 content 退回原文, 于是
   // "结论与用户原文重合 >90%" 对**每一条**都成立。实测真实库重放: 无 LLM 环境下
-  // 424 轮里有 **83 条**被误推进待审队列 (而落盘只有 11 条) —— 队列被灌满,
+  // 424 轮里有 **83 条**被误推进待审队列 (而落盘只有 11 条)  队列被灌满,
   // 人审界面变成垃圾场, 机制反而制造了它本想消灭的噪声。
   //
   // 判据: 可信度检查的前提是"系统**有能力**提炼"。没有能力时, 任何一条判据的触发
@@ -103,7 +103,7 @@ export function reviewReasons(input: {
   } else {
     // 与原文重合度过高: 说明没有提炼。
     //
-    // ⚠ 2026-09-18 自查修复: 原实现用"逐字符看在较长串里是否出现"算重合 ——
+    // ⚠ 2026-09-18 自查修复: 原实现用"逐字符看在较长串里是否出现"算重合 
     // **完全忽略顺序与重复次数**, 于是 "abcde" vs "edcba" (同字乱序) 与
     // "aaaaaa" vs "a" (重复字) 都被判成 100% 重合 (实测确认)。
     // 后果: 一份**乱序复述**或**单字重复**的结论会被误判成"无提炼"而进待审。
@@ -116,7 +116,7 @@ export function reviewReasons(input: {
     if (a.length > 0 && b.length > 0) {
       const lcsRatio = lcs(a, b) / Math.min(a.length, b.length);
       const lenRatio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
-      // 长度比 < 0.5 时不判"无提炼" —— 那是"结论比原文短很多", 正是提炼的结果。
+      // 长度比 < 0.5 时不判"无提炼"  那是"结论比原文短很多", 正是提炼的结果。
       const overlap = lenRatio < 0.5 ? 0 : lcsRatio;
       if (overlap > 0.9) {
         reasons.push("high-overlap: 结论与用户原文重合 " + (overlap * 100).toFixed(0) + "% (>90%), 无提炼");
@@ -126,17 +126,17 @@ export function reviewReasons(input: {
     const answer = input.answer;
     const specifics: string[] = [];
     // ⚠ **2026-10-05 修 (真实缺陷, 误杀率实测 133/139)**: 交替分支里 `js` 排在 `json`
-    // **前面**, 于是正则先命中 `js` 就把 `.json` 截成 `.js` ——
+    // **前面**, 于是正则先命中 `js` 就把 `.json` 截成 `.js` 
     //   实测 "见 /openapi.json 与 users.json" ⇒ specifics = ["/openapi.js", "/users.js"]
     // 而结论里写的是 `openapi.json` / `users.json`, 永远匹配不上那个被截断的 token ⇒
-    // 判 `uncited`。真库 139 条待审里 133 条是这个原因, 全部 `pending` (0 条被裁决过) ——
+    // 判 `uncited`。真库 139 条待审里 133 条是这个原因, 全部 `pending` (0 条被裁决过) 
     // 也就是说这条判据实际上把待审队列变成了垃圾场。
     // 修法: 长扩展名排在短之前 (json → js / tsx → ts / yaml|yml → ...), 让交替分支先试长的。
     for (const m of answer.match(/[\w./-]+\.(?:tsx|ts|mjs|cjs|js|py|go|rs|json|md|yaml|yml|sql)/gi) ?? []) specifics.push(m);
     for (const m of answer.match(/\b\d{2,5}\b/g) ?? []) specifics.push(m);
     // 判据要**同时**看两处: 结论里也可能出现 answer 没有的路径 (那是结论自己补的上下文,
-    // 不是"没引用") —— 因此只在"answer 有具体标识符**且结论一个都没沾到**"时才可疑。
-    // 另一半是根因: 中文结论常写"管理端自带 OpenAPI" 而 answer 写 `/openapi.json` ——
+    // 不是"没引用")  因此只在"answer 有具体标识符**且结论一个都没沾到**"时才可疑。
+    // 另一半是根因: 中文结论常写"管理端自带 OpenAPI" 而 answer 写 `/openapi.json` 
     // 字面对不上不是"没引用", 而是**中英混写**。因此同时接受"结论含 answer 里的某个词根"。
     if (specifics.length >= 2) {
       const lower = conclusion.toLowerCase();
@@ -163,7 +163,7 @@ export function readCaptureReview(root: string): CaptureReviewItem[] {
     try {
       out.push(JSON.parse(line) as CaptureReviewItem);
     } catch {
-      // 坏行跳过 —— 一行坏数据不该让整份队列不可读。
+      // 坏行跳过  一行坏数据不该让整份队列不可读。
     }
   }
   return out;
@@ -172,7 +172,7 @@ export function readCaptureReview(root: string): CaptureReviewItem[] {
 /**
  * 更新一条待审项的裁决状态 (接受 / 丢弃)。
  *
- * 为什么用"改状态"而不是"从队列里删掉": 与项目的治理价值观一致 ——
+ * 为什么用"改状态"而不是"从队列里删掉": 与项目的治理价值观一致 
  * **不删除**: 裁决记录本身是可审计的 (谁在什么时候把什么候选接受/丢弃了)。
  * 且队列是追加写的真相文件, 直接删行会让"这条候选存在过"这件事失去痕迹。
  *

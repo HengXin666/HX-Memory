@@ -77,6 +77,10 @@ describe("LinearVectorIndex", () => {
       { id: "a", content: "容器并发要显式设上限" },
       { id: "b", content: "并发相关但话题不同的一句话" },
     ];
+    /**
+     * 用 ANN 引擎替换内存线性向量索引
+     * .agents/notes/proposed/architecture/2026-09-10-proposed-ann-vector-engine.md
+     */
     const loose = new LinearVectorIndex({ embedder: new HashingEmbedder(), floor: 0.05 });
     loose.upsert(entries);
     expect(loose.search("并发", 5).length).toBeGreaterThan(0);

@@ -99,6 +99,8 @@ function bearerToken(req: IncomingMessage): string {
 /**
  * 分发一条 JSON-RPC 消息。返回 null 表示"这是通知 / 不该有响应"。
  * 结构非法的条目只影响自己, 不让整批失败。
+ 
+ * .agents/notes/implemented/architecture/2026-09-10-p0-p2-hardening.md
  */
 async function dispatchItem(facade: MemoryFacade, item: unknown): Promise<JsonRpcResponse | null> {
   if (

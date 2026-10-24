@@ -89,13 +89,15 @@ describe("Binder (确定性注入)", () => {
     const injected = binder.injectFor("proj-web", "容器");
     expect(injected).toContain("【rules】");
     // 2026-09: 行首的 `[id] ` 句柄已去掉 (实测几乎从未被模型用过, 却占条目正文 46% 的字符)。
-    // 2026-09-27: 行首改为 **kind 标记** `[rule]` —— 与 `[id]` 不同性质:
+    // 2026-09-27: 行首改为 **kind 标记** `[rule]`  与 `[id]` 不同性质:
     // 它给的是"这条例子的效力等级"(框架句承诺"标记为 rule 的是已确认跨项目约束"),
     // 而不是给机器的句柄。二者形态也不同 (kind 名 vs 16 进制 id), 不会互相误认。
-    // 2026-09-29: 行尾的 `<!--hx-memory:id=…-->` 也移出了正文 (9 条约省 88 token) ——
+    // 2026-09-29: 行尾的 `<!--hx-memory:id=…-->` 也移出了正文 (9 条约省 88 token) 
     // id 现在随**消息 source** 走 (prestep 写入, 见 kernel/injection-format 头注)。
     // 因此这里的正文只剩 kind + 内容; 去重判据改由 source.entryIds 承载, 行为不变。
-    expect(injected).toContain("- [rule] 所有容器都要显式设计并发上限");
+    // 2026-10-06: 行首再加 `[YYYY-MM-DD] ` 日期前缀  没有它, 一条四周前的 bug 陈述与
+    // 今天刚踩的坑在模型眼里逐字同形 (用户实测指控, 见 docs/memory-failure-audit-20261006.md)。
+    expect(injected).toMatch(/- \[rule\] \[\d{4}-\d{2}-\d{2}\] 所有容器都要显式设计并发上限/);
     expect(injected, "正文里不该再有 id 标记").not.toContain("hx-memory:id=");
   });
 });

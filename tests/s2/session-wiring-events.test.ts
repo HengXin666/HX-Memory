@@ -1,7 +1,7 @@
 // tests/s2/session-wiring-events.test.ts — 会话登记的事件名契约 (0.2.0 真实故障的防线)。
 //
 // 为什么有它 (2026-10-05 实测): 宿主 dsh 0.2.0-rc.2 里 `agent/session-start` **不存在**
-// (全树 grep 0 命中), 而 cordis 的 `ctx.on` 对未知事件名**静默不报错** ——
+// (全树 grep 0 命中), 而 cordis 的 `ctx.on` 对未知事件名**静默不报错** 
 // 于是整条会话登记链路哑掉而插件表面完全正常。后果链 (逐条实测):
 //   · runtime.lastSessionId/lastProject/lastLineage 恒 undefined;
 //   · memory_search 的 scopeRequired 拿不到 scope ⇒ 0 条命中 (带 scope 5 条);
@@ -60,7 +60,7 @@ describe("会话开始事件名 (0.2.0 兼容)", () => {
 
   it("**注册顺序不破坏既有调用方**: 自检不另注册 pre-step 监听器", () => {
     // 实测教训: 我第一版把自检写成独立的 ctx.on("agent/pre-step"), 它插到 handlers[0],
-    // 于是几个按 `[0]` 取注入处理器的测试立刻红 —— 顺序依赖是真实存在的契约。
+    // 于是几个按 `[0]` 取注入处理器的测试立刻红  顺序依赖是真实存在的契约。
     const ctx = fakeCtx();
     const runtime = fakeRuntime();
     wireSessionLifecycle({

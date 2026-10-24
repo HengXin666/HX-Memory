@@ -50,7 +50,7 @@ export interface EpisodeExtractor {
 
 /**
  * 默认抽取器: 复用捕获引擎的确定性规则。
- * 因为产出 id 由内容指纹决定, 所以"用同一个抽取器重放"天然幂等 —— 这是重建可反复执行的前提。
+ * 因为产出 id 由内容指纹决定, 所以"用同一个抽取器重放"天然幂等  这是重建可反复执行的前提。
  */
 export function captureExtractor(opts: CaptureOptions = {}): EpisodeExtractor {
   const run = (
@@ -217,6 +217,10 @@ export class RebuildService {
       return report;
     }
     const before = (await this.store.all()).length;
+    /**
+     * 真相在文件 + 分级重建 (T1/T2) + 索引身份
+     * .agents/notes/implemented/architecture/2026-09-10-truth-in-files-and-tiered-rebuild.md
+     */
     const rebuilt = await rebuildable.rebuildFromTruth();
     report.scanned = before;
     report.created = rebuilt;

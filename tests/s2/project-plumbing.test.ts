@@ -37,7 +37,7 @@ describe("projectOfSession / projectKeyOfCwd", () => {
     expect(projectKeyOfCwd("/home/me/code/api/", git, new Map())).toBe("api");
   });
 
-  it("git 仓库取仓库根目录名 —— monorepo 子包与仓库根得到同一个键", () => {
+  it("git 仓库取仓库根目录名  monorepo 子包与仓库根得到同一个键", () => {
     // 同一个 git root 下的任意子目录都该落成同一个项目键 (否则记忆按子包碎片化)。
     const git = () => "/home/me/code/monorepo\n";
     const cache = new Map<string, string>();

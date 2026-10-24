@@ -1,6 +1,6 @@
 // tests/s2/visibility-parity-all-paths.test.ts — **每条读路径**都必须与 `isLiveEntry` 同口径。
 //
-// 为什么需要它 (2026-09-18, §686/§689): 可见性的**权威定义**只有一处 ——
+// 为什么需要它 (2026-09-18, §686/§689): 可见性的**权威定义**只有一处 
 // `retrieval/lifecycle.ts` 的 `isLiveEntry`: "shadow (人工撤回) / merged (已并入他条) /
 // expired (衰减过期) 都不参与检索"。而实现里**三条读路径各自写了一遍 SQL**:
 //
@@ -11,7 +11,7 @@
 // | `graph-reader.out/incoming()` | 只挡 `shadow` ✗ (§689 修) |
 //
 // 而 `recent()` 那条**早就有契约注释声明了它该做什么** (`gateway.ts` 的
-// "可见性 (shadow/merged/expired 默认隐藏) 与排序口径只有一处 —— 面板不该看到已撤回的条目")。
+// "可见性 (shadow/merged/expired 默认隐藏) 与排序口径只有一处  面板不该看到已撤回的条目")。
 //
 // ⇒ 本测试把"每条路径"都对着**权威函数**断言, 而不是写死一份名单。
 //    将来那条定义改了, 这里**自动跟着改**。

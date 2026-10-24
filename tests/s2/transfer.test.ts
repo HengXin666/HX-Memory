@@ -59,7 +59,7 @@ describe("jsonl 往返", () => {
   it("逐字段无损: 导出再导入到另一个引擎, 条目完全相等", async () => {
     const original = seed("a1");
     const lines = await collect(exportMemory([original], "jsonl"));
-    // 导入到一个**不同的引擎** (内存实现) —— 证明迁移不需要相同后端。
+    // 导入到一个**不同的引擎** (内存实现)  证明迁移不需要相同后端。
     const target = new MemoryBackend();
     const report = await importMemory(
       target,

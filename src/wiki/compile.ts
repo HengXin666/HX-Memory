@@ -5,7 +5,7 @@
 //   成本模型: 有意在写入侧花 Token, 换读取侧的准确率 (一次写入、长期反复读取)。
 //
 // 动作空间 (spec §7): route / create / **reuse** 属于"记到哪里"这一组。
-//   ⚠ 实测教训: 初版只实现了 route+create, 漏了 **reuse** —— 于是 "alice 对花生过敏" 与
+//   ⚠ 实测教训: 初版只实现了 route+create, 漏了 **reuse**  于是 "alice 对花生过敏" 与
 //   "alice 也在做 api-docs" 落到了两张不同的页, 同一实体分裂。那正是条目式的病, 不是 Wiki。
 //   复用判定必须存在, 否则"一主题一页"只是口号 (本文件 findTopicPage 就是这一条的实现)。
 //
@@ -43,7 +43,7 @@ const STRONG_PATTERNS: ReadonlyArray<RegExp> = [
   /\b[A-Z][A-Z0-9]{1,9}\b/g,
 ];
 
-/** 弱主题词: 纯字母词 (人名如 alice 就落在这里 —— 它不是标识符形状, 却常是真正的主体)。 */
+/** 弱主题词: 纯字母词 (人名如 alice 就落在这里  它不是标识符形状, 却常是真正的主体)。 */
 const WEAK_PATTERN = /\b[a-z][a-z]{2,}\b/g;
 
 /** 弱词里的通用词 (它们是句法成分, 不是主题; 不收会让 "the/and/with" 变成页面名)。 */
@@ -68,7 +68,7 @@ export function topicOf(content: string): string {
   // 主题只由**正文**决定: 问句的主语常是"你/怎么/如何", 纳入只会污染主题抽取。
   const hay = content;
   // 候选合并后按**首次出现位置**取, 而不是按词频。
-  // 为什么是位置 (2026-09-18 实测教训): 词频判据会把宾语当主语 ——
+  // 为什么是位置 (2026-09-18 实测教训): 词频判据会把宾语当主语 
   // "user-service 依赖 order-service 的下单接口" 里 order-service 出现更多, 于是整条事实
   // 被并进 order-service 页 (错误合并); 而句首的 user-service 才是这条事实的主体。
   // 位置判据同时照顾了两类词: alice(弱词) 在句首时同样能胜出。
@@ -90,10 +90,10 @@ export function topicOf(content: string): string {
     return positions[0]!.name;
   }
   // 中文主题抽取 (2026-09-18 修复): 此前中文直接落到"整句截断 24 字"兜底, 实测
-  // "缓存过期设为 60 秒" 的页面名就是整句本身 —— 于是同一主题每次写入都新开一页,
+  // "缓存过期设为 60 秒" 的页面名就是整句本身  于是同一主题每次写入都新开一页,
   // 聚合彻底失效 (实测 125 条 → 69 页, 其中 63 页只有 1 条来源 = 91%)。
   // 判据: 取**有区分度的词** (排除虚词; 复用 kernel/function-words 的封闭类词表,
-  // 而不是另造一份 —— 同一类判据在全仓库只应有一处实现)。
+  // 而不是另造一份  同一类判据在全仓库只应有一处实现)。
   // 优先长词 (2-4 字的中文短语比 1 字更有主题性), 用 termStreams 的词流而非 bigram 流。
   const stream = termStreams(hay);
   const cjkWords = stream.words
@@ -108,7 +108,7 @@ export function topicOf(content: string): string {
 
 /**
  * 挑中文主题词: 先按频率, 同频取**更长**者 (长词更有主题性; "缓存过期"优于"缓存")。
- * 稳定性: 频率与长度都相同时按首次出现顺序 —— 同输入必然同主题 (支撑重建幂等)。
+ * 稳定性: 频率与长度都相同时按首次出现顺序  同输入必然同主题 (支撑重建幂等)。
  */
 function mostFrequentByLength(candidates: readonly string[]): string | null {
   if (!candidates.length) return null;
@@ -130,7 +130,7 @@ function mostFrequentByLength(candidates: readonly string[]): string | null {
 
 /**
  * 主题词候选集合 (按强度降序: 强专名在前, 弱词在后)。
- * 复用判定需要**整个集合**而不只是最强的那个 —— 见 findTopicPage 的说明。
+ * 复用判定需要**整个集合**而不只是最强的那个  见 findTopicPage 的说明。
  */
 export function topicCandidates(content: string, question?: string): string[] {
   const hay = question ? question + "\n" + content : content;
@@ -168,7 +168,7 @@ export function route(content: string, cfg: WikiConfig, question?: string): Rout
     }
   }
   // 空 domains 必须走失败路径而不是崩溃 (旧实现用 cfg.domains[0]!.name 的非空断言,
-  // 实测 domains: [] 直接抛 TypeError —— 配置是业务侧输入, 不能让它触发未捕获异常)。
+  // 实测 domains: [] 直接抛 TypeError  配置是业务侧输入, 不能让它触发未捕获异常)。
   const fallback = cfg.domains.some((d) => slug(d.name) === "experiences")
     ? "experiences"
     : cfg.domains[0]
@@ -209,14 +209,14 @@ function hardRuleAddr(content: string, cfg: WikiConfig, question?: string): Rout
  * 主题页复用 (**reuse** 动作): 已有页在讲同一主题就并进去, 不再新开一页。
  *
  * 为什么它是范式的成败点: "一主题一页"要求同一实体收敛到同一处。只做 create 的话,
- * 每次写入都按当前内容的主题词新开页, 同一实体就会分裂成多张近义页 ——
+ * 每次写入都按当前内容的主题词新开页, 同一实体就会分裂成多张近义页 
  * 那恰好退回条目式 (相关性只能靠检索临时重建)。实测初版正是如此:
  * "alice 对花生过敏" 与 "alice 也在做 api-docs" 落到了两张页。
  *
  * 判据用**候选主题词集合**而不是单个主题词: 第二条内容的"最强主题词"是 api-docs (它出现更多),
- * 但 alice 也在集合里, 而 alice 页已存在 —— 用单点匹配必然漏掉这次复用。
+ * 但 alice 也在集合里, 而 alice 页已存在  用单点匹配必然漏掉这次复用。
  *
- * 保守性 (宁可不复用, 也不误并 —— 过度合并会退回单文件式, 是另一个极端):
+ * 保守性 (宁可不复用, 也不误并  过度合并会退回单文件式, 是另一个极端):
  *   · 只按**主题词候选**匹配, 不做模糊语义相似 (那需要 LLM 裁决, 属 Dream);
  *   · 同一候选命中多张页时按**最近更新**取一张, 避免在两张近义页之间反复横跳。
  */
@@ -232,16 +232,16 @@ function findTopicPage(
     const p = readPage(root, meta, now);
     if (!p) continue;
     const pageName = meta.page.toLowerCase();
-    // 1) 页名相同 —— 最强信号 (地址就是主题本身), 无需看正文。
+    // 1) 页名相同  最强信号 (地址就是主题本身), 无需看正文。
     const nameHit = keys.some((k) => pageName === k);
     if (nameHit) {
       hits.push({ page: p, domain: meta.domain, pageName: meta.page, updated: p.updated, how: "page-name" });
       continue;
     }
-    // 2) 正文命中 —— 只认**词边界/整段相等**, 不再是裸子串。
+    // 2) 正文命中  只认**词边界/整段相等**, 不再是裸子串。
     //    裸子串 (旧实现 body.includes(k)) 无 IDF、无边界: 实测 "order-service 的订单表新增 refunded"
     //    与 "user-service 依赖 order-service 的下单接口" 因共享 order-service 而被并成一页,
-    //    而后者 route() 单独判它应去 projects —— 静默污染真值。同理 "a" 会命中任何含 a 的词。
+    //    而后者 route() 单独判它应去 projects  静默污染真值。同理 "a" 会命中任何含 a 的词。
     //    现在的判据: 候选词作为**完整行**出现, 或作为 ASCII 词的边界匹配 / 中文词被标点包围。
     const bodyText = p.sections.map((s) => s.body).join("\n");
     const bodyHit = keys.some((k) => segmentContains(bodyText, k));
@@ -261,7 +261,7 @@ function findTopicPage(
  * 词级包含判定 (有边界, 取代裸子串)。
  *
  * 判据分两类:
- *   · 含非 ASCII (中文等): 用分隔符/标点/行边界包围 —— 不能靠 ^$ 词边界 (中文没有空格);
+ *   · 含非 ASCII (中文等): 用分隔符/标点/行边界包围  不能靠 ^$ 词边界 (中文没有空格);
  *   · 纯 ASCII: 用词边界, 避免 "api" 命中 "rapid"。
  */
 function segmentContains(text: string, key: string): boolean {
@@ -316,7 +316,7 @@ export function compileInto(
   let reusedPage: WikiPage | null = null;
   let action: CompileResult["action"] = "created";
 
-  // 先算路由 —— **小节永远由路由决定**, 这是复用的前提条件 (见下方 A3 说明)。
+  // 先算路由  **小节永远由路由决定**, 这是复用的前提条件 (见下方 A3 说明)。
   const decision = route(input.content, cfg, input.question);
 
   if (hard) {
@@ -326,17 +326,17 @@ export function compileInto(
     // 2) 复用同主题页 (同一实体收敛到一处, 这是"一主题一页"的落地)。
     const found = findTopicPage(root, [topic, ...candidates], at);
     // 跨域复用的守卫 (2026-09-18 盲审发现的静默污染):
-    //   旧实现对**任何**跨域命中都复用, 并把 section 无条件改写为 found 目录的默认小节 ——
+    //   旧实现对**任何**跨域命中都复用, 并把 section 无条件改写为 found 目录的默认小节 
     //   实测 "alice 对花生过敏" → people/alice#禁忌, 再写 "alice 负责的项目上线排期有阻塞"
     //   仍落进 people/alice#禁忌 (而 route() 单独判它应去 projects#目标)。
-    //   项目事实被记进人物页的"禁忌"节 —— 语义错位且无人察觉。
+    //   项目事实被记进人物页的"禁忌"节  语义错位且无人察觉。
     //   现在两条守卫同时生效:
-    //     · 目录不同域时, 只在**页名精确命中** (主题就是这个页) 才复用 —— 正文词面巧合不足以跨域拉人;
+    //     · 目录不同域时, 只在**页名精确命中** (主题就是这个页) 才复用  正文词面巧合不足以跨域拉人;
     //     · section **一律取路由结果**, 不再用 defaultSection 覆盖。
     // 守卫必须用**主主题**(topic)而不是任意候选词: 候选集合里含次要实体, 用它做跨域复用会让
     // "user-service 依赖 order-service 的接口" 被并进 order-service 页 (实测)。
     // 现在: 同域可复用; 跨域则要求**该页的页名恰好等于本条的主主题**(即这条就是在讲这张页)。
-    // 唯一判据: **该页的页名恰好等于本条的主主题** —— 即这条事实就是在讲这张页。
+    // 唯一判据: **该页的页名恰好等于本条的主主题**  即这条事实就是在讲这张页。
     // 不再用"同域即可复用": 同域里的错误合并同样会污染真值 (实测 user-service 事实被并入
     // 同属 experiences 的 order-service 页)。判据一刀切更可预测, 也更容易被测试钉住。
     const crossDomainSafe = found ? found.pageName.toLowerCase() === topic.toLowerCase() : false;
@@ -375,7 +375,7 @@ export function compileInto(
 /**
  * 小节正文的合并策略: **追加而非覆盖**。
  *
- * 为什么: 同一主题的多条事实是**互补**的 (它们本应聚在一页) —— 覆盖会让后来的挤掉先前的,
+ * 为什么: 同一主题的多条事实是**互补**的 (它们本应聚在一页)  覆盖会让后来的挤掉先前的,
  * 那正是单文件式"删哪条由长度决定"的老毛病。真正的"取代/冲突消解"属于 Dream 的合并决策,
  * 不在确定性编译层做 (本层只保证不丢信息)。
  */
@@ -386,9 +386,9 @@ function mergeBody(before: string, next: string): string {
   // 幂等判据必须是**整段相等**, 不能是单向 includes。
   // 反例 (2026-09-18 盲审实测): 写 "A" → 写 "A\nB" → 再写 "A", 单向 includes 会在
   // 第二次写入时判定 "A\nB".includes("A") 为真而跳过, 于是第三次写入 "A" 时
-  // 正文变成 "A\nA\nB" —— "A" 出现 2 次。原单测只测"连续两次同内容",
+  // 正文变成 "A\nA\nB"  "A" 出现 2 次。原单测只测"连续两次同内容",
   // 那恰好是唯一安全的序列 (测试盲区)。
-  // **行级差量追加**: 整段追加会把它自己携带的"已存在行"再写一遍 ——
+  // **行级差量追加**: 整段追加会把它自己携带的"已存在行"再写一遍 
   // 实测 写"A" → 写"A\nB" 会让正文变成 "A\nA\nB" (第一次已写过的 "A" 被第二段带进来重复)。
   // 现在只并入尚未出现过的行: 既保持"追加而非覆盖"(不丢信息), 又保证幂等(不重复)。
   const lines = new Set(prev.split("\n").map((l) => l.trim()).filter(Boolean));

@@ -26,7 +26,7 @@ export interface FusedHit {
 
 /**
  * Reciprocal Rank Fusion: score = Σ weight / (k + rank)。
- * 好处是只吃排名不吃原始分数 —— 换引擎/换打分函数时融合逻辑不用改。
+ * 好处是只吃排名不吃原始分数  换引擎/换打分函数时融合逻辑不用改。
  */
 export function rrfFuse(lists: readonly RankedList[], k = 60): Map<string, FusedHit> {
   const fused = new Map<string, FusedHit>();
@@ -56,11 +56,44 @@ export const HALF_LIFE_DAYS: Record<MemoryKind, number> = {
   preference: 365,
   decision: 365,
   rule: Number.POSITIVE_INFINITY,
-  // 知识库切片**不衰减** (§795): 它是外部文档的镜像 —— 该不该存在由**源文件**决定,
+  // 知识库切片**不衰减** (§795): 它是外部文档的镜像  该不该存在由**源文件**决定,
   // 而不是"多久没被召回"。若给它半衰期, 一篇没人问过的文档会被衰减到不可见,
   // 那与知识库的用途 (随时可查的参考) 矛盾。
   doc: Number.POSITIVE_INFINITY,
 };
+
+/**
+ * **转录类条目的排序降权** (2026-10-05, 用户实测暴露)。
+ *
+ * ## 为什么需要它
+ *
+ * 真库实测: `context` 有 **561 条 / 占全库 50%**, 平均长度仅 **117 字**, 其中 **142 条 < 40 字**。
+ * 它们的实际内容是"用户的某句话被原样存下来" (捕获兜底路径的产物), 不是知识。
+ * 后果实测 (用户报的现场): 一次探针查询 `"工具调用 测试 哪些工具可用"` 返回前排就是
+ * `[context] "hi / 你熟悉一下，看看怎么调用这个工具"`  词面撞上了, 信息量为零。
+ * 而返回这种东西比返回空更糟: 模型会把"不知道"伪装成"知道" (与弃权闸门同一条理由)。
+ *
+ * ## 为什么是降权而不是过滤
+ *
+ * `context` 里**并非全是垃圾**: 有些是"这一轮在做什么"的有效上下文 (用户当时的需求描述)。
+ * 一律过滤会丢掉它们。而排序降权让**真正的知识** (lesson/decision/rule) 稳定排在它前面 
+ * 那正是"检索要回答的问题"。
+ *
+ * 0.45 的取法: 它让一条 `context` 即便词面完全命中, 也排不过一条正常命中的 lesson
+ * (RRF 同名次时两者 base 相同, 乘 0.45 后掉到下一档)。数值由真库对照标定, 不是拍的 
+ * 见 tests/s1/ranking.test.ts 的分档对照断言。
+ */
+export const TRANSCRIPT_KIND_FACTOR: Readonly<Partial<Record<MemoryKind, number>>> = {
+  // context 是捕获兜底路径的主力产物 (真库 50%)。
+  context: 0.45,
+  // event 同理, 但更短命 (半衰期 7 天), 因此降得更狠  它连"这一轮在做什么"都算不上。
+  event: 0.3,
+};
+
+/** 该 kind 的排序权重系数 (1 = 不降权)。 */
+export function kindFactor(kind: MemoryKind): number {
+  return TRANSCRIPT_KIND_FACTOR[kind] ?? 1;
+}
 
 /** 时间衰减因子 (0..1]; 半衰期 <= 0 或非有限 → 恒为 1 (不衰减)。 */
 export function timeDecayFactor(ageDays: number, halfLifeDays: number): number {
@@ -69,7 +102,9 @@ export function timeDecayFactor(ageDays: number, halfLifeDays: number): number {
   return Math.pow(0.5, age / halfLifeDays);
 }
 
-/** 强化因子: 命中次数越多越"难忘"; 对数增长避免少数条目霸榜。 */
+/** 强化因子: 命中次数越多越"难忘"; 对数增长避免少数条目霸榜。 
+ * .agents/notes/implemented/feature/2026-09-11-memory-feedback-channel.md
+ */
 export function reinforcementFactor(hits: number | undefined): number {
   const n = Number.isFinite(hits) && (hits ?? 0) > 0 ? (hits as number) : 0;
   return 1 + Math.log1p(n) / 4;
@@ -91,6 +126,10 @@ export function compositeScore(input: ScoreInput): number {
   const { entry, now } = input;
   const halfLife = HALF_LIFE_DAYS[entry.kind] ?? 180;
   const baseline = entry.lastHitAt ?? entry.ts.validAt;
+  /**
+   * 拆分 retrieval/hybrid.ts 的收尾逻辑到 assemble.ts
+   * .agents/notes/implemented/simplification/2026-09-12-split-hybrid-assembly.md
+   */
   const ageDays = Math.max(0, (Date.parse(now) - Date.parse(baseline)) / 86_400_000);
   const decay = timeDecayFactor(Number.isFinite(ageDays) ? ageDays : 0, halfLife);
   const importance = clamp01(((entry.importance ?? 5) - 1) / 9);
@@ -112,7 +151,7 @@ export function compositeScore(input: ScoreInput): number {
   // | **[900,3000]** | **0.028** | **0.000** | **−0.028** |
   //
   // **在每个长度区间内它都没有增益, 在长区间反而是负的。** 那个"总增益"完全来自
-  // **跨区间的长度偏置** —— gold 条目系统性更短 (中位 363 vs 全库 602),
+  // **跨区间的长度偏置**  gold 条目系统性更短 (中位 363 vs 全库 602),
   // 所以任何"压低长条目"的改动都会让 R@1 数字变好, **而不代表排序真的更准**。
   //
   // **教训**: 一个统计显著的改进仍可能是**混杂变量**造成的。
@@ -120,6 +159,8 @@ export function compositeScore(input: ScoreInput): number {
   return (
     input.base *
       decay *
+      // 转录类降权 (见 TRANSCRIPT_KIND_FACTOR): 让"用户原话转录"排在"真知识"之后。
+      kindFactor(entry.kind) *
       importanceFactor *
       confidenceFactor *
       reinforcementFactor(entry.reinforcement) *
@@ -138,7 +179,7 @@ function clamp01(v: number): number {
  * diversity 由调用方给出 (有 embedding 用余弦, 没有就用词集 Jaccard), 因此本函数不依赖向量能力。
  *
  * 关键: 两项必须**先归一到同一量纲**再组合。
- * 原始公式 `lambda*rel - (1-lambda)*sim` 假定 rel 与 sim 都在 0..1 —— 但调用方给的 rel
+ * 原始公式 `lambda*rel - (1-lambda)*sim` 假定 rel 与 sim 都在 0..1  但调用方给的 rel
  * 是 RRF 融合分 (实测量级 0.015~0.023), 而 sim 是 Jaccard/余弦 (0..1)。直接相减会让
  * 多样性项以约 19 倍的量纲压过相关性项 (实测 0.7*0.023 = 0.016 vs 0.3*1.0 = 0.30),
  * 于是 MMR 实际变成"按不相似度排序", 相关性完全失效。
@@ -187,7 +228,7 @@ export function mmrSelect<T>(
 
 /**
  * 词集 Jaccard (输入已是词集)。
- * MMR 去冗余会把"每个候选 × 每个已选"都算一遍 (O(n²)) —— 若每次现算词集,
+ * MMR 去冗余会把"每个候选 × 每个已选"都算一遍 (O(n²))  若每次现算词集,
  * 就会退化成"每对都做两次分词" (实测这是万级检索的主要瓶颈)。
  * 因此调用方必须预计算词集, 这里只做集合运算。
  */
@@ -240,7 +281,7 @@ export interface BudgetResult<T> {
 
 /**
  * 预算裁剪: 先保 reserved 组 (组内按输入顺序), 再用剩余预算按输入顺序填充其余。
- * 顺序即优先级 —— 调用方应先按分数排序再进来。
+ * 顺序即优先级  调用方应先按分数排序再进来。
  */
 export function applyTokenBudget<T>(
   items: readonly BudgetItem<T>[],

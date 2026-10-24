@@ -3,11 +3,11 @@
 // 为什么需要这一层: DSH 0.1.2-rc.1 移除了 `Session.events` 访问器 (改为
 // `eventAt(seq)` / `snapshotEvents()` / `ownEvents()`, 第一方 dsh-agent-instructions 也
 // 改成按 `session.surface.nodes` 遍历), 而 0.1.1-rc.2 只有 `events`。直接读
-// `session.events` 会在目标版本上静默拿到 undefined —— 去重失效、AI 调用读不到输出,
+// `session.events` 会在目标版本上静默拿到 undefined  去重失效、AI 调用读不到输出,
 // 且编译期完全看不见 (devDeps 里没有 dsh-session)。因此这里做一次能力探测。
 //
 // 另一个必要性: 模型可见的是 surface, 不是完整日志。compaction 会遮蔽 (shadow) 被替换
-// 的区间 —— 这些事件仍在日志里但已不在 surface 上。按日志判断"注入过"会导致模型看不见
+// 的区间  这些事件仍在日志里但已不在 surface 上。按日志判断"注入过"会导致模型看不见
 // 记忆却永远不再注入, 所以可见性过滤必须按 surface.nodes。
 
 export interface SessionEventLike {

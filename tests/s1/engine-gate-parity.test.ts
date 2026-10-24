@@ -11,7 +11,7 @@
 // 而"非法 status 被接受"的后果具体: `isLiveEntry` 对**无法识别的状态**返回 `true`
 // ⇒ 那条记忆**既不是有效状态, 也不会被任何过滤挡住** (既无效又过滤不掉)。
 //
-// ⇒ 本测试的判据不是"写死该拒绝哪些", 而是**两引擎对同一输入必须给出同一答案** ——
+// ⇒ 本测试的判据不是"写死该拒绝哪些", 而是**两引擎对同一输入必须给出同一答案** 
 // 将来 `normalizeEntry` 加了新校验, 这里自动覆盖 (因为两个引擎都走它)。
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";

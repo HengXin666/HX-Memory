@@ -1,6 +1,6 @@
 // src/kernel/ports-engines.ts — 引擎侧端口 (嵌入 / 向量索引 / 派生索引同步面)。
 //
-// 为什么从 ports.ts 拆出 (2026-09-18): 这三组契约与"存储/检索/会话"那批端口的**读者不同** ——
+// 为什么从 ports.ts 拆出 (2026-09-18): 这三组契约与"存储/检索/会话"那批端口的**读者不同** 
 // 它们的实现者是要接进来的引擎 (嵌入模型、ANN 索引、FTS 引擎), 而 ports.ts 的读者是
 // 内核编排与宿主适配层。按读者拆文件后, 换引擎的人不必在读端口时翻过一堆无关契约。
 //
@@ -12,6 +12,8 @@ import type { Awaitable } from "./ports.ts";
  * 嵌入端口 (ADR-023 的向量侧): 把文本映射成定长向量, 用于语义相似/语义去重/向量召回。
  * 为什么先定义端口再谈引擎: 换模型 = 换一个实现 + 全量重嵌 (T3), 而不是改业务代码;
  * 索引侧必须记录 embedding 身份 (modelId + dim), 不符即重建。
+ 
+ * .agents/notes/implemented/architecture/2026-09-10-semantic-retrieval-three-layers.md
  */
 export interface Embedder {
   /** 身份串 (如 "lexical-v1" / "bge-m3@1024"): 进索引身份, 防止混用两种向量。 */
@@ -21,14 +23,14 @@ export interface Embedder {
   embed(texts: readonly string[]): Awaitable<number[][]>;
   /**
    * 推荐的余弦下限 (**由各嵌入器按自己的分数分布标定**)。
-   * 为什么必须由嵌入器声明: 不同模型的相似度尺度完全不同 —— 词汇级嵌入的同义改写约 0.2-0.5,
+   * 为什么必须由嵌入器声明: 不同模型的相似度尺度完全不同  词汇级嵌入的同义改写约 0.2-0.5,
    * 而真语义模型同一对可能 0.7+; 用一个全局阈值必然有一边失效 (实测过)。
    */
   readonly floor?: number;
 }
 
 /**
- * 同步嵌入面。预步注入 (agent/pre-step) 是同步判定点, 不能等 IO ——
+ * 同步嵌入面。预步注入 (agent/pre-step) 是同步判定点, 不能等 IO 
  * 本地实现 (哈希袋/常驻 ONNX) 可以直接满足它; 远端 API 类嵌入器做不到,
  * 那种情况走投影 (RetrieverProjection): 后台刷新向量, 预步读缓存 (见 architecture-v2 §3.3)。
  */
@@ -45,7 +47,7 @@ export function asSyncEmbedder(embedder: Embedder): SyncEmbedder | null {
 /**
  * 向量索引端口 (ADR-023 的向量侧): 近邻检索必须能"换引擎 + 全量重建"。
  * 默认实现是内存线性扫描 (LinearVectorIndex, 见 src/retrieval/vector.ts);
- * 规模上来后换成 sqlite-vec / LanceDB / Qdrant —— 只实现这个端口, 检索层不改。
+ * 规模上来后换成 sqlite-vec / LanceDB / Qdrant  只实现这个端口, 检索层不改。
  * 身份 (embedderId/dim) 必须进索引: 换模型就得重建, 不许混用 (HippoRAG 的 index_manifest 同款)。
  */
 export interface VectorIndex {

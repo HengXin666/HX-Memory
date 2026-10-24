@@ -1,7 +1,7 @@
 // tests/s2/entity-index.test.ts — S2: 实体倒排 (索引侧的兜底抽取 + 反查 + 旧库回填)。
 //
 // 为什么这一层必须单独钉住: 实体反查的**收益全在"旧条目也能被反查到"**。
-// 兜底抽取器上线前入库的条目 entities 字段是空的 —— 若回填漏了, 反查对它们永远空转,
+// 兜底抽取器上线前入库的条目 entities 字段是空的  若回填漏了, 反查对它们永远空转,
 // 而这件事**不会报错**, 只会静默少召回 (同一个坑在 FTS 回填上已经踩过一次)。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";

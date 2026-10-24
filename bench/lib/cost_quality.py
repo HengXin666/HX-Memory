@@ -1,7 +1,7 @@
 # bench/lib/cost_quality.py — 每个系统的"质量 vs token 成本"前沿。
 #
 # 动机: 全上下文基线实测只需 16.5k tokens (80 条语料), 也就是说在当前规模下
-# 检索的**必要性**来自成本与延迟, 不是"能不能答对"。既然如此, 只报质量是不完整的 ——
+# 检索的**必要性**来自成本与延迟, 不是"能不能答对"。既然如此, 只报质量是不完整的 
 # 必须同时报每次查询实际注入多少 token。
 #
 # 用法: python3 bench/lib/cost_quality.py --runs FILE [--runs FILE ...]
@@ -50,7 +50,7 @@ def main() -> int:
                   f"{'':>7s} {100*(1-avg_t/full_total):9.1f}%")
     print()
     print("读法: 质量列见 score.py 的表。把两张表并排看才能回答")
-    print("      '这个系统多花/少花了多少 token, 换来了多少质量' ——")
+    print("      '这个系统多花/少花了多少 token, 换来了多少质量' ")
     print("      在语料小到全塞得下时, token 效率本身就是主要卖点。")
     return 0
 

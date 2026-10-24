@@ -1,7 +1,7 @@
 // bench/runners/hxmem.ts — 被测系统: 本仓库 (HX-Memory), 可切换通道组合。
 //
 // 为什么要跑多个变体: 单看"混合检索的分"无法回答"是哪个通道在起作用"。
-// 变体矩阵把每个通道的边际贡献暴露出来 —— 本项目就是靠它发现"图扩展逐位无差别"
+// 变体矩阵把每个通道的边际贡献暴露出来  本项目就是靠它发现"图扩展逐位无差别"
 // 与"接入真语义反而显著变差"的。
 //
 // 用法:
@@ -78,6 +78,10 @@ async function main(): Promise<number> {
               model: process.env.HX_MEMORY_EMBEDDING_MODEL ?? "bge-small-zh-v1.5",
               dim: Number(process.env.HX_MEMORY_EMBEDDING_DIM ?? 512),
             });
+    /**
+     * 融合权重按通道作用标定 + MMR 两项归一到同量纲
+     * .agents/notes/implemented/bug-fix/2026-09-12-fusion-weights-and-mmr-scale.md
+     */
     const stack = openMemoryStack(root, {
       episodeRetentionDays: 0,
       ...(embedder ? { embedder } : { embedder: null }),

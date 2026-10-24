@@ -29,7 +29,7 @@ interface ClientContext {
    * 读一个服务 (无则 undefined)。
    *
    * 为什么不用 ctx.settingsScope 的属性访问: cordis 的上下文代理对"没在 inject 里声明的
-   * 服务"直接抛错 —— 而本插件不该为了可选卡片强制依赖宿主 settings 插件, 卡片缺席时
+   * 服务"直接抛错  而本插件不该为了可选卡片强制依赖宿主 settings 插件, 卡片缺席时
    * 其余面板 (绑定/审阅) 必须照常工作。
    */
   get(name: string): unknown;
@@ -79,7 +79,7 @@ export function apply(ctx: ClientContext): void {
   }, "hxMemory.reviewStyles()");
   const { rpc } = ctx.get("connection") as { rpc: HxMemoryRpcCaller };
   // 两个面板都带 {var} 插值 (部分文案形如 "{n} 个绑定"): 绑定页原先漏了这一步,
-  // 结果把 "{n}" 原样显示给用户 —— 由渲染冒烟测试抓出来。
+  // 结果把 "{n}" 原样显示给用户  由渲染冒烟测试抓出来。
   const tBind = (key: keyof typeof bindingEn, vars?: Record<string, unknown>) => {
     const raw = ctx.locale.bind(BIND_NS)(String(key)) || String(key);
     if (!vars) return raw;

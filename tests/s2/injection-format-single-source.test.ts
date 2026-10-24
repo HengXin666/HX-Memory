@@ -11,8 +11,8 @@
 // ## 2026-09-29: 判据从"两处格式相同"改成"两条出口各自正确"
 //
 // 现在注入块与检索结果**刻意不同** (见 `formatEntryLine` / `formatHitLine` 的说明):
-//   · **被动注入** (`formatEntryLine`): 无 id —— id 走消息 `source.entryIds`, 省 88 token/块;
-//   · **主动检索** (`formatRetrieval` → `formatHitLine`): **带 id** —— `memory_flag` 按 id 操作。
+//   · **被动注入** (`formatEntryLine`): 无 id  id 走消息 `source.entryIds`, 省 88 token/块;
+//   · **主动检索** (`formatRetrieval` → `formatHitLine`): **带 id**  `memory_flag` 按 id 操作。
 //
 // 因此原来的"两处行格式逐字一致"断言不再成立 (它锁的是一个已废弃的形态)。本文件改为锁
 // **两条出口各自的判据**, 并保留那条负例 (证明解析器能区分"看起来像 id"与"可解析的标记")。
@@ -70,12 +70,12 @@ describe("两条出口的形态差异是**刻意**的, 且不能反向漂移", (
     const inject = formatEntryLine("x1", "同一段内容", "rule");
     const hit = formatHitLine("x1", "同一段内容", "rule");
     expect(inject).toBe("- [rule] 同一段内容");
-    // 命中行 = 注入行在 kind 之后插入 `[id] ` —— 差别只有这一处。
+    // 命中行 = 注入行在 kind 之后插入 `[id] `  差别只有这一处。
     expect(hit).toBe("- [rule] [x1] 同一段内容");
     expect(hit.replace("[x1] ", "")).toBe(inject);
   });
 
-  it("### 负例: 行首裸 id 的旧格式解析不出 id —— 那是这个缺陷的形态", () => {
+  it("### 负例: 行首裸 id 的旧格式解析不出 id  那是这个缺陷的形态", () => {
     // 刻意构造修复前的形态, 证明判据能区分"看起来像 id"与"可解析的标记"。
     const legacy = "【相关记忆】\n- [规则] [r00155cdb954e41c7] 记忆触发须设无条件保底注入通道";
     expect(parseInjectedIds(legacy)).toEqual([]);

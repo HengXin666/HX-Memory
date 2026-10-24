@@ -1,10 +1,10 @@
 // tests/s2/adjudicator-conflict-scope.test.ts — 裁决器的取代必须建立在"真冲突"之上。
 //
 // 为什么需要它 (2026-09-18): 裁决器的取代条件是"同 kind + **冲突** + 更晚 + 置信度不低"。
-// 而"冲突"用的是 `hardConflict` —— 它此前**只看数字差异/极性, 没有"是否同一件事"这一环**,
+// 而"冲突"用的是 `hardConflict`  它此前**只看数字差异/极性, 没有"是否同一件事"这一环**,
 // 于是**任意两条含数字的记忆**都能满足"冲突" ⇒ 后写入的那条会取代先写入的 (旧条目转 shadow, 默认查不到)。
 //
-// 修 `hardConflict` (§194) 后, 这个缺陷**自动消失** (两者共用同一判据) ——
+// 修 `hardConflict` (§194) 后, 这个缺陷**自动消失** (两者共用同一判据) 
 // 本文件把这条传导关系钉住: 若将来有人把裁决器的冲突判据换成别的实现, 这些断言会失败。
 import { describe, expect, it } from "vitest";
 import { heuristicAdjudicator } from "../../src/evolution/adjudicator.ts";

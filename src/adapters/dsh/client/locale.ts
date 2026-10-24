@@ -1,6 +1,6 @@
 // src/adapters/dsh/client/locale.ts — review / bindings 面板文案。
 //
-// 约定: 两个字典的键必须完全一致 —— bindingZh/reviewZh 显式标注为
+// 约定: 两个字典的键必须完全一致  bindingZh/reviewZh 显式标注为
 // typeof bindingEn / typeof reviewEn, 少一个键就是编译错误, 不会漏到运行时
 // 变成界面上的一条英文/空字符串。
 
@@ -85,7 +85,7 @@ export const reviewEn = {
   running: "Running…",
   batchDone: "batch done: {n} proposal(s)",
   covers: "covers {n} instance(s)",
-  // 人审展开: 提议只给一句抽象规则, 判断依据是它概括的原文 —— 必须能就地看到。
+  // 人审展开: 提议只给一句抽象规则, 判断依据是它概括的原文  必须能就地看到。
   expand: "Show sources",
   collapse: "Hide sources",
   coversEmpty: "The covered entries are no longer in the store (withdrawn or rebuilt).",
@@ -309,7 +309,7 @@ export const reviewZh: Locale = {
   running: "运行中…",
   batchDone: "批次完成: {n} 条提议",
   covers: "覆盖 {n} 条实例",
-  // 人审展开: 提议只给一句抽象规则, 判断依据是它概括的原文 —— 必须能就地看到。
+  // 人审展开: 提议只给一句抽象规则, 判断依据是它概括的原文  必须能就地看到。
   expand: "看依据",
   collapse: "收起依据",
   coversEmpty: "它覆盖的条目已经不在库里了 (被撤回或重建过)。",
@@ -317,7 +317,7 @@ export const reviewZh: Locale = {
   // 宿主比面板旧 (只重建了插件产物, 没重启宿主): 展开做不到, 且必须说清是哪一侧旧。
   staleHostShort: "重启宿主后才能看依据",
   staleHost:
-    "面板比正在运行的宿主新: 宿主返回的是「覆盖条数」而不是条目 id, 因此看不到依据。重启宿主即可 (它的进程在最近一次构建之前就已经把插件读进内存了) —— 数据没有任何丢失。",
+    "面板比正在运行的宿主新: 宿主返回的是「覆盖条数」而不是条目 id, 因此看不到依据。重启宿主即可 (它的进程在最近一次构建之前就已经把插件读进内存了)  数据没有任何丢失。",
   // 启发式占位草稿: 没有 AI 提炼时它只是"该主题有 N 条实例"的提示, 不能当作规则确认。
   draftBadge: "草稿",
   draftWarn:
@@ -334,7 +334,7 @@ export const reviewZh: Locale = {
   tabInvocations: "调用记录",
   tabFlagged: "标注记录",
   flaggedEmpty:
-    "还没有被 agent 标坏的记忆。这里**空着是好事** —— agent 只在记忆明显不相关或与事实不符时才会标注。",
+    "还没有被 agent 标坏的记忆。这里**空着是好事**  agent 只在记忆明显不相关或与事实不符时才会标注。",
   flaggedTitle: "被 agent 标注为有问题的记忆 (标注会降低排序权重, 内容问题会进入人审队列)",
   flaggedBad: "坏评",
   flaggedExposure: "曝光",
@@ -342,7 +342,7 @@ export const reviewZh: Locale = {
 
   tabInjection: "注入预览",
   injHint:
-    "现在这一轮保底通道会注入什么, 以及哪些本是候选却塞不进预算。规则是用户确认过的不变量、承诺无条件注入 —— 所以被挡的必须显式列出来, 而不是静默失效。",
+    "现在这一轮保底通道会注入什么, 以及哪些本是候选却塞不进预算。规则是用户确认过的不变量、承诺无条件注入  所以被挡的必须显式列出来, 而不是静默失效。",
   injUnavailable: "当前宿主没有挂载注入预览 (适配器较旧)。",
   injPicked: "将会注入",
   injBlocked: "因配额被挡",
@@ -355,7 +355,7 @@ export const reviewZh: Locale = {
   tabSchedule: "注入调度",
   tabCaptureCost: "沉淀耗时",
   schedHint:
-    "每一轮为什么拿到 / 没拿到记忆。每一步判定都落一条到 <root>/schedule/*.jsonl —— 没注入的那几种**故意留着**, 否则你只看得到成功的那些。",
+    "每一轮为什么拿到 / 没拿到记忆。每一步判定都落一条到 <root>/schedule/*.jsonl  没注入的那几种**故意留着**, 否则你只看得到成功的那些。",
   schedUnavailable: "当前宿主没有挂载调度账本 (适配器较旧, 或账本被关掉了)。",
   schedEmpty: "还没有预步判定记录。会话真正开始注入时就会写进来。",
   schedTitle: "会话 (最近的在前)",
@@ -384,7 +384,7 @@ export const reviewZh: Locale = {
   // 捕获耗时账本 ("沉淀花了多久 / 为什么没沉淀")。与注入调度是两条不同的轴。
   captureTitle: "沉淀成本 (它到底把时间花在哪)",
   captureHint:
-    "每一轮完成的对话落一条到 <root>/capture/*.jsonl。捕获对宿主是异步的, 但它与你的对话同进程 —— 所以某一轮「比平时慢」时就该读这个数。注意 totalMs 记的是「捕获在 turn/end 之后又占用了多久」, 不是你的端到端轮次延迟 (宿主没有这个接口)。",
+    "每一轮完成的对话落一条到 <root>/capture/*.jsonl。捕获对宿主是异步的, 但它与你的对话同进程  所以某一轮「比平时慢」时就该读这个数。注意 totalMs 记的是「捕获在 turn/end 之后又占用了多久」, 不是你的端到端轮次延迟 (宿主没有这个接口)。",
   captureUnavailable: "当前宿主没有挂载捕获耗时账本 (适配器较旧, 或账本被关掉了)。",
   captureEmpty: "还没有记录到任何完成的轮次。",
   captureSize: "磁盘上 {files} 个文件 · {records} 条记录",
@@ -497,11 +497,11 @@ export const filesZh: FilesLocale = {
 
 export const cardZh: CardLocale = {
   title: "记忆注入",
-  desc: "常驻记忆条目 (跨项目规则/关键事实) 什么时候进上下文。注入过的块会一直留在上下文里 —— 每轮再发一遍只是把同几条重复一遍, 还白烧预算。",
+  desc: "常驻记忆条目 (跨项目规则/关键事实) 什么时候进上下文。注入过的块会一直留在上下文里  每轮再发一遍只是把同几条重复一遍, 还白烧预算。",
   modeFirst: "只在首轮注入",
   modeEveryTurn: "每轮注入 (差量)",
   modeFirstHint:
-    "会话开始时注入一次, 之后不再自动注入。后续轮次仍可随时调用 memory_search 按需检索 —— 工具一直在。",
+    "会话开始时注入一次, 之后不再自动注入。后续轮次仍可随时调用 memory_search 按需检索  工具一直在。",
   modeEveryTurnHint:
     "每轮都注入, 但只补「本会话上下文里还没有的」条目 (差量)。会话中途的回忆型提问仍能自动拿到具体历史。",
   saved: "已保存",

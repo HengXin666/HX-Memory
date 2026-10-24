@@ -3,14 +3,14 @@
 // 依据: docs/kinfra-wiki-spec.md §3 (六要素) 与 §9.2 (文件形态)。
 // 一张记忆页的六要素: 目录 / 小节 / 适用范围与来源 / 双向链接 / 时间线与证据入口 / 编辑入口。
 //
-// 与既有 truth-in-files (ADR-002) 的关系: 页面同样是**文件真值** —— git 可 diff、可人读、
+// 与既有 truth-in-files (ADR-002) 的关系: 页面同样是**文件真值**  git 可 diff、可人读、
 // 索引可重建。本文件不引入任何数据库容器。
 //
 // 不变量:
-//   1. 小节是证据与 blame 的最小粒度 —— 每次写入都在**小节**粒度落账 (新增/删除分别记);
-//   2. 双向链接存一次两边可达 —— A→B 的链接写在 A 的「链接」区, 反向由 B 的链接区承载;
-//   3. 页面可整体重写 —— 因此身份由地址决定 (pageId), 不由内容决定;
-//   4. 正文不可伪造结构 —— 正文里形如 "## " 或 "---" 的行必须转义 (同 markdown-codec 的坑)。
+//   1. 小节是证据与 blame 的最小粒度  每次写入都在**小节**粒度落账 (新增/删除分别记);
+//   2. 双向链接存一次两边可达  A→B 的链接写在 A 的「链接」区, 反向由 B 的链接区承载;
+//   3. 页面可整体重写  因此身份由地址决定 (pageId), 不由内容决定;
+//   4. 正文不可伪造结构  正文里形如 "## " 或 "---" 的行必须转义 (同 markdown-codec 的坑)。
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pageId, pagePath, slug, WIKI_DIR, type WikiAddress } from "./address.ts";
@@ -50,13 +50,13 @@ const LINKS_HEADING = "链接";
  * 正文转义: 防止正文伪造页结构。
  *
  * 三类必须挡住 (每一类都对应一个被实测证实的伪造通道):
- *   1. 小节标题 "## " —— 否则一条记忆能在重建后长出假小节;
- *   2. 页边界 "---" —— 否则能伪造 frontmatter;
- *   3. **元数据行** "- 来源: / - 时间线: / - 适用范围: " —— 这是 2026-09-18 盲审发现的通道:
+ *   1. 小节标题 "## "  否则一条记忆能在重建后长出假小节;
+ *   2. 页边界 "---"  否则能伪造 frontmatter;
+ *   3. **元数据行** "- 来源: / - 时间线: / - 适用范围: "  这是 2026-09-18 盲审发现的通道:
  *      解析器把这些行从正文里摘出来当元数据 [page.ts 解析段], 于是正文里写
  *      "- 来源: 伪造证据" 会让 getEvidence 返回并不存在的证据引用, 直接击穿
  *      "摘要不得当原话引用" 这条硬规则 (recall.ts 的 searchDialogue 依赖 sources 可信)。
- *      只转义前两类是不够的 —— 当时的单测也只覆盖了 "## " 那一类 (测试盲区)。
+ *      只转义前两类是不够的  当时的单测也只覆盖了 "## " 那一类 (测试盲区)。
  */
 export function escapeBody(text: string): string {
   return text
@@ -118,8 +118,15 @@ export function renderPage(p: WikiPage): string {
   return head + body.join("\n");
 }
 
-/** Markdown → 页面 (解析失败返回 null; 不做猜测式修复)。 */
+/** Markdown → 页面 (解析失败返回 null; 不做猜测式修复)。 
+ * .agents/notes/proposed/architecture/2026-09-18-wiki-backend-candidate.md
+ * .agents/notes/proposed/architecture/2026-09-20-local-knowledge-base-intake.md
+ */
 export function parsePage(text: string, addr: Pick<WikiAddress, "domain" | "page">, now: string): WikiPage | null {
+  /**
+   * 决策端口地基 — 端口 / 两层回退 / 账本 / 召回闸
+   * .agents/notes/implemented/architecture/2026-09-29-decision-port-foundation.md
+   */
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) return null;
   const fields = new Map<string, string>();
@@ -183,7 +190,7 @@ export function readPage(root: string, addr: Pick<WikiAddress, "domain" | "page"
   return parsePage(readFileSync(file, "utf8"), addr, now);
 }
 
-/** 写入页面 (创建目录; 整体重写该页 —— 页正是"可整体重写的单元")。 */
+/** 写入页面 (创建目录; 整体重写该页  页正是"可整体重写的单元")。 */
 export function writePage(root: string, p: WikiPage): void {
   const file = join(root, pagePath(p));
   mkdirSync(dirname(file), { recursive: true });
@@ -214,7 +221,7 @@ export function listPages(root: string): Array<{ domain: string; page: string; f
 /**
  * 在某页上按**小节**落一次写入账 (新增/改写/退役), 返回新页。
  *
- * 为什么账落在小节而不是页: 小节是证据与 blame 的最小粒度 ——
+ * 为什么账落在小节而不是页: 小节是证据与 blame 的最小粒度 
  * 只有落到小节, "这句话是怎么来的"才回答得了 (spec §6.3)。
  */
 export function applySectionWrite(

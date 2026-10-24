@@ -1,7 +1,7 @@
 // retrieval/vector-projected.ts — 异步嵌入器的"投影"向量索引 (architecture-v2 §3.3 / ADR-025)。
 //
 // 问题: 远端/ONNX 嵌入器是**异步**的, 而预步注入 (agent/pre-step) 的检索判定是同步的。
-// 解法: 投影 —— 向量在后台算好放进内存, 同步检索只读缓存:
+// 解法: 投影  向量在后台算好放进内存, 同步检索只读缓存:
 //   - upsert(docs): 同步登记 + 标记脏 (不阻塞调用方);
 //   - refresh(): 异步把待嵌条目补齐 (宿主在注入前带**硬时限**地 await 它);
 //   - search(query, limit): 同步; 查询向量没缓存时返回空并触发一次后台补算 (下次命中)。
@@ -52,7 +52,7 @@ export class ProjectedVectorIndex implements VectorIndex {
   }
 
   /**
-   * 投影是否就绪。注意必须把"正在补齐"也算未就绪 ——
+   * 投影是否就绪。注意必须把"正在补齐"也算未就绪 
    * 只看 dirty 的话, refresh() 一启动就把队列清空, 会谎报"已就绪" (真实踩过)。
    */
   get ready(): boolean {
@@ -146,7 +146,7 @@ export class ProjectedVectorIndex implements VectorIndex {
         });
       }
     } catch (error) {
-      // 失败: 放回队列 (下次 refresh 再试), 并旁路通知 —— 不抛, 不阻塞检索。
+      // 失败: 放回队列 (下次 refresh 再试), 并旁路通知  不抛, 不阻塞检索。
       this.dirty.push(...pendingIds.filter((id) => this.docs.has(id)));
       for (const query of queries) this.queryPending.add(query);
       this.onError?.(error);

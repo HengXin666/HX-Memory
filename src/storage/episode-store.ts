@@ -1,6 +1,6 @@
 // storage/episode-store.ts — Episode 追加日志 (真相的一部分, ADR-018)。
 //
-// 布局: <root>/episodes/YYYY-MM-DD.jsonl —— 一天一个文件, 一行一个 episode (JSON)。
+// 布局: <root>/episodes/YYYY-MM-DD.jsonl  一天一个文件, 一行一个 episode (JSON)。
 // 为什么是 JSONL 而不是 Markdown: episode 是**机器重放的输入** (T2 抽取重建), 不是给人读的记忆;
 //   人读的那一层是 memory 条目 (Markdown)。JSON 逐行可追加、可流式读、不会与正文冲突。
 // 不变量:
@@ -19,7 +19,7 @@ export const EPISODES_DIR = "episodes";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-// ⚠ **ISO_PATTERN 与 isIso 已不再在此定义** (§707): 它们与 `entry-normalize.ts` 的**逐字相同**——
+// ⚠ **ISO_PATTERN 与 isIso 已不再在此定义** (§707): 它们与 `entry-normalize.ts` 的**逐字相同**
 // 而那条判据有两个使用方 (解析与写入), 分叉会让"写进去的能读出来"这个前提失效。
 // 统一用 `entry-normalize.ts` 的导出 (那是唯一实现, 由 verify-structure 的 SINGLETON_FUNCS 守住)。
 
@@ -29,9 +29,9 @@ export interface EpisodeStoreConfig {
   retentionDays?: number;
 }
 
-// (nowIso 的唯一实现在 entry-normalize.ts —— 见 §707; 此处不再定义副本。)
+// (nowIso 的唯一实现在 entry-normalize.ts  见 §707; 此处不再定义副本。)
 
-// (isIso 已改为从 entry-normalize.ts 导入 —— 见文件头部的说明。)
+// (isIso 已改为从 entry-normalize.ts 导入  见文件头部的说明。)
 
 function episodeId(): string {
   return "ep" + randomUUID().replace(/-/g, "").slice(0, 16);
@@ -104,11 +104,11 @@ export class EpisodeStore implements EpisodeStorePort {
   /**
    * 按 id 批量取原文 (溯源链的最后一跳)。
    *
-   * 实现说明: 复用 all() 后按 id 过滤 —— 日志按天分文件, 没有全局 id 索引; 而 derivedFrom
+   * 实现说明: 复用 all() 后按 id 过滤  日志按天分文件, 没有全局 id 索引; 而 derivedFrom
    * 至多几条, 建索引的收益不抵维护风险 (索引必须与真相一致, 而 episode 是追加写、永不改写、
    * 还会被 retain 清理, 任何索引都要处理跨天追加与 prune)。
    * 返回顺序按 at 升序 (与对话发生顺序一致), 调用方据此还原"用户问→助手答"的次序。
-   * 缺失的 id 静默缺席 —— 原文可能已被保留期清理, 此时**不能**用其它内容顶替。
+   * 缺失的 id 静默缺席  原文可能已被保留期清理, 此时**不能**用其它内容顶替。
    */
   byIds(ids: readonly string[]): Episode[] {
     const want = new Set(ids.filter((x) => typeof x === "string" && x.length > 0));

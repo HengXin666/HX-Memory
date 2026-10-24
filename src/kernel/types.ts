@@ -14,7 +14,7 @@ export type MemoryKind =
    * **本地知识库条目** (2026-09-20, §795): 从外部 Markdown 文档 (如 `ai-docs/`) 按小节切出来的切片。
    *
    * 为什么不复用 `fact`: 保底注入通道 (`always-on`) 的兜底分支会放行**任何** `fact`
-   * —— 于是知识库切片会**冒充"跨项目关键事实"**混进常驻注入 (实测: 一条 34715 字的文档
+   *  于是知识库切片会**冒充"跨项目关键事实"**混进常驻注入 (实测: 一条 34715 字的文档
    * 被预算闸门挡住, 但比预算小的会**挤占保底通道**)。语义上也该分开:
    * 知识库是**可查的参考**, 不是"每条对话都该看见的不变量"。
    */
@@ -108,7 +108,7 @@ export interface MemoryEntry {
   /** 合并来源: 被合并进本条目的旧条目 id (可回溯, 可撤销合并)。 */
   mergedFrom?: string[];
   /**
-   * 负面召回标注 (agent 自评)。**只记坏的**: 好的不记 —— 沉默是默认且期望的状态。
+   * 负面召回标注 (agent 自评)。**只记坏的**: 好的不记  沉默是默认且期望的状态。
    * 逼 agent 对每条召回都表态会造成义务感, 它会为交差而编造评价 (噪声比无信号更糟)。
    * 两类分开计数是因为它们导向不同修法: irrelevant → 调检索/排序权重; wrong → 内容要改写。
    * 质量公式用 bad/reinforcement (后者是曝光分母)。见 kernel/feedback.ts。
@@ -147,7 +147,9 @@ export interface Episode {
 /** Episode 写入入参 (id/at 可缺省)。 */
 export type EpisodeInput = Omit<Episode, "id" | "at"> & { id?: string; at?: string };
 
-/** Store 写入入参: id/ts 可缺省 (由存储层补齐)。 */
+/** Store 写入入参: id/ts 可缺省 (由存储层补齐)。 
+ * .agents/notes/implemented/feature/2026-09-11-lossless-normalize-and-migration.md
+ */
 export type MemoryEntryInput = Omit<MemoryEntry, "id" | "ts"> & {
   id?: string;
   ts?: Partial<Timestamps>;
@@ -186,7 +188,7 @@ export interface GeneralizationProposal {
    *
    * 为什么必须逐条记, 而不是由批次报告的 usedLlm 代替: 报告只描述**最近一次**批次,
    * 而审阅队列是跨批次的 (队列里同时躺着 AI 提炼的提议与更早批次的草稿)。草稿的规则文本
-   * 只是"该主题有 N 条实例"的提示, 不含任何可确认的内容 —— 人审时必须能一眼区分,
+   * 只是"该主题有 N 条实例"的提示, 不含任何可确认的内容  人审时必须能一眼区分,
    * 否则用户面对一整屏形状相同的"经验: … 已沉淀"只能靠猜该不该确认 (实测真实困扰)。
    */
   drafted?: boolean;
@@ -198,8 +200,10 @@ export type ProposalStatus = "proposed" | "confirmed" | "rejected";
  * 一次推广批次的**可观测报告** (面板要回答"这次到底做了什么 / 为什么没效果")。
  *
  * 为什么必须落这份数据: 只回一个 proposed 计数时, 用户看到 "0 条提议" 分不清是
- * "没有候选" / "候选都被已提议覆盖" / "聚类没命中主题" / "AI 抽象降级成草稿" ——
+ * "没有候选" / "候选都被已提议覆盖" / "聚类没命中主题" / "AI 抽象降级成草稿" 
  * 于是只能得出"这个功能没用"的结论。报告把漏斗的每一段暴露出来。
+ 
+ * .agents/notes/implemented/feature/2026-09-11-generalization-observability.md
  */
 export interface GeneralizationRunReport {
   /** 本次批次开始时间 (ISO)。 */

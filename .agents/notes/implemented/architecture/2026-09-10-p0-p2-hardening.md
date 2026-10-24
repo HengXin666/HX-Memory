@@ -2,14 +2,24 @@
 
 Status: implemented
 
+Decision-ID: p0-p2-hardening
+
+## Code
+
+- `src/adapters/dsh/guidance.ts`
+- `src/app/digest.ts`
+- `src/evolution/adjudicator.ts`
+- `src/surfaces/mcp/http.ts`
+- `tests/s1/guidance.test.ts`
+
 ## Problem
 
-一轮实测发现的问题分三档, 共同点是**本地全绿但语义错** —— 这类问题不会被"有没有抛错"的测试抓住:
+一轮实测发现的问题分三档, 共同点是**本地全绿但语义错**  这类问题不会被"有没有抛错"的测试抓住:
 
 **P0 (真 bug)**
 1. **`alwaysOn` 在万级下 120ms**: 它走 `store.all()`, 为每条记忆做 relations + tags 两次子查询并构造完整对象; 而它位于**预步路径**, 每轮都跑。
 2. **跨进程写入对向量通道不可见**: 另一个进程 (CLI / 另一个 host 实例) 写入后, 本进程的 BM25 查得到 (走 SQL)、向量查不到 (内存索引按本地写版本号判定"没变")。
-3. **"命中即强化"只覆盖一条路**: 只有模型主动调 `memory_search` 才强化; **每轮都在跑的确定性注入** (prestep/binder) 一次都不调 —— 主力通道注入的记忆永远不强化、照常衰减, 与设计意图正好相反。
+3. **"命中即强化"只覆盖一条路**: 只有模型主动调 `memory_search` 才强化; **每轮都在跑的确定性注入** (prestep/binder) 一次都不调  主力通道注入的记忆永远不强化、照常衰减, 与设计意图正好相反。
 
 **P1 (可维护性)**: 4 个零引用死导出; `guidance.ts` 的提示词文本无内容断言 (刚改过却测不到); 首次检索要现建向量索引 (10k 条约 160ms 毛刺)。
 
@@ -18,7 +28,7 @@ Status: implemented
 ## Decision
 
 ### P0-1 廉价投影
-`FileBackend.entrySummaries()`: 单条 SQL 取选择所需字段 (**必须含 confirmed_by/confirmed_at** —— 缺了会让所有规则被治理闸门静默过滤, 写这个投影时真踩过)。`FacadeOptions`/FacadeStore 增加可选 `entrySummaries`, `alwaysOn` 优先用它。
+`FileBackend.entrySummaries()`: 单条 SQL 取选择所需字段 (**必须含 confirmed_by/confirmed_at**  缺了会让所有规则被治理闸门静默过滤, 写这个投影时真踩过)。`FacadeOptions`/FacadeStore 增加可选 `entrySummaries`, `alwaysOn` 优先用它。
 实测 10k 条: **147ms → 12.6ms (11.7x)**。
 
 ### P0-2 外部变更检测
@@ -28,7 +38,7 @@ Status: implemented
 `TriggerSource.onInjected?(ids)` 回调: Binder 在两种注入路径 (通用触发通道 + 声明式绑定) 注入后回报 id; DSH 适配器接到 `facade.reinforce` (自带 60s 合并窗口, 失败静默)。
 
 ### P1
-删 4 个死导出; 新增 `tests/s1/guidance.test.ts` (6 项) 把提示词的关键约束变成断言 (自动注入/回忆形状/证据非指令/查不到不要编造); 启动预热 `retriever.warmSync()` —— 放在 DSH 的**启动后台** (`setTimeout 0`) 而不是组装期同步执行, 否则只是把成本从"首次查询"转嫁成"插件加载变慢" (对一次性 CLI 尤其亏)。
+删 4 个死导出; 新增 `tests/s1/guidance.test.ts` (6 项) 把提示词的关键约束变成断言 (自动注入/回忆形状/证据非指令/查不到不要编造); 启动预热 `retriever.warmSync()`  放在 DSH 的**启动后台** (`setTimeout 0`) 而不是组装期同步执行, 否则只是把成本从"首次查询"转嫁成"插件加载变慢" (对一次性 CLI 尤其亏)。
 
 ### P2
 - `src/app/transfer.ts`: jsonl (逐字段无损) + markdown (人可读闭环) 导出/导入; 幂等 (同 id 同内容 → unchanged); rule 缺确认记录被存储闸门拒绝并计入 errors 且不中断整批; CLI `export`/`import` 走 stdout/stdin 可管道。
@@ -37,6 +47,8 @@ Status: implemented
 - `src/surfaces/mcp/http.ts` + CLI `mcp --http`: MCP Streamable HTTP 最小子集 (POST /mcp, GET /health, 404/405, 可选 Bearer token 且鉴权先于路由); 与 stdio 共用 `handleMessage`, 因此换传输语义不变。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **让 `alwaysOn` 直接查 SQL 而不是走 Facade 的投影端口。** 会破坏"Surface/应用层只认端口"的分层铁律, 且把存储细节泄漏到触发层; 用可选端口 + 兜底 `all()` 既拿到性能又保住分层。
 

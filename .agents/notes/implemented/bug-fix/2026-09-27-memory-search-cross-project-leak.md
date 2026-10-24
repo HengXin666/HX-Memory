@@ -2,9 +2,16 @@
 
 Status: implemented
 
+Decision-ID: memory-search-cross-project-leak
+
+## Code
+
+- `src/adapters/codex/cli.ts`
+- `src/adapters/dsh/trigger-cache.ts`
+
 ## Problem
 
-`memory_search` 调用 `facade.recall()` 时**只传 text/limit/tokenBudget, 一个 scope 都没传** ——
+`memory_search` 调用 `facade.recall()` 时**只传 text/limit/tokenBudget, 一个 scope 都没传** 
 它搜的是**全库**。实测 (真库 706 条, 同一句查询):
 
 | 调用形状 | 返回 | 其中别的项目的条目 |
@@ -14,41 +21,43 @@ Status: implemented
 
 后果不是"多召回几条", 而是**把别的项目的私有结论当成当前项目的经验**。
 实测踩坑现场: 用户问"这个项目的目标是什么", 命中的是
-`[context][project][HX-OutlookRegister] 总之目标就是成功协议化注册一个账号` ——
+`[context][project][HX-OutlookRegister] 总之目标就是成功协议化注册一个账号` 
 别的项目的目标条目, 被当成当前项目的答案; 用户当场指出"你为什么读到别的项目的东西去啊"。
 
 **这是同一个缺陷形状在第二个入口的复现。** `adapters/dsh/trigger-cache.ts` 的 `recallFor`
 此前也**完全不带 scope**, 当时的注释已写明"always-on 通道辛苦做的项目隔离, 被紧跟着的召回
-原样漏掉"。那次只修了 `recallFor`, `memory_search` 这处**同形状的漏洞留了下来** ——
+原样漏掉"。那次只修了 `recallFor`, `memory_search` 这处**同形状的漏洞留了下来** 
 正是本仓反复强调的"两个入口口径分叉": 只修一处, 另一处**静默**泄漏 (没有报错, 只是答案来自别处)。
 
 ## Decision
 
 **① agent 侧检索必须显式声明"我要项目范围"。**
 新增 `RetrievalRequest.scopeRequired`; `memory_search` 两条路径 (facade / retriever) 都传它。
-`runtime` 新增 `scope()` 访问器 (项目键 + 祖先链), 经 `MemoryToolDeps.scopeOf` 注入工具层 ——
+`runtime` 新增 `scope()` 访问器 (项目键 + 祖先链), 经 `MemoryToolDeps.scopeOf` 注入工具层 
 形状与 `trigger-cache.recallFor` 的 `ranged` **完全一致**, 两入口同口径。
 
 **② 判据收口到 kernel 的单一函数, 用参数表达两种缺省。**
 `projectEntryVisible(project, scope, { required })`: 没有工作区上下文时,
 `required: true` ⇒ **不可见** (agent 侧), 缺省 ⇒ 放行 (面板/CLI 管理面)。
-这不是把判据写两遍, 而是**同一个判据的两种调用语义** —— 收口仍只有一处。
+这不是把判据写两遍, 而是**同一个判据的两种调用语义**  收口仍只有一处。
 
 **③ 降级路径不能照抄参数名。**
-`store.query({ project })` 的 SQL 是 `project = ?` (index-reader.ts:225) —— 一刀切,
+`store.query({ project })` 的 SQL 是 `project = ?` (index-reader.ts:225)  一刀切,
 会把 **`scope:"global"` 的跨项目规则一起砍掉** (规则行的 project 是空的)。
 而主路径语义只过滤 project-scope 条目、保留 global。两者**同名的两种语义**,
 因此降级路径改为取回候选后**在内存里按同一口径过滤**。
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **改 `projectEntryVisible` 的默认值为"拒绝"。** 否掉: 面板与 CLI 搜索**故意**不传 scope
-(`gateway-memory.ts` 面板搜索、`codex/cli.ts` `search` 命令) —— 它们是管理面, 用户要看全库。
+(`gateway-memory.ts` 面板搜索、`codex/cli.ts` `search` 命令)  它们是管理面, 用户要看全库。
 改默认值会同时打断它们 (实测确认这两个调用点都没有 scope)。两种缺省都要留着, 所以做成显式参数。
 
 **给 `memory_search` 的 schema 加 project 参数让模型自己填。** 否掉:
 工作区是**宿主已知的事实** (runtime 在 session start 就算出来了), 让模型猜/填是把它变成
-一个概率判断 —— 与本仓"读记忆不靠模型自觉"的立项理由直接冲突。
+一个概率判断  与本仓"读记忆不靠模型自觉"的立项理由直接冲突。
 模型漏填就等于回到泄露, 且**没有任何报错**。
 
 **只修 `memory_search`, 不动降级路径。** 否掉: 降级路径 (`deps.store.query`) 是
@@ -77,14 +86,14 @@ Status: implemented
 ## 清理副产物与本篇无关
 
 同批对真实记忆库做了一次人工整理 (撤回 50 条噪声: 3 条崩溃日志/终端转储 + 5 条纯过程记录
-+ 1 条外部工具配置 + 41 条单字回话)。那是**数据操作**, 不是代码改动 —— 走 `applyForget`
++ 1 条外部工具配置 + 41 条单字回话)。那是**数据操作**, 不是代码改动  走 `applyForget`
 写 `status: shadow`, 真相原文保留、可 `revive`, `hx-memory verify` 报 751=751=751 ok。
 详见下方"未解决"。
 
 ## Honest limits (未解决)
 
 **超长条目没有可靠的精炼手段, 这次没动。** 实测: active 总字符 547k 里 **129 条超长条目
-(≥1500 字符) 占 43%**, 而它们**全部没有 `structured.conclusion`** (0/129) ——
+(≥1500 字符) 占 43%**, 而它们**全部没有 `structured.conclusion`** (0/129) 
 即全是启发式兜底存下的**原始转录**, 不是提炼过的记忆。而 `conclusion` 机制本就是为
 "记忆层从转录升为提炼"设计的 (见 `capture/structurer.ts` 头注), 只是这些条目落盘时
 没有可用的结构器。

@@ -3,16 +3,16 @@
 // 真实缺陷 (2026-09-18 实测, 本机真实库 163 条真相条目):
 //   generalizes 边共 **60** 条, 其中 **41** 条挂在 10 个**已撤回**的占位草稿 rule 上
 //   (那 10 条草稿 status=shadow, 09-15 就被人工否掉了)。全图**度数最高的节点正是一条
-//   已撤回的草稿** (10 条边) —— 它被挡住不进注入, 却仍是图里连接度最高的枢纽。
+//   已撤回的草稿** (10 条边)  它被挡住不进注入, 却仍是图里连接度最高的枢纽。
 //
 // 根因: 撤回走 remove() → 真相文件写 `status: shadow` 且**整块保留 relations**,
-// 而 markShadow 只 UPDATE memories —— 索引里那些边一行都没少。
+// 而 markShadow 只 UPDATE memories  索引里那些边一行都没少。
 // 而 traverse 只挡"撤回的**邻居**", 漏了"撤回的**源**":
 //   SELECT ... WHERE r.from_id = ? AND m.status != 'shadow'   ← 只看了 m (邻居)
 // 于是"从一个已被否定的节点继续扩张"在结构上是允许的。
 //
 // 修在读取侧 (不删数据): 撤回的语义是"保留可审计的撤回记录", 真相文件里那条必须留着;
-// 但**从它出发的结构性扩张**在撤回那一刻就该失效 —— 可见性是读取期的性质, 这也让
+// 但**从它出发的结构性扩张**在撤回那一刻就该失效  可见性是读取期的性质, 这也让
 // **存量 41 条残留边**立刻失效, 不必写数据迁移脚本。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -70,7 +70,7 @@ describe("traverse: 撤回的源节点不再扩张 (两个后端同口径)", () 
     mem.add(lesson("i1", "实例一"));
     mem.add(lesson("i2", "实例二"));
     mem.add(rule("rDraft", DRAFT, ["i1", "i2"], "shadow"));
-    // 这就是缺陷本身: 修复前这里返回 [i1, i2] —— 一个已被否定的草稿仍在向外扩张。
+    // 这就是缺陷本身: 修复前这里返回 [i1, i2]  一个已被否定的草稿仍在向外扩张。
     expect(mem.traverse("rDraft", "generalizes")).toEqual([]);
   });
 
@@ -83,7 +83,7 @@ describe("traverse: 撤回的源节点不再扩张 (两个后端同口径)", () 
   it("撤回只挡**源端**扩张; 邻居本身仍作为独立条目存在", () => {
     mem.add(lesson("i1", "实例一"));
     mem.add(rule("rDraft", DRAFT, ["i1"], "shadow"));
-    // 实例没有跟着消失 —— 撤回的是"那条草稿", 不是它指向的内容。
+    // 实例没有跟着消失  撤回的是"那条草稿", 不是它指向的内容。
     expect(mem.query({ kind: "lesson" }).map((e) => e.id)).toEqual(["i1"]);
   });
 

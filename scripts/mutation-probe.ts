@@ -1,6 +1,6 @@
 // scripts/mutation-probe.ts — 变异探针: 检验**测试是否真有防护力**。
 //
-// 为什么需要它 (2026-09-18, §541 用过一次手工版, §653 固化): 一个测试全绿**不等于**它守住了什么 ——
+// 为什么需要它 (2026-09-18, §541 用过一次手工版, §653 固化): 一个测试全绿**不等于**它守住了什么 
 // 断言可能只是"跑过就算过"。唯一能证明防护力的方法是**故意破坏实现, 看它是否变红**。
 //
 // 本脚本把那个手法批量可重复做:
@@ -35,7 +35,7 @@ interface Mutation {
 }
 
 /**
- * 内置清单: 每条都对应一个**我做过的修复** —— 探针守的就是"那个修复不会被悄悄退回去"。
+ * 内置清单: 每条都对应一个**我做过的修复**  探针守的就是"那个修复不会被悄悄退回去"。
  *
  * 为什么绑定"修复"而不是随便挑代码: 随便挑的变异红不红都不说明问题;
  * 而这里每条都曾在真实数据上暴露过缺陷 (§编号在各条注释里), 所以它们**必须**被守住。
@@ -60,7 +60,7 @@ const MUTATIONS: readonly Mutation[] = [
     // formatRetrieval 是**检索结果**出口 (模型主动要的结果, memory_flag 按 id 操作),
     // 它**必须带 id**; 而被动注入块 (`formatEntryLine`) 刻意不带 (id 走消息 source)。
     // 变异体还原**缺陷形态**: 检索结果丢掉 id ⇒ 模型拿到结果却无法引用/标注它。
-    // (§632 的原缺陷"行尾无可解析标记"已不复存在 —— id 现在根本不在正文里了, 判据也随之上移。)
+    // (§632 的原缺陷"行尾无可解析标记"已不复存在  id 现在根本不在正文里了, 判据也随之上移。)
     name: "formatRetrieval 丢掉命中 id (§2026-09-29: 检索结果不可引用, memory_flag 无从下手)",
     file: "src/app/format.ts",
     from: "    lines.push(formatHitLine(e.id, e.content, e.kind));",
@@ -68,10 +68,10 @@ const MUTATIONS: readonly Mutation[] = [
     tests: "tests/s2/injection-format-single-source.test.ts",
   },
   {
-    // ⚠ 2026-09-27: from 串随"kind 白名单与 scope 判据解耦"的修复同步更新 ——
+    // ⚠ 2026-09-27: from 串随"kind 白名单与 scope 判据解耦"的修复同步更新 
     // 那行由 `if (e.project !== opts.project) return false;` 改成 `return e.project === opts.project;`
     // (该分支上面已由 `!isAlwaysOnKind` 挡掉非法 kind, 这里只判可见性)。
-    // 探针的 from 串必须与实现**同步演进**, 否则它会 SKIP 并以非 0 退出 ——
+    // 探针的 from 串必须与实现**同步演进**, 否则它会 SKIP 并以非 0 退出 
     // 而"SKIP 不算通过"正是本探针的纪律 (见文件末尾)。
     name: "always-on 放宽项目隔离 (§含 §579 的实测泄漏: 别的项目的私有记忆被当本项目事实)",
     file: "src/trigger/always-on.ts",
@@ -81,16 +81,16 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     // 2026-09-27 新增 (真实缺陷): memory_search 不带 scope ⇒ 搜全库, 实测 9 条里 7 条属于别的项目。
-    // 变异体还原"agent 侧不声明范围要求"的形态 —— 没有工作区时项目内条目就不再被挡。
+    // 变异体还原"agent 侧不声明范围要求"的形态  没有工作区时项目内条目就不再被挡。
     name: "memory_search 丢掉工作区范围 (§2026-09-27: 跨项目泄露, 实测 9 条里 7 条属别的项目)",
     file: "src/adapters/dsh/tools.ts",
-    // 锚定 facade 分支那一处 (另一处 retriever 分支缩进不同) —— 探针要求 from 恰好唯一匹配。
+    // 锚定 facade 分支那一处 (另一处 retriever 分支缩进不同)  探针要求 from 恰好唯一匹配。
     from: "                scopeRequired: true,\n                ...(Object.keys(ranged).length ? { scope: ranged } : {}),\n              }).hits",
     to: "                scopeRequired: false,\n                ...(Object.keys(ranged).length ? { scope: ranged } : {}),\n              }).hits",
     tests: "tests/s2/memory-search-scope.test.ts",
   },
   {
-    // 2026-09-27: 判据收口到 kernel 后, "agent 侧要求范围"的缺省差异也在这里 —— 变异它等于
+    // 2026-09-27: 判据收口到 kernel 后, "agent 侧要求范围"的缺省差异也在这里  变异它等于
     // 让"不知道工作区"退化成"全都给" (那正是实测过的泄漏形态)。
     name: "projectEntryVisible 缺省退化 (§2026-09-27: 不知道工作区时退化为'全都给')",
     file: "src/kernel/project-lineage.ts",
@@ -101,7 +101,7 @@ const MUTATIONS: readonly Mutation[] = [
   {
     // 2026-09-27 新增 (真实缺陷): kind 白名单与 scope 可见性本是正交的两件事,
     // 而 project 分支此前提前 return 把白名单整个绕过 (实测混进 348 条 lesson)。
-    // 这条变异还原缺陷的**本质** —— "scope 命中即放行, 不再看 kind"。
+    // 这条变异还原缺陷的**本质**  "scope 命中即放行, 不再看 kind"。
     name: "always-on 白名单被 scope 绕过 (§2026-09-27: lineage 命中时 348 条 lesson 混入候选)",
     file: "src/trigger/always-on.ts",
     from: "      if (!isAlwaysOnKind(e.kind)) return false;",
@@ -109,7 +109,7 @@ const MUTATIONS: readonly Mutation[] = [
     tests: "tests/s2/always-on-kind-whitelist.test.ts",
   },
   {
-    // 2026-09-27 新增: 排序缺确定性 tiebreak 时, 结果取决于输入数组顺序 ——
+    // 2026-09-27 新增: 排序缺确定性 tiebreak 时, 结果取决于输入数组顺序 
     // 两个入口 (all() 的文件序 vs entrySummaries() 的 SQL 行序) 会选出**不同集合** (实测 8 vs 9 条)。
     name: "always-on 排序丢掉确定性 tiebreak (§2026-09-27: 结果依赖输入顺序, 两入口口径分叉)",
     file: "src/trigger/always-on.ts",
@@ -228,7 +228,7 @@ for (const m of MUTATIONS) {
     const green = runVitest(m.tests);
     caught = !green;
   } finally {
-    // ⚠ 无论成功失败都必须还原 —— 一个会留下变异的探针会破坏整个工作区。
+    // ⚠ 无论成功失败都必须还原  一个会留下变异的探针会破坏整个工作区。
     if (existsSync(backup)) {
       copyFileSync(backup, abs);
       unlinkSync(backup);
@@ -239,11 +239,11 @@ for (const m of MUTATIONS) {
 }
 
 if (escaped.length) {
-  console.error("mutation-probe: **" + escaped.length + " 个变异逃逸** —— 对应断言没有防护力:");
+  console.error("mutation-probe: **" + escaped.length + " 个变异逃逸**  对应断言没有防护力:");
   for (const e of escaped) console.error("  " + e);
   process.exit(1);
 }
-// ⚠ SKIP **不算通过**: 一个因为"原文串不匹配"而跳过的变异, 它守的东西**根本没有被验证** ——
+// ⚠ SKIP **不算通过**: 一个因为"原文串不匹配"而跳过的变异, 它守的东西**根本没有被验证** 
 // 而报告若把它算进"全部被拦住", 那就是**探针自己在说谎** (比没有探针更糟)。
 const probed = MUTATIONS.length - skipped.length;
 if (skipped.length) {

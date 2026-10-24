@@ -4,7 +4,7 @@
 //   - FTS5 unicode61 把连续汉字当成一个 token: "并发" 查不中 "所有容器都有并发策略问题";
 //   - FTS5 trigram 需要 >= 3 字符: 2 字中文查询 ("并发" / "容器") 恒不命中;
 //   - Intl.Segmenter('zh-Hans') 能切词, 但会把 "连接池" 切成 "连接" + "池", 未登录词无保障。
-// 方案: 双流 —— 词流 (Segmenter, 保精度) + CJK bigram 流 (保召回), 两流分列交给 unicode61,
+// 方案: 双流  词流 (Segmenter, 保精度) + CJK bigram 流 (保召回), 两流分列交给 unicode61,
 //       BM25 给词流更高列权。代价是索引膨胀约 2-3 倍, 换来"任意 2 字中文查询都能命中"的确定性。
 //
 // 不变量:
@@ -129,7 +129,7 @@ export function indexText(text: string): string {
  * 文本 → 词集 (词流 + bigram 流, 去重)。
  *
  * **这是全仓库唯一的"文本 → 词集"实现**。此前 `kernel/ranking.ts`、`trigger/policy.ts`、
- * `evolution/associate.ts` 各写了一份, 而它们分别服务于"去冗余 / 话题漂移 / 去重裁决" ——
+ * `evolution/associate.ts` 各写了一份, 而它们分别服务于"去冗余 / 话题漂移 / 去重裁决" 
  * 口径一旦分叉, 同一对文本在不同环节会得出互相矛盾的相似度, 而这类不一致**不会报错**。
  * 因此统一到本函数: 分词口径只有一处, 改它也只有一个地方要改 (索引侧仍走 termStreams 的分列版本)。
  */
@@ -143,6 +143,10 @@ export function tokenSet(text: string): Set<string> {
 
 /** 一条记忆的可检索文本: 正文 + 摘要 + 要点 + 标签 (标签权重靠后, 由列权体现)。 */
 export function searchableText(entry: MemoryEntry): string {
+  /**
+   * 实体反查 (把 actions/02 的行动项 1 落到检索期)
+   * .agents/notes/implemented/feature/2026-09-13-entity-reverse-lookup.md
+   */
   const parts = [entry.content];
   if (entry.structured) {
     parts.push(entry.structured.summary);

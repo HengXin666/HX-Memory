@@ -1,6 +1,6 @@
 // tests/s2/kb-index.test.ts — 本地知识库 (kind: "doc") 的接线契约。
 //
-// 为什么需要它 (2026-09-20, §795): 知识库条目与记忆条目**共用引擎但不共用语义** ——
+// 为什么需要它 (2026-09-20, §795): 知识库条目与记忆条目**共用引擎但不共用语义** 
 // 它是"外部文档的镜像", 只可查、不进保底注入、不衰减。三条都必须是**断言**, 而不是注释:
 //
 // | 契约 | 若失去它 |
@@ -29,14 +29,18 @@ describe("知识库 kind=doc 的契约", () => {
     expect(HALF_LIFE_DAYS.doc).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it("### 负例: **doc 不进 alwaysOn** —— 而同等条件下的 fact 会进", async () => {
+  it("### 负例: **doc 不进 alwaysOn**  而同等条件下的 fact 会进", async () => {
     const root = mkdtempSync(join(tmpdir(), "kbdoc-"));
     const stack = openMemoryStack(root, { episodeRetentionDays: 0, embedder: null });
     try {
-      // 两条内容相同、scope 相同, **只有 kind 不同** —— 那是唯一的变量。
+      // 两条内容相同、scope 相同, **只有 kind 不同**  那是唯一的变量。
       const body = "同一段正文, 用于隔离 kind 这一个变量";
       stack.store.add({ id: "d1", kind: "doc", scope: "global", source: "kb:x.md", content: body, ts: T } as never);
       stack.store.add({ id: "f1", kind: "fact", scope: "global", source: "session:tool", content: body, ts: T } as never);
+      /**
+       * 保底通道的 kind 白名单被 lineage 绕过 + 排序缺确定性
+       * .agents/notes/implemented/bug-fix/2026-09-27-alwayson-kind-whitelist-and-determinism.md
+       */
       const ao = await stack.facade.alwaysOn({ budgetTokens: 700 });
       const ids = ao.map((e) => e.id);
       expect(ids, "fact 应进保底通道 (对照组)").toContain("f1");

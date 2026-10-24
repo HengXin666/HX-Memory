@@ -6,12 +6,12 @@
 //   项目键取 git root 的目录名, 于是:
 //     在 HX-Memory 里开会话 → 键 "HX-Memory" (31 条)
 //     在 HXLoLis  里开会话 → 键 "HXLoLis"  (46 条)
-//   同一套代码库、同一个人的经验被切成两半, 彼此不可见 —— 这是"抓不住跨项目共通
+//   同一套代码库、同一个人的经验被切成两半, 彼此不可见  这是"抓不住跨项目共通
 //   经验"最具体的一条机制, 而它不会让任何测试变红 (两个键各自都是"正确"的)。
 //
 // 为什么不是"把键改成最外层仓库名" (被否掉的方案):
 //   那样 HXLoLis 下 4 个组件仓库会合并成一个键, HX-Memory 的私有记忆会注入进
-//   HX-Workflows 的对话 —— 那是本项目**已经修过一次**的跨项目泄漏
+//   HX-Workflows 的对话  那是本项目**已经修过一次**的跨项目泄漏
 //   (见 tests/s2/trigger-cache-project.test.ts 的实测记录: 8 个项目的条目混进一次注入)。
 //   合并与隔离都是错的, 因为真实关系既不是"同一个"也不是"无关", 而是**祖先与后代**。
 //
@@ -38,7 +38,7 @@ export type ProjectLineage = readonly string[];
  * 工作区上下文: 项目键 + 祖先链。
  *
  * 定义在 kernel 而不是 adapters: 它是**跨层契约** (捕获写、召回过滤、绑定匹配、面板预填
- * 共用它), 而 kernel 不许依赖 adapters —— 放在 adapter 里会让内核反向依赖外层。
+ * 共用它), 而 kernel 不许依赖 adapters  放在 adapter 里会让内核反向依赖外层。
  */
 export interface ProjectScope {
   project?: string;
@@ -48,7 +48,7 @@ export interface ProjectScope {
 /**
  * 工作区标识的两种写法: 字符串 = 只有项目键 (老调用点, 退化为单值语义);
  * 对象 = 带祖先链 (新调用点, 获得层级可见性)。
- * 两者都接受是为了让既有调用点与既有测试**一字不改** —— 层级能力是叠加的, 不是替换。
+ * 两者都接受是为了让既有调用点与既有测试**一字不改**  层级能力是叠加的, 不是替换。
  */
 export type ProjectScopeArg = string | ProjectScope;
 
@@ -67,8 +67,10 @@ export const LINEAGE_SEP = "\u0000";
  * 一条工作区路径上的**仓库祖先链**, 从最内层到最外层。
  *
  * @param toplevels 当前目录到最外层依次的仓库根 (调用方用 git 解析; 越靠内越先)。
- *   解析不到任何仓库根时传空数组 —— 回退由调用方决定 (目录名), 这里只管层级。
+ *   解析不到任何仓库根时传空数组  回退由调用方决定 (目录名), 这里只管层级。
  * @returns 去重后的仓库名链 (最内层在前); 空输入返回空数组。
+ 
+ * .agents/notes/implemented/architecture/2026-09-18-project-lineage-visibility.md
  */
 export function lineageOfToplevels(toplevels: readonly string[]): string[] {
   const out: string[] = [];
@@ -93,7 +95,7 @@ export function dirNameOf(path: string): string | undefined {
  * 祖先链 → 存储用的**单一项目键** (写路径)。
  *
  * 只写**最内层**仓库名: 存储格式因此完全不变 (老数据仍然可读), 而"谁能看见它"
- * 由读取期的祖先链匹配决定 —— 可见性是读取期的性质, 不该在写入期被固化成一条
+ * 由读取期的祖先链匹配决定  可见性是读取期的性质, 不该在写入期被固化成一条
  * 无法追溯的合成键 (那样老数据的 lineage 无从重建)。
  */
 export function projectKeyOfLineage(lineage: readonly string[]): string | undefined {
@@ -104,7 +106,7 @@ export function projectKeyOfLineage(lineage: readonly string[]): string | undefi
  * 当前工作区的祖先链序列化 (缓存键用; 让"同一祖先链"的会话复用同一份 always-on)。
  *
  * 用 NUL 分隔而不是逗号/斜杠: 项目名里可能含这些字符, 用可打印分隔符会产生
- * "a.b|c" 与 "a|b.c" 这类碰撞 —— 缓存键一碰撞就是跨项目串数据。
+ * "a.b|c" 与 "a|b.c" 这类碰撞  缓存键一碰撞就是跨项目串数据。
  */
 export function encodeLineage(lineage: readonly string[]): string {
   return lineage.join(LINEAGE_SEP);
@@ -131,7 +133,7 @@ export function lineageVisible(
  * 两条祖先链是否**可比** (同一条嵌套线上)。
  *
  * 用于绑定/面板的"这份配置是不是给我这个工作区的":
- * 绑定声明在父工程 (HXLoLis) 时, 子仓库 (HX-Memory) 里也应该命中 ——
+ * 绑定声明在父工程 (HXLoLis) 时, 子仓库 (HX-Memory) 里也应该命中 
  * 否则父工程写下的项目约定对组件内部完全无效, 那正是这次的缺陷。
  */
 export function lineageComparable(a: readonly string[], b: readonly string[]): boolean {
@@ -150,7 +152,7 @@ export function lineageDescendantOf(a: readonly string[], b: readonly string[]):
 /**
  * 检索期的项目内条目**可见性判定** (HybridRetriever.inScope 用的唯一判据)。
  *
- * 抽到这里是为了让调用点只有一行 —— 检索主流程已经把"什么时候查"讲清楚了,
+ * 抽到这里是为了让调用点只有一行  检索主流程已经把"什么时候查"讲清楚了,
  * "谁可见"是另一个职责, 且必须与 selectAlwaysOn/绑定匹配共用同一份实现。
  *
  * @param entryProject 条目的 project
@@ -165,11 +167,11 @@ export function projectEntryVisible(
      * 调用方**要求项目范围** (agent 侧检索): 此时"没有工作区上下文" = **不可见**。
      *
      * ⚠ 为什么需要这个开关 (2026-09-27 实测的真实缺陷): 本函数在 scope 缺失时
-     * 返回 true (全放行) —— 那是**面板 / CLI 搜索**要的语义 (管理面, 用户要看全库)。
+     * 返回 true (全放行)  那是**面板 / CLI 搜索**要的语义 (管理面, 用户要看全库)。
      * 但 agent 侧检索的缺省必须**相反**: `memory_search` 不带 scope 时实测召回
      * **7/9 条属于别的项目** (HX-OutlookRegister / HX-Jungle / ds-test), 于是
      * "这个项目定了什么"被别的项目的结论回答。
-     * 两者都对, 但不能共用一个缺省 —— 因此由调用方**显式声明**, 而不是改这里的默认值
+     * 两者都对, 但不能共用一个缺省  因此由调用方**显式声明**, 而不是改这里的默认值
      * (那会同时打断面板/CLI 的全库浏览)。语义与 `selectAlwaysOn` 一致:
      * 不知道是哪个工作区时, 一条项目内条目都不给, 而不是全都给。
      */

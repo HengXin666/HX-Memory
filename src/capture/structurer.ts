@@ -16,7 +16,7 @@ export interface StructuredTurn {
    * 提炼后的**结论** (决策 / 教训 / 偏好本身)。
    *
    * 为什么它决定 content: 记忆要回答的是"最后定了什么、为什么", 不是"我问了什么"。
-   * 有一层必须说清: 这不是改写历史 —— 原始问答仍逐字留在 episode 日志里 (ADR-018),
+   * 有一层必须说清: 这不是改写历史  原始问答仍逐字留在 episode 日志里 (ADR-018),
    * 条目通过 derivedFrom 指回去, 抽查与重放都不受影响; 变的只是**记忆层**从转录升为提炼。
    * 缺省 (启发式兜底 / AI 失败) 时不产出, content 退回原文, 行为与旧版一致。
    */
@@ -24,11 +24,11 @@ export interface StructuredTurn {
   /**
    * 抽出的**实体** (规范化名): 人/项目/文件/组件/服务等可被复用的专名。
    *
-   * 为什么它必须由抽取层产出: 它决定"结构关联"能不能建起来 ——
+   * 为什么它必须由抽取层产出: 它决定"结构关联"能不能建起来 
    * `planStructuralLinks` 按实体/标签共现建边, 实体为空时图上只剩孤立点。
    * 实测真实库 entities 填充率 **0%**, 正是因为这一层从来没产出过该字段 (它当时都不存在)。
    *
-   * 与 conclusion 的取舍一致: 只有能可靠判断时才产出, 拿不准就留空 ——
+   * 与 conclusion 的取舍一致: 只有能可靠判断时才产出, 拿不准就留空 
    * 垃圾实体会把不相关的记忆连成一团, 比没有边更糟。
    */
   entities?: string[];
@@ -37,10 +37,10 @@ export interface StructuredTurn {
    * **重要性 1..10** (缺省视为中性 5): 影响排序与整合优先级。
    *
    * 与 `entities`/`conclusion` 同一个处置 (§765): 该字段自 ADR 起就声明在 `MemoryEntry` 上,
-   * 而**从未有任何一层产出过它** —— 于是 `compositeScore` 里的 `importanceFactor`
+   * 而**从未有任何一层产出过它**  于是 `compositeScore` 里的 `importanceFactor`
    * 恒为 0.778 (**对所有条目相同, 在排序上不区分任何东西**)。
    *
-   * 为什么必须由抽取层产出: 排序要区分"这条重要吗", 而那需要**读内容**才知道 ——
+   * 为什么必须由抽取层产出: 排序要区分"这条重要吗", 而那需要**读内容**才知道 
    * 写入方 (工具/CLI) 只拿到一段文本, 判断不了。
    */
   importance?: number;
@@ -48,7 +48,7 @@ export interface StructuredTurn {
   /**
    * **置信度 0..1** (缺省 0.7): 低置信条目排序降权, 但不被丢弃。
    *
-   * 与 `importance` 同上 (§765): 从未被产出的后果更具体 ——
+   * 与 `importance` 同上 (§765): 从未被产出的后果更具体 
    * `adjudicator` 里有一条判据 "**候选置信度不低于目标才允许取代**",
    * 而两边都取缺省值 ⇒ 差恒为 0 ⇒ **那条判据从不生效**, 且 `supersede` 的
    * `confidence` 恒为 0.6 (margin 恒 0)。**一个设计好的判据恒不触发**比"字段空着"更值得修。
@@ -61,7 +61,7 @@ export interface TurnStructurer {
    * 这是否是**具备提炼能力**的实现 (能产出 conclusion)。
    *
    * 为什么必须由实现**显式声明** (2026-09-18; 实测代价: 两版推断判据各自导致 42 / 39 个测试失败):
-   * "无结论"有两种成因且处置相反 ——
+   * "无结论"有两种成因且处置相反 
    *   · 能力缺失 (启发式兜底 / LLM 不可用) → 保持原行为 (直接落盘);
    *   · 候选可疑 (LLM 读了但没提炼出来) → 进待审队列。
    * 而这两种情况**从外部无法区分**: 启发式兜底同样返回 summary/tags/points;
@@ -75,7 +75,20 @@ export interface TurnStructurer {
    * input.answer 是**同一个设计的一部分**: 只有问题没有回答时, 结论与理由无从谈起
    * (实测旧路径下 15% 的记忆是疑问句本身)。
    */
-  structure(input: { text: string; answer?: string; project?: string }): Promise<StructuredTurn>;
+  /**
+   * 结构化一轮问答。
+   *
+   * `transcript` 是**被批评时**才有的第二份材料 (2026-10-06, 见 capture/transcript.ts):
+   * 那时 `text` 是判据生成的教训模板, 而"agent 到底做错了什么"只能从**整段对话上下文**里读出来。
+   * 用户原话: "我骂你的时候显然不会直接告诉你答案, 肯定要看你的上下文" /
+   * "要有全量上下文…缓存是基于前缀的"。非负面轮次不传它 (行为与接入前逐字一致)。
+   */
+  structure(input: {
+    text: string;
+    answer?: string;
+    project?: string;
+    transcript?: string;
+  }): Promise<StructuredTurn>;
 }
 
 /** 默认启发式结构化: 不调 AI, 纯规则确定可测。 */
@@ -88,7 +101,7 @@ export function heuristicStructurer(): TurnStructurer {
       const text = input.text.trim();
       const points = text.length > 120 ? splitPoints(text) : [text];
       // 兜底**刻意不产 conclusion / entities**: 规则没法可靠判断"这一轮到底定没定",
-      // 也没法可靠抽出专名。产错比不产更糟 —— 错的实体会把不相干的记忆连成一团。
+      // 也没法可靠抽出专名。产错比不产更糟  错的实体会把不相干的记忆连成一团。
       // 因此没有模型时: content 保持原文, 图上不新增边 (行为与旧版一致)。
       return {
         summary: text.length > 200 ? text.slice(0, 200) + "…" : text,

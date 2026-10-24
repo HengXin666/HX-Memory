@@ -4,13 +4,13 @@
 // 坏评怎么排序、裁剪上限), 而 gateway.ts 已经贴着 400 行上限 (verify-structure 会拦)。
 // 与 gateway-observability.ts 同一个理由, 只是分属不同关注点 (那是账本, 这是人审面)。
 //
-// 关键契约: 投影只做**形状转换与有界裁剪**, 不改变语义 —— 排序口径、阈值判定仍然只有
+// 关键契约: 投影只做**形状转换与有界裁剪**, 不改变语义  排序口径、阈值判定仍然只有
 // 一处 (kernel/feedback.ts 的 qualityFactor/badCount), 这里不复制任何判定逻辑。
 import type { MemoryEntry } from "../../kernel/types.ts";
 import { badCount, qualityFactor } from "../../kernel/feedback.ts";
 import type { QueuedProposal } from "../../generalize/service.ts";
 
-/** 一条被 agent 标注过 (负面) 的记忆 —— 面板展示 "bad / 曝光", 让拖后腿的条目可查。 */
+/** 一条被 agent 标注过 (负面) 的记忆  面板展示 "bad / 曝光", 让拖后腿的条目可查。 */
 export interface FlaggedMemoryView {
   id: string;
   kind: string;
@@ -33,7 +33,7 @@ export interface ReviewEntryView {
   content: string;
   project?: string;
   scope: string;
-  /** active / superseded / merged / expired / shadow —— 撤回过的实例也要如实标注。 */
+  /** active / superseded / merged / expired / shadow  撤回过的实例也要如实标注。 */
   status: string;
   assertedAt: string;
 }
@@ -46,7 +46,7 @@ export interface ReviewQueueView {
    * 这条提议由哪些实例抽象而来。
    *
    * 为什么给 id **列表**而不是计数: 人审的判断对象是"它概括的那几条到底在说什么",
-   * 一个 `covers: 3` 无法回答该不该确认 —— 实测用户看到 "covers 3 instance(s)" 时
+   * 一个 `covers: 3` 无法回答该不该确认  实测用户看到 "covers 3 instance(s)" 时
    * 只能靠猜。id 保留是为了让展示层能追溯到条目本身 (面板再按 id 批量取内容)。
    */
   covers: string[];
@@ -57,7 +57,7 @@ export interface ReviewQueueView {
   suggestedAction: "confirm" | "rewrite" | "reject";
   /**
    * true = 启发式占位草稿 (该簇没走 AI 抽象)。文本形如"经验: <主题> 相关的 N 条实例已沉淀",
-   * 只说明"有一簇经验", 不含可确认的内容 —— 面板必须显式标出"需人工改写", 否则用户面对
+   * 只说明"有一簇经验", 不含可确认的内容  面板必须显式标出"需人工改写", 否则用户面对
    * 一整屏同形状的条目无法判断该点确认还是驳回 (实测真实困扰)。
    */
   drafted: boolean;

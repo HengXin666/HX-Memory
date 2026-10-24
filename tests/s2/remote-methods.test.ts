@@ -18,7 +18,15 @@ function remoteNames(source: string): string[] {
 
 describe("Remote 方法名契约", () => {
   it("gateway 的 @Remote 集合 == HXMEM_REMOTE_METHODS", () => {
+    /**
+     * 人审提议必须能看见依据 (covers 展开 + 草稿标记)
+     * .agents/notes/implemented/feature/2026-09-13-review-evidence-expansion.md
+     */
     const declared = remoteNames(gateway).sort();
+    /**
+     * 远程端点整组 404 — 跨实例的 Typert marker
+     * .agents/notes/implemented/bug-fix/2026-09-14-typert-remote-404-cross-instance.md
+     */
     const listed = [...HXMEM_REMOTE_METHODS].sort();
     expect(declared).toEqual(listed);
   });
@@ -32,7 +40,7 @@ describe("Remote 方法名契约", () => {
   });
 
   it("客户端页面只调用声明过的方法", () => {
-    // 新增面板页签时这里会自动覆盖 —— 用目录列举而不是硬编码文件名: 硬编码的清单
+    // 新增面板页签时这里会自动覆盖  用目录列举而不是硬编码文件名: 硬编码的清单
     // 会让"新加了一个页面"这种最常见的情形恰好逃过检查 (真实缺陷类别)。
     const pages = readdirSync(resolve(root, "src/adapters/dsh/client"))
       .filter((name) => name.endsWith(".tsx"))
@@ -45,7 +53,7 @@ describe("Remote 方法名契约", () => {
         ...source.matchAll(/callHxMemory<[^>]*>\(\s*rpc,\s*"([A-Za-z0-9_$.-]+)"/g),
       ].map((m) => m[1]!);
       // 逐页面断言"调用了就算声明过"; 页面的**数量**不在这里要求 (入口页 index.tsx 不直接
-      // 调 RPC, 它的子页面才调) —— 但全集必须非空, 否则这条契约会退化成空转。
+      // 调 RPC, 它的子页面才调)  但全集必须非空, 否则这条契约会退化成空转。
       for (const call of calls) expect(isHxMemoryRemoteMethod(call)).toBe(true);
       total += calls.length;
     }

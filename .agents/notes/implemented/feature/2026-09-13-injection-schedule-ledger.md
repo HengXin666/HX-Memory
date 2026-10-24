@@ -2,13 +2,21 @@
 
 Status: implemented
 
+Decision-ID: injection-schedule-ledger
+
+## Code
+
+- `src/index.ts`
+- `src/adapters/dsh/index.ts`
+- `src/trigger/policy.ts`
+
 ## Problem
 
 `trigger/policy.ts` 的头注释把设计目标写得很清楚: "每次决策都给出 reason/confidence/budget,
-落进触发日志 —— '为什么没注入' 必须和 '注入了什么' 一样可查"。但**没有任何东西落盘**:
+落进触发日志  '为什么没注入' 必须和 '注入了什么' 一样可查"。但**没有任何东西落盘**:
 
 - `TriggerDecision` 只活在 `Binder` 的私有字段里, `lastTriggerDecision()` 在被引入时就
-  标注为"供测试与可观测读取", 而全仓的调用方只有测试 —— 面板与日志都拿不到;
+  标注为"供测试与可观测读取", 而全仓的调用方只有测试  面板与日志都拿不到;
 - 预步的"没注入"有四种成因 (first 模式已给过 / 差量后没有新条目 / 整块文本判重 / 没有通道可走),
   它们此前在外部**完全不可区分**。用户看到"这轮没注入记忆"时唯一能做的推断是读源码;
 - 结果是这一层的行为只能靠"造一个复现 case 再跑单元测试"来观察。真实的注入行为发生在用户的
@@ -30,7 +38,7 @@ Status: implemented
   「注入调度」tab。没有挂载账本时明确返回 `available:false`, 由面板显示"本宿主没有账本",
   而不是画一个说不清是"没有数据"还是"没接上"的空白。
 - `Binder` 补三个 debug 面 (`lastInjectionChannel`/`lastSelectedIds`/`lastInjectedTokens`),
-  并在"绑定通道一条都没发出去"时也如实记录通道与选中集 —— 否则调用方只能拿到上一次的状态,
+  并在"绑定通道一条都没发出去"时也如实记录通道与选中集  否则调用方只能拿到上一次的状态,
   会把"被差量挡掉"误报成"库里没有"。
 
 组装根 `index.ts` 因此逼近 400 行上限, 顺手把"会话开始注入"整段策略抽到 `session-start.ts`
@@ -38,7 +46,9 @@ Status: implemented
 
 ## Alternatives considered
 
-**做成内存环形缓冲 (像 `InvocationLog`)。** 它更便宜, 也足够面板用 —— 但"为什么昨天那轮没注入"
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
+**做成内存环形缓冲 (像 `InvocationLog`)。** 它更便宜, 也足够面板用  但"为什么昨天那轮没注入"
 是排查类问题, 恰恰发生在进程重启之后, 内存缓冲在那一问上等于零。附加代价是它与"真相在文件"
 这条仓库不变量相冲突。
 
@@ -57,7 +67,7 @@ Status: implemented
 - 换来的: 注入行为第一次**可事后审计**。面板能回答"这个会话注入了几次、哪些被跳过了、为什么、
   各模式占比、花掉多少 token"; `tail -f <root>/schedule/$(date +%F).jsonl` 是同一份数据的 CLI 形态。
 - 付出的: 每步一次文件 append (小追加, 与 MMR/检索成本相比可忽略), 以及一份新的需要保留期管理的
-  真相文件。因此它有自己的开关 (`scheduleLog`) 与保留期设置, 不挂在 `autoCapture` 上 ——
+  真相文件。因此它有自己的开关 (`scheduleLog`) 与保留期设置, 不挂在 `autoCapture` 上 
   两者是不同的事情, 关掉捕获不应连带失去调度观测。
 - `tokens` 是**估算** (与注入预算同一把尺 `kernel/ranking.estimateTokens`), 名字就写着"≈"。
   宿主的实际上下文消耗没有稳定接口, 因此这个数只用来横向比较"哪一轮更贵", 不假装是计量值。
@@ -69,17 +79,17 @@ Status: implemented
 - `tests/s2/schedule-log.test.ts` (10 例): 按天分文件与追加语义 / 坏行跳过 / 单日行数上限 /
   保留期与 0 = 永久 / 按会话聚合 (计数、模式分布、token 求和、last* 取最新) / pre-step 三种落账路径
   (注入 / 没有通道 / first 模式跳过) / 写失败 best-effort (断言不抛且带标志)。
-  其中"写失败"一例刻意不用 `/proc` 这类特殊路径 —— 它在某些内核上会让 `mkdir` 卡住,
+  其中"写失败"一例刻意不用 `/proc` 这类特殊路径  它在某些内核上会让 `mkdir` 卡住,
   把一条单元断言变成挂起 (实测踩到), 改用"root 指向一个文件"这种确定性不可写。
 - `tests/s3/dsh-adapter.test.ts`: 端到端接线 (假 harness 走 pre-step → 账本真的落在磁盘上),
   以及 gateway 缺依赖时 `available:false`。
-- `tests/s2/settings-adoption.test.ts`: 最外层的一条 —— 真的跑 `apply()`, 断言
+- `tests/s2/settings-adoption.test.ts`: 最外层的一条  真的跑 `apply()`, 断言
   `<root>/schedule/*.jsonl` 出现完整记录, 且把 `scheduleLog` 关掉后**不再写新行** (设置当轮生效)。
 - `tests/s2/remote-methods.test.ts`: 客户端页面列举改为目录扫描 (而不是硬编码两个文件名),
-  新页面自动纳入"只许调用声明过的方法"这条契约 —— 硬编码清单恰好会漏掉"新加了一个页面"。
+  新页面自动纳入"只许调用声明过的方法"这条契约  硬编码清单恰好会漏掉"新加了一个页面"。
 - `scripts/smoke-dsh-http.mjs`: 真机断言 `hxMemory/scheduleLog` 的信封与形状
   (空数组是正常结果, `available` 才是契约)。
-- 一条真实的踩坑留在测试里: "不可写路径"不能用 `/proc/...` 构造 —— 它在当前内核上会让
+- 一条真实的踩坑留在测试里: "不可写路径"不能用 `/proc/...` 构造  它在当前内核上会让
   `mkdir` 卡住, 把单元断言变成挂起 (实测), 改用"root 指向一个普通文件"这种确定性不可写。
 - 全量 `vitest run` 686 → 699 用例全绿; `verify-structure` (82 文件) / `verify-docs` /
   `verify-agent-note-format` / `verify-agent-note-classification` / `verify-agent-note-coverage` /

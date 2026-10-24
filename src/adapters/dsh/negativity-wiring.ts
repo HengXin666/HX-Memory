@@ -2,18 +2,18 @@
 //
 // ## 这一层做三件事 (都不是"顺手加的")
 //
-//   1. **把设置里的词表变成可用的判定面** —— 词表是可配置的 (设置项), 而 engine/runtime 都不该
+//   1. **把设置里的词表变成可用的判定面**  词表是可配置的 (设置项), 而 engine/runtime 都不该
 //      知道设置从哪来。这里做解析 + 编译 + 缓存 (编译有成本, 不能每条文本重来)。
-//   2. **可选判官兜底** —— 词表确定但覆盖有限 (用户会换新词)。判官的语义判定能补上,
+//   2. **可选判官兜底**  词表确定但覆盖有限 (用户会换新词)。判官的语义判定能补上,
 //      而它**只在词表未命中时**才被调用 (命中路径零开销)。
-//   3. **命中即注入同类铁律** —— 用户实测的原话: "是不是别人都骂你了, 你为什么不记住这次的
+//   3. **命中即注入同类铁律**  用户实测的原话: "是不是别人都骂你了, 你为什么不记住这次的
 //      教训"。只沉淀不注入等于那条教训要等下一次检索才可能被想起, 而被骂的**当下**正是最该
 //      看见它的时刻。注入的是**已确认规则/本项目 lesson** 里与本次类别同族的那几条。
 //
 // ## 判官在这里的用法与 RecallGate 不同
 //
 // RecallGate 判"候选与输入是否相关"; 这里判"这句话是不是在批评/纠正我"。
-// 两者都遵守同一条纪律: 判官**只能收紧, 不能放宽** —— 它说"是"才补上判定,
+// 两者都遵守同一条纪律: 判官**只能收紧, 不能放宽**  它说"是"才补上判定,
 // 它报错/没把握/熔断时**退回纯词表行为** (词表命中的照常处置, 未命中的照常放过)。
 // 因此判官不可用不会让这条链路消失, 只是少了兜底。
 import type { DecisionPort } from "../../kernel/ports-decision.ts";
@@ -45,7 +45,7 @@ export interface NegativityWiringDeps {
   /** 决策账本 (可选)。 */
   log?: DecisionLog;
   /**
-   * 查"以往同类纠正" (由组装根注入 —— 检索面在 Facade, 而本模块不该依赖它)。
+   * 查"以往同类纠正" (由组装根注入  检索面在 Facade, 而本模块不该依赖它)。
    *
    * 缺省不传 = 只出"当下提示"不出历史 (提示本身仍有效, 只是少了"以前也这样被说过")。
    */
@@ -70,7 +70,7 @@ export interface NegativityWiring {
    * **命中即注入同类铁律** (用户实测诉求: "是不是别人都骂你了, 你为什么不记住这次的教训")。
    *
    * 只沉淀不注入 = 那条教训要等下一次检索才可能被想起; 而被骂的**当下**正是最该看见它的时刻。
-   * 未命中时**同步返回 undefined** (零开销 —— 这是每轮都跑的路径)。
+   * 未命中时**同步返回 undefined** (零开销  这是每轮都跑的路径)。
    */
   hint(text: string): Promise<string | undefined>;
 }
@@ -79,7 +79,7 @@ export interface NegativityWiring {
  * 装配负面信号链路。
  *
  * 词表编译**按内容变化缓存**: 面板改一次词表只重编一次, 而每条文本的判定仍走缓存的那份。
- * 判据是"原文变了才重编" (不是"每次求值都重编") —— 后者会在每轮捕获上白付一次编译成本。
+ * 判据是"原文变了才重编" (不是"每次求值都重编")  后者会在每轮捕获上白付一次编译成本。
  */
 export function wireNegativity(deps: NegativityWiringDeps): NegativityWiring {
   let cachedSource = "\u0000";
@@ -99,7 +99,7 @@ export function wireNegativity(deps: NegativityWiringDeps): NegativityWiring {
     }
     const parsed = parseNegativityWords(raw);
     if (parsed.error) {
-      // 格式错误: **保留缺省词表并记下错误** —— 一个格式手滑不该让整条链路停摆
+      // 格式错误: **保留缺省词表并记下错误**  一个格式手滑不该让整条链路停摆
       // (那也是本仓"坏输入不许静默"的一贯处置: 错要能看见, 但别把功能一起关掉)。
       parseError = parsed.error;
       cached = compileNegativity();
@@ -136,7 +136,7 @@ export function wireNegativity(deps: NegativityWiringDeps): NegativityWiring {
       // 提示的读者是**即将回复的那一轮的我**, 而我要的是"现在该怎么做", 不是"对方是什么情绪"。
       // 因此这里也统一成行为约束的口气, 与落库的 lesson 模板同源 (禁止X / 改为Y)。
       //
-      // 这是"当下提示", **不进记忆** —— 它的内容是别的轮次的教训 + 本轮的即时要求,
+      // 这是"当下提示", **不进记忆**  它的内容是别的轮次的教训 + 本轮的即时要求,
       // 不是这一轮的沉淀物 (沉淀物由 pipeline 走 lesson 路径)。
       const where = signal.kinds.includes("blame-execution")
         ? "在失败路径上反复硬试"
@@ -148,7 +148,7 @@ export function wireNegativity(deps: NegativityWiringDeps): NegativityWiring {
         ? "\n以往同类约束 (照它做):\n" + lines.map((l) => "- " + l).join("\n")
         : "";
       return (
-        "【本轮挨批了 —— 先停下, 别辩解】" +
+        "【本轮挨批了  先停下, 别辩解】" +
         "正在被否决的写法: " +
         where +
         "。立刻改为: 先复述你理解到的方向并确认, 再动手; 不要重述已完成的部分。" +
@@ -225,7 +225,7 @@ async function judgeFallback(
     reason: "判官判定用户在批评/纠正 (词表未覆盖, 由语义兜底补上)",
     elapsedMs: Date.now() - started,
   });
-  // 判官只说"是负面", 分不出是方法错还是执行不满 —— **不猜**: 归入 correction
+  // 判官只说"是负面", 分不出是方法错还是执行不满  **不猜**: 归入 correction
   // (它的处置最保守: 只落"用户纠正"类草稿, 不做"重看这一轮"的推断)。
   return {
     hit: true,

@@ -34,10 +34,10 @@ export interface HxMemorySettings {
    *
    * 打开后, 每轮注入前会用判官 (JEV) 判一次"当前输入与候选记忆是否相关",
    * 判定"无关"时抑制该轮召回。判官不可用/没把握/连续失败 n 次时**自动走既有通道**
-   * (保底 + 意图), 因此打开它不会让记忆失效 —— 最坏后果是退回打开前的行为。
+   * (保底 + 意图), 因此打开它不会让记忆失效  最坏后果是退回打开前的行为。
    *
    * 为什么默认关: 它给每轮注入加一次 ~0.5s 的同步开销, 而"值不值得"取决于用户对
-   * 延迟与精度的偏好 —— 这是取舍, 不该由默认值替用户决定。
+   * 延迟与精度的偏好  这是取舍, 不该由默认值替用户决定。
    */
   decisionGate: boolean;
   /** 决策账本保留天数 (0 = 永久)。 */
@@ -56,7 +56,7 @@ export interface HxMemorySettings {
   episodeRetentionDays: number;
   /**
    * 注入调度账本 (默认开): 每一步把判定落进 <root>/schedule/YYYY-MM-DD.jsonl。
-   * 为什么独立开关: 它记录的是"为什么注入/为什么没注入", 与捕获 (autoCapture) 无关 ——
+   * 为什么独立开关: 它记录的是"为什么注入/为什么没注入", 与捕获 (autoCapture) 无关 
    * 关掉捕获仍要能看见调度行为, 反之亦然。写入永远 best-effort, 写不进去不影响对话。
    */
   scheduleLog: boolean;
@@ -66,7 +66,7 @@ export interface HxMemorySettings {
    * 捕获耗时账本 (默认开): 每一轮落一条 <root>/capture/YYYY-MM-DD.jsonl。
    *
    * 为什么需要它: 捕获对宿主是异步的, 但它调 LLM、读全库建边、同步写 SQLite, 全都在对话
-   * 所在的那个 event loop 上。没有它, "这一轮怎么慢了"只能靠猜 —— 唯一的计时证据是宿主日志
+   * 所在的那个 event loop 上。没有它, "这一轮怎么慢了"只能靠猜  唯一的计时证据是宿主日志
    * 里的一行, 与具体哪一轮对不上号, 重启后也拿不到。
    */
   captureLog: boolean;
@@ -74,7 +74,7 @@ export interface HxMemorySettings {
   captureRetentionDays: number;
   /**
    * 后台维护周期 (小时; 0 = 关闭)。开启时在**空闲窗**内跑 `consolidate` 与 episode/schedule 清理。
-   * 为什么默认开: 只通过面板/对话使用记忆的用户永远不会手动跑 CLI —— 没有它, 事件类条目
+   * 为什么默认开: 只通过面板/对话使用记忆的用户永远不会手动跑 CLI  没有它, 事件类条目
    * 从不衰减、清理从不发生, 记忆层会单调增长 (P3 的 ⬜ 调度器)。
    */
   maintenanceIntervalHours: number;
@@ -85,6 +85,8 @@ export interface HxMemorySettings {
   maintenanceIdleMinutes: number;
   /** AI 结构化提示词 (可编辑, 缺省用默认)。 */
   structurerPrompt?: string;
+  /** 负面/纠正轮次的提炼提示词 (要问的问题不同: "我上一轮做错了什么")。 */
+  negativeLessonPrompt?: string;
   /** AI 规则提炼提示词 (可编辑, 缺省用默认)。 */
   abstractorPrompt?: string;
   /**
@@ -98,9 +100,9 @@ export interface HxMemorySettings {
   /**
    * 命中负面信号时是否**顺带注入**同类铁律 (默认 true)。
    *
-   * 为什么默认开: 用户的原话是"看看这个问候是否指明的方向, 指明的方向就应该沉淀 ——
+   * 为什么默认开: 用户的原话是"看看这个问候是否指明的方向, 指明的方向就应该沉淀 
    * 是不是别人都骂你了, 你为什么不记住这次的教训"。只有"沉淀"没有"当下就用上"，
-   * 那条教训要等下一次检索才可能被想起 —— 而"被骂"这个时刻恰恰是最该立刻看到它的时刻。
+   * 那条教训要等下一次检索才可能被想起  而"被骂"这个时刻恰恰是最该立刻看到它的时刻。
    */
   negativityGate?: boolean;
   /**
@@ -108,9 +110,18 @@ export interface HxMemorySettings {
    *
    * 词表是确定性的但覆盖有限 (用户会换新词); 判官能识别"这句话在骂人/在纠正"这个语义。
    * 默认关的理由与 decisionGate 一致: 它给每轮加一次 ~0.5s 的同步开销, 是取舍不是默认值。
-   * **只在前置词表未命中时调用** —— 命中时零开销。
+   * **只在前置词表未命中时调用**  命中时零开销。
    */
   negativityJudge?: boolean;
+  /**
+   * **对话内回执** (默认开): 每轮沉淀后在**对话里**插一条可见消息
+   * ("HX-Memory: 已沉淀 1 条 (lesson)")。
+   *
+   * 为什么默认开: 用户实测的原话是"让我觉得这个插件根本就没生效"  记忆层一直在工作,
+   * 但动作只落在文件里, 对话中一个字都看不到。回执是"它真的在跑"的唯一现场证据。
+   * 关掉它只影响可见性, 不影响捕获本身。
+   */
+  captureReceipt?: boolean;
 }
 
 export const DEFAULT_SETTINGS: HxMemorySettings = {
@@ -137,4 +148,5 @@ export const DEFAULT_SETTINGS: HxMemorySettings = {
   negativityWords: "",
   negativityGate: true,
   negativityJudge: false,
+  captureReceipt: true,
 };

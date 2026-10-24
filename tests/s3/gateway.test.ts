@@ -53,6 +53,10 @@ describe("gateway 依赖端口 (review 流)", () => {
 
   it("confirm 后 listQueue 状态变 confirmed, rule 落库带确认", async () => {
     const item = generalizer.listQueue("proposed")[0]!;
+    /**
+     * 远程端点整组 404 — 跨实例的 Typert marker
+     * .agents/notes/implemented/bug-fix/2026-09-14-typert-remote-404-cross-instance.md
+     */
     const res = await generalizer.confirm(item.id, "user:dsh-web");
     expect(res.ok).toBe(true);
     expect(res.ruleId).toBeTruthy();

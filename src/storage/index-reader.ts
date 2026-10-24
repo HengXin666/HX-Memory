@@ -1,19 +1,19 @@
 // storage/index-reader.ts — 派生索引的**读取侧** (SQL → MemoryEntry)。
 //
 // 为什么独立: 读路径 (query/searchText/recent/traverse + row→实体映射) 与写路径
-// (归一化/落盘/建索引) 的**变化原因完全不同** —— 前者随检索需求变, 后者随真相格式变。
+// (归一化/落盘/建索引) 的**变化原因完全不同**  前者随检索需求变, 后者随真相格式变。
 // 拆开之后, 改"怎么查"不会碰到"怎么存", 也让 file-store.ts 回到可通读的规模。
 //
 // 不变量:
 //   1. 每次返回的都是**完整**条目 (relations/tags 一并 hydrate), 不给半个记忆;
 //   2. 可见性口径只有一处: 默认排除 **shadow / merged / expired** (即 `HIDDEN` 常量),
-//      `includeShadow` 时**只放行 shadow** (另两种仍排除 —— 它们不是"撤回", 是"已被替代/已过期");
-//      (superseded 仍可见 —— 演进链与 history 需要它);
+//      `includeShadow` 时**只放行 shadow** (另两种仍排除  它们不是"撤回", 是"已被替代/已过期");
+//      (superseded 仍可见  演进链与 history 需要它);
 //
 //      ⚠ **本文件的每一条读路径都必须用 `HIDDEN`** (2026-09-18, §686 实测):
-//      `query()` 此前只写了 `status != 'shadow'` —— 与 `searchText()` / `recent()` 口径分叉,
+//      `query()` 此前只写了 `status != 'shadow'`  与 `searchText()` / `recent()` 口径分叉,
 //      于是 TTL 过期的条目在**结构化查询**里可见而**全文检索**里不可见。
-//      权威定义在 `retrieval/lifecycle.ts` 的 `isLiveEntry` —— 新增读路径时照它写。
+//      权威定义在 `retrieval/lifecycle.ts` 的 `isLiveEntry`  新增读路径时照它写。
 //   3. LIKE 路径必须转义 %/_ (否则 query({text:"_"}) 会命中全部)。
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type {
@@ -115,11 +115,11 @@ export function escapeLike(text: string): string {
 }
 
 /** 默认不可见的状态 (撤回/合并/过期); match 时可用 includeShadow 放行 shadow。 */
-// (可见性 SQL 片段来自 kernel/visibility.ts —— 见该文件的说明; 这里不再定义副本。)
+// (可见性 SQL 片段来自 kernel/visibility.ts  见该文件的说明; 这里不再定义副本。)
 
 /**
  * 索引读取器: 持有 db 与 fts 引用, 提供全部只读查询。
- * 它不做任何写入 —— 写入路径在 file-store.ts (归一化 → 落盘 → 建索引)。
+ * 它不做任何写入  写入路径在 file-store.ts (归一化 → 落盘 → 建索引)。
  */
 export class IndexReader {
   // 显式字段 + 赋值, 不用 TS 参数属性: 后者在 Node strip-only 模式下是语法错误
@@ -175,9 +175,9 @@ export class IndexReader {
 
   /** 最近捕获的 N 条 (按 assertedAt 倒序), 附 tags。供知情权面板用。 */
   recent(limit = 20): MemoryEntry[] {
-    // ⚠ **必须用 HIDDEN, 不能只写 'shadow'** (§689 —— 与 §686 同一类分叉)。
+    // ⚠ **必须用 HIDDEN, 不能只写 'shadow'** (§689  与 §686 同一类分叉)。
     // `gateway.ts` 的注释早已声明了这条契约: "走 facade.recent 而不是 store.all:
-    // **可见性 (shadow/merged/expired 默认隐藏)** 与排序口径只有一处 —— 面板不该看到已撤回的条目"。
+    // **可见性 (shadow/merged/expired 默认隐藏)** 与排序口径只有一处  面板不该看到已撤回的条目"。
     // 而此处此前只挡 shadow ⇒ **面板的"最近"与"被标注"列表会显示 merged/expired 条目**。
     // 权威定义: `retrieval/lifecycle.ts` 的 `isLiveEntry`。
     const rows = this.db
@@ -192,9 +192,9 @@ export class IndexReader {
     const clauses: string[] = [];
     const params: SQLInputValue[] = [];
     // ⚠ **必须用 HIDDEN, 不能只写 'shadow'** (§686): 此前只挡 shadow, 而 searchText() 用了
-    // HIDDEN ⇒ 口径分叉 (TTL 过期的条目: 全文检索看不到、结构化查询看得到 —— 面板
+    // HIDDEN ⇒ 口径分叉 (TTL 过期的条目: 全文检索看不到、结构化查询看得到  面板
     // contradictions 与 memoryQuery 的 LIKE 降级分支都会显示它)。
-    // 权威定义在 retrieval/lifecycle.ts 的 isLiveEntry —— 新增读路径照它写。
+    // 权威定义在 retrieval/lifecycle.ts 的 isLiveEntry  新增读路径照它写。
     if (!q.includeShadow) clauses.push(visibleClause());
     if (q.kind) {
       clauses.push("kind = ?");
@@ -208,7 +208,7 @@ export class IndexReader {
       clauses.push("id IN (SELECT memory_id FROM tags WHERE tag = ?)");
       params.push(q.tag);
     }
-    // 实体过滤走倒排表; 键必须先规范化 —— 否则「HX-Memory」与「hx-memory」会查出两个不同的集合。
+    // 实体过滤走倒排表; 键必须先规范化  否则「HX-Memory」与「hx-memory」会查出两个不同的集合。
     if (q.entity) {
       clauses.push("id IN (SELECT memory_id FROM entities WHERE entity = ?)");
       params.push(entityKey(q.entity));
@@ -297,7 +297,7 @@ export class IndexReader {
    * 关系遍历: 源与邻居**都必须存活** (非 shadow), 与 query 的可见性一致。
    *
    * 为什么源端也要判 (真实缺陷, 2026-09-18 实测): 撤回保留 relations (真相文件里那条是
-   * 可审计记录), 于是已撤回节点的边留在库里 —— 实测 60 条 generalizes 边里 41 条挂在
+   * 可审计记录), 于是已撤回节点的边留在库里  实测 60 条 generalizes 边里 41 条挂在
    * 10 个已撤回的占位草稿上, 全图度数最高的节点就是一条被否定的草稿 (10 条边)。
    * 此前只挡"撤回的邻居", 漏了"撤回的源"。修在读取侧而非删数据: 可见性是读取期的性质,
    * 于是存量残留边立刻失效, 不必写迁移。详见 bug-fix/2026-09-18-shadow-source-edges.md。
@@ -334,7 +334,7 @@ export class IndexReader {
     >
   > {
     // 必须带上 confirmed_by/confirmed_at: always-on 的治理闸门要求"已确认的规则才注入",
-    // 缺了这两列会让所有规则被静默过滤掉 (写这个投影时真实踩过 —— 测试立刻抓到)。
+    // 缺了这两列会让所有规则被静默过滤掉 (写这个投影时真实踩过  测试立刻抓到)。
     return this.db
       .prepare(
         `SELECT id, kind, content, scope, project, importance, status, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt

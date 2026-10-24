@@ -1,6 +1,6 @@
 // tests/s2/gateway-evidence.test.ts — 面板证据链端点的端到端契约。
 //
-// 为什么单独一层: 面板看到的证据链必须与工具 (memory_evidence) 看到的是**同一份** ——
+// 为什么单独一层: 面板看到的证据链必须与工具 (memory_evidence) 看到的是**同一份** 
 // 两侧若各自实现, 迟早出现"工具说要接证据源、面板说没有血缘"的分叉, 而用户不知道该信哪个。
 // 本测试让 gateway 与工具走同一个 Facade 方法, 并断言两侧输出一致。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
@@ -25,10 +25,10 @@ afterEach(() => {
 /**
  * 只挂 deps 的 gateway 替身 (面板端点不碰 cordis)。
  *
- * ⚠ 签名是 \`evidenceChain(id: string)\` 而**不是** \`(q: { id })\` —— 形参名就是协议面:
+ * ⚠ 签名是 \`evidenceChain(id: string)\` 而**不是** \`(q: { id })\`  形参名就是协议面:
  * Typert gateway 按形参名把 \`{ args }\` 映射到方法参数。写成对象参数会被宿主拒:
  * \`args fields do not match the descriptor: unexpected "id"\` (2026-09-18 真机 smoke 抓到,
- * 单元测试当时测不出来 —— 它们直接调方法, 绕过了 gateway 的参数校验)。
+ * 单元测试当时测不出来  它们直接调方法, 绕过了 gateway 的参数校验)。
  */
 function gatewayWith(deps: Record<string, unknown>): {
   evidenceChain(id: string): Promise<unknown>;

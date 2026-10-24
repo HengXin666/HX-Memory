@@ -2,6 +2,12 @@
 
 Status: implemented
 
+Decision-ID: evidence-surface-rpc-projection
+
+## Code
+
+- `src/adapters/dsh/gateway.ts`
+
 ## Problem
 
 `scheduleLog` / `captureLog` / `maintenance` 三本账与"人审依据"都各自有了真相文件
@@ -27,7 +33,7 @@ Status: implemented
 
 两条边界:
 
-1. **视图形状仍从 `gateway.ts` 转出** (再导出)。宿主与既有测试 import 的是 gateway ——
+1. **视图形状仍从 `gateway.ts` 转出** (再导出)。宿主与既有测试 import 的是 gateway 
    契约面不搬家, 搬的只是实现。把导出点也挪走会让调用方为了一个类型改 import。
 2. **投影实现拆进 `gateway-observability.ts` (账本) 与 `gateway-review.ts` (人审)**。
    拆两处而不是一处: 账本是"时间序列聚合" (按会话/按天), 人审是"按 id 取原文再展开 covers",
@@ -38,7 +44,9 @@ Status: implemented
 
 ## Alternatives considered
 
-**让面板直接读 JSONL 文件。** 宿主 UI 没有文件系统权限, 而且保留期/体量逻辑会被复制到前端 ——
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
+**让面板直接读 JSONL 文件。** 宿主 UI 没有文件系统权限, 而且保留期/体量逻辑会被复制到前端 
 两处口径分叉是这类"看起来能用"的方案最常见的失效方式。
 
 **在 `gateway.ts` 里直接写投影。** 先撞 400 行上限 (本仓库的硬闸门), 更根本的是让
@@ -56,7 +64,7 @@ Status: implemented
   明确返回 `available:false`, 面板区分"没数据"与"没接上"。
 - 代价: gateway 多了一层转发导出, 以及两个新的投影文件需要跟着契约走。
 - `contradictions` 由旧位置移入 `gateway-review`, 因此 `remote-methods.ts` 的方法清单需要
-  同步 —— 它是**单一事实源**, 由 `assertRemoteContract` 在装配期比对, 漏掉会在启动时炸而不是
+  同步  它是**单一事实源**, 由 `assertRemoteContract` 在装配期比对, 漏掉会在启动时炸而不是
   运行时静默 404。
 
 ## Testing

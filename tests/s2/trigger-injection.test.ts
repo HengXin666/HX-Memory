@@ -61,7 +61,7 @@ async function makeUnboundBinder() {
     },
     now: () => "2026-06-01T00:00:00.000Z",
   };
-  // 关键: configs 返回空数组 —— 模拟"项目没声明任何绑定"。
+  // 关键: configs 返回空数组  模拟"项目没声明任何绑定"。
   const binder = new Binder(
     (q) => stack.store.query(q),
     () => [] as BindingConfig[],

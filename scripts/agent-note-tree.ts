@@ -4,7 +4,7 @@
  * 与 DSH 的 .agents/notes 同构, 但适配本仓库: 中文正文 + 纯 Node 可执行 (strip-only TS, 无 tsx 依赖)。
  * 本模块是纯函数: 只读文件系统, 不做任何写操作, 供各个 gate 复用。
  *
- * 为什么"封闭集合"要写在代码里而不是文档里: 文档可以被忽略, 代码不行 ——
+ * 为什么"封闭集合"要写在代码里而不是文档里: 文档可以被忽略, 代码不行 
  * 拼错一个目录名 (implemented/refactor/) 会被当场拒绝, 而不是变成一棵没人看的野树。
  */
 import { readdirSync, statSync, type Dirent } from "node:fs";

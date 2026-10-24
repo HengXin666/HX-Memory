@@ -16,6 +16,10 @@ interface Call {
   payload: unknown;
 }
 
+/**
+ * DSH 面板可用性改造 (绑定预设 + 批次状态条 + 浏览排序)
+ * .agents/notes/implemented/feature/2026-09-11-dsh-panel-ux-rescue.md
+ */
 function fakeRpc(result: unknown, calls: Call[]): HxMemoryRpcCaller {
   return {
     async call(channel, endpoint, payload) {

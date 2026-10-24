@@ -1,7 +1,7 @@
 # bench/lib/full_context.py — "笨基线": 不做检索, 把整个语料塞进上下文。
 #
 # 为什么必须有它 (方法论要求, 见 docs/memory-benchmark-report.md §5):
-# 如果"全塞进去"就够了, 那么检索质量根本不重要 —— 这个 benchmark 就在测一个不存在的问题。
+# 如果"全塞进去"就够了, 那么检索质量根本不重要  这个 benchmark 就在测一个不存在的问题。
 # 它给不出漂亮的分数差异, 但能给出**规模拐点**: 语料大到多少token 时检索才成为必需。
 #
 # 用法: python3 bench/lib/full_context.py [--corpus FILE] [--runs FILE ...]

@@ -1,7 +1,7 @@
 // src/adapters/dsh/capture-review-bridge.ts — 待审队列的**面板桥** (磁盘 ↔ gateway)。
 //
 // 为什么抽出来 (2026-09-18): 这段注入块把 index.ts 顶过了 400 行上限, 而它本身是内聚的
-// 一件事 —— "把 <root>/review-capture 下的队列文件包装成面板能用的三个方法"。
+// 一件事  "把 <root>/review-capture 下的队列文件包装成面板能用的三个方法"。
 // 与 schedule-log / capture-log 同一范式: 服务端读盘, 浏览器侧碰不到文件系统。
 //
 // 为什么在这里过滤 pending: 面板的「待审」tab 展示的是**待裁决**的项;

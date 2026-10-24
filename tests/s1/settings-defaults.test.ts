@@ -1,7 +1,7 @@
 // tests/s1/settings-defaults.test.ts — 用户可见的默认配置必须有测试钉住。
 //
 // 为什么需要它 (2026-09-18 变异测试发现): 把 `DEFAULT_CAPTURE_RETENTION_DAYS` 从 7 改成 999,
-// 把 `DEFAULT_MAINTENANCE_HISTORY` 从 20 改成 0, **全量测试都通过** —— 即这些默认值
+// 把 `DEFAULT_MAINTENANCE_HISTORY` 从 20 改成 0, **全量测试都通过**  即这些默认值
 // **没有任何测试保护**。
 //
 // 它们与检索常量 (见 tuning-constants.test.ts) 的区别:
@@ -11,7 +11,7 @@
 //     `retentionDays: config.retentionDays ?? DEFAULT_CAPTURE_RETENTION_DAYS`。
 //
 // **不测的部分 (如实记录)**: `entityMaxIds` 经 60 查询采样**完全无影响** (0/60 不一致),
-// 因此没有为它加防护 —— 加一个测不出差别的断言只是噪音。
+// 因此没有为它加防护  加一个测不出差别的断言只是噪音。
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../../src/adapters/dsh/types.ts";
 import { DEFAULT_MAINTENANCE_HISTORY } from "../../src/adapters/dsh/maintenance-log.ts";
@@ -55,7 +55,7 @@ describe("用户可见的默认配置", () => {
   });
 
   it("维护周期与空闲阈值", () => {
-    // 维护只在空闲窗内跑 —— 这两个值决定"多久检查一次"与"闲多久才算闲"。
+    // 维护只在空闲窗内跑  这两个值决定"多久检查一次"与"闲多久才算闲"。
     expect(DEFAULT_SETTINGS.maintenanceIntervalHours).toBe(6);
     expect(DEFAULT_SETTINGS.maintenanceIdleMinutes).toBe(10);
   });

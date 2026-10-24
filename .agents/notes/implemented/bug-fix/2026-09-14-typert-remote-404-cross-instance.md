@@ -2,6 +2,15 @@
 
 Status: implemented
 
+Decision-ID: typert-remote-404-cross-instance
+
+## Code
+
+- `scripts/lib/host-version.mjs`
+- `src/adapters/dsh/index.ts`
+- `tests/s2/remote-methods.test.ts`
+- `tests/s3/gateway.test.ts`
+
 ## Problem
 
 DSH 面板的每一个 `hxMemory/*` 端点都返回 `HTTP 404`, 而插件看起来完全正常:
@@ -29,7 +38,7 @@ fiber `runtime` 与 `client` 都是 `active`、profile 组合成功、日志里�
 - `pluginCopy.remoteMethods(gateway)` → **19** 条 (插件自己看得见自己写的);
 - `hostCopy.remoteMethods(gateway)` → **0** 条 (宿主什么也看不见)。
 
-时间线也吻合: 9/13 该面板还是好的 (宿主当时是 `0.1.1-rc.2`, 两份实例同为 WeakMap 形态 ——
+时间线也吻合: 9/13 该面板还是好的 (宿主当时是 `0.1.1-rc.2`, 两份实例同为 WeakMap 形态 
 WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同一个 WeakMap, 所以能用);
 9/14 宿主换成 `dsh@0.1.5-rc.1` 之后立刻全量 404。
 
@@ -44,7 +53,7 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 **一、把协议对齐宿主的实际版本。** `package.json` 里 `@deepseek-ai/dsh-typert-protocol` 从
 `0.1.1-rc.2` (peer `^0.1.1-rc.2`) 提到 `0.1.5-rc.1` (peer `^0.1.5-rc.1`)。
 选 `0.1.5-rc.1` 而不是最低可用的 `0.1.2-rc.1`, 理由是它同时是 npm `latest`、是 `dsh` 自身的
-`latest`、也是本机宿主的版本 —— 对齐"宿主会装的那一个"比贴着下界更有价值。
+`latest`、也是本机宿主的版本  对齐"宿主会装的那一个"比贴着下界更有价值。
 `^0.1.5-rc.1` 仍然接受 `0.1.5-rc.2`, 但没有接受 `0.1.6`/更高: 据实测只有 0.1.2-rc.1+
 才有跨实例可读的 marker, npm 上不存在会违反 marker 机制的后继版本, 所以这个上界是**保守**而不是必需。
 
@@ -53,7 +62,7 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 - 新增 `src/adapters/dsh/remote-contract.ts`: 用**字面量键** `REMOTE_METHOD_DESCRIPTOR_KEY`
   读原型上的标记表 (`remoteMethodDescriptor` / `remoteMethodNames` / `remoteContract`),
   再用 `assertRemoteContract` 比对"声明的方法名"与"宿主可见的方法名"。
-  这个模块刻意**不 import 任何 `@deepseek-ai` 包** —— 判定结果不依赖"本模块加载了哪一份协议",
+  这个模块刻意**不 import 任何 `@deepseek-ai` 包**  判定结果不依赖"本模块加载了哪一份协议",
   任何一份依赖都改不动它。
 - `src/adapters/dsh/index.ts` 在装配 gateway 之后立刻校验, 不一致就抛错。
 
@@ -67,6 +76,8 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 现在它显式把 pnpm 目录前置到 PATH, 只影响本脚本的子进程。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **只改版本号, 不加校验。** 最省事, 但它把"插件与宿主是否同源"这件事继续留给运气:
 宿主再升级一次、或某个间接依赖再带进来一份旧 protocol, 同样的静默 404 会原样复发。
@@ -89,11 +100,11 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 ## Consequences
 
 - 换来的: 端点回来了 (真机冒烟 19 项断言全绿, 含 `generalizationStatus`); 并且"宿主读不到端点"
-  从**静默 404** 变成**装期抛错** —— 同一个缺陷下次会以插件加载失败的形式出现, 一眼可见。
+  从**静默 404** 变成**装期抛错**  同一个缺陷下次会以插件加载失败的形式出现, 一眼可见。
 - 付出的: 插件对 DSH 宿主的版本下限从 0.1.1 一路抬到 0.1.7 (当前 `dsh.host` 是
-  `^0.1.7-rc.2 || ^0.2.0-rc.1`, peer 同步) —— 2026-09-29 为适配 0.1.7 的设置契约继续抬高,
+  `^0.1.7-rc.2 || ^0.2.0-rc.1`, peer 同步)  2026-09-29 为适配 0.1.7 的设置契约继续抬高,
   见 [dsh 0.1.7 宿主适配](2026-09-29-dsh-017-settings-contract.md)。0.1.1~0.1.6 的宿主
-  从此是"不受支持"的组合 —— 这次取舍是刻意的: 让"受支持的组合"与"真机门禁跑的组合"
+  从此是"不受支持"的组合  这次取舍是刻意的: 让"受支持的组合"与"真机门禁跑的组合"
   是同一个集合, 而不是像之前那样门禁跑 0.1.2、线上跑 0.1.5。
   (代码里仍保留 `installSection`/`register` 两条回退路径, 但那只由宿主桩单测覆盖, 不在
   受支持声明内。)
@@ -102,8 +113,8 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 - 仍然存在的风险: 装配期校验只能看见**本实例的**标记表。若宿主将来改用"从别处读取端点清单"
   的机制 (不再读 Service 原型), 这道校验不会发现。届时的征兆同样是 404, 因此排查入口保持在本 Note。
 - 未覆盖的部分: `boot-smoke.yml` 硬编码宿主版本的遗留**已在同日的**
-  [门禁装载的宿主版本与 package.json 同源](../../process/2026-09-14-host-version-gate-single-source.md)
-  里修掉 —— 它现在由 `scripts/lib/host-version.mjs` 从 `dsh.host` 解析。
+  [门禁装载的宿主版本与 package.json 同源](../process/2026-09-14-host-version-gate-single-source.md)
+  里修掉  它现在由 `scripts/lib/host-version.mjs` 从 `dsh.host` 解析。
 
 ## Verification
 
@@ -115,7 +126,7 @@ WeakMap 是模块私有的, 但**同一份模块文件**被两边加载时是同
 
 ## 附带修掉的: 门禁装的宿主版本与线上不是同一个
 
-`boot-smoke.yml` 曾写死 `npm install -g @deepseek-ai/dsh@0.1.2-rc.1`, 而线上跑的是 0.1.5-rc.1 ——
+`boot-smoke.yml` 曾写死 `npm install -g @deepseek-ai/dsh@0.1.2-rc.1`, 而线上跑的是 0.1.5-rc.1 
 **门禁测的版本与出问题的版本不是同一个, 这是本缺陷能活下来的直接原因。** 现在宿主版本只有一个
 来源 (`package.json` 的 `dsh.host`), 由 `scripts/lib/host-version.mjs` 解析成 `latest` 并断言
 它落在范围内。决策与取舍见

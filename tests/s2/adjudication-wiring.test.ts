@@ -64,7 +64,7 @@ describe("冲突裁决接线", () => {
   });
 
   it("规则永不被裁决器取代 (双保险: 即使注入一个激进的裁决器)", async () => {
-    // 一个"永远说 supersede"的裁决器 —— 用来证明 evolve 的硬约束不依赖注入实现。
+    // 一个"永远说 supersede"的裁决器  用来证明 evolve 的硬约束不依赖注入实现。
     const aggressive: Adjudicator = {
       id: "aggressive",
       async adjudicate() {

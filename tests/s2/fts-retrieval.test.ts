@@ -1,7 +1,7 @@
 // tests/s2/fts-retrieval.test.ts — 全文索引 (FTS5) 的真实行为: 中文可召回、重建不丢、降级可见。
 //
 // 背景 (实测): FTS5 unicode61 对连续汉字不分词, trigram 又无法匹配 2 字查询。
-// 因此索引侧与查询侧都走 kernel/cjk.ts 的"词 + bigram"双列方案 —— 这个测试就是它的端到端证据。
+// 因此索引侧与查询侧都走 kernel/cjk.ts 的"词 + bigram"双列方案  这个测试就是它的端到端证据。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

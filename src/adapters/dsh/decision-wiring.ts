@@ -8,15 +8,15 @@
 //
 // ## 为什么默认**不启用** (2026-09-29, 用户"先做地基")
 //
-// 本层是地基: 端口契约 + 回退 + 账本都已完成并实测通过, 但**尚未接入注入路径** ——
+// 本层是地基: 端口契约 + 回退 + 账本都已完成并实测通过, 但**尚未接入注入路径** 
 // 用户明确要求"先做地基", 而把判官接进每轮注入会引入一次 0.5s 的同步开销, 那属于下一步决策。
 // 因此默认 `enabled: false`: 代码路径真实可达 (不是悬空模块), 但行为与接入前**逐字一致**。
 //
 // ⚠ **这个"默认关"是可观测的, 不是静默的**: 关闭时 `wireDecision` 返回的 status 里
-// `reason` 会写明"未启用", 而账本/面板能读到它 —— 避免变成"机制在、没人知道它没开"。
+// `reason` 会写明"未启用", 而账本/面板能读到它  避免变成"机制在、没人知道它没开"。
 //
 // 为什么不是"直接不写接线" (也就是让它悬空): 本仓的门禁专门查这个
-// (`verify-structure` 的悬空模块检查) —— `src/wiki/` 曾 1014 行产品代码零引用,
+// (`verify-structure` 的悬空模块检查)  `src/wiki/` 曾 1014 行产品代码零引用,
 // 而发现它靠的是人工 grep。悬空的代码不是"还没做", 是"做了但没人知道它没接上"。
 import type { DecisionPort } from "../../kernel/ports-decision.ts";
 import { DecisionLog } from "../decision/decision-log.ts";
@@ -28,7 +28,7 @@ import type { HxMemorySettings } from "./types.js";
 
 /** 接线结果 (给组装根与观测面)。 */
 export interface DecisionWiring {
-  /** 召回闸 (未启用时为 undefined —— 调用方用 `?.` 探测, 与"没有这层"同一形态)。 */
+  /** 召回闸 (未启用时为 undefined  调用方用 `?.` 探测, 与"没有这层"同一形态)。 */
   gate?: RecallGate;
   /** 判定实现 (未启用/不可用时为 undefined)。 */
   port?: DecisionPort;
@@ -50,7 +50,7 @@ export interface DecisionGateDeps {
   logWarn: (message: string, error: unknown) => void;
   /**
    * 查"以往同类纠正" (可选)。
-   * 由组装根注入 Facade 的检索面 —— 本模块不该依赖 Facade (它只是接线)。
+   * 由组装根注入 Facade 的检索面  本模块不该依赖 Facade (它只是接线)。
    */
   recallLessons?: (text: string) => Promise<readonly string[]>;
 }
@@ -71,7 +71,7 @@ export interface DecisionWiringDeps {
    * 留在组装根, 而那正是本模块要收口的东西 (见文件头注的接线判据集中一处)。
    */
   /**
-   * 设置读取器 (每次求值, 面板改动当轮生效)。**收全量设置**, 由本模块自己窄化出它要的两个键 ——
+   * 设置读取器 (每次求值, 面板改动当轮生效)。**收全量设置**, 由本模块自己窄化出它要的两个键 
    * 让组装根不必知道"决策层关心哪些设置"(那是本层的事)。
    */
   readSettings?: () => { decisionGate: boolean; decisionRetentionDays: number };
@@ -96,7 +96,7 @@ export interface DecisionWiringDeps {
  * 判据是**能力探测**而不是版本号或配置存在性:
  *   · 未启用 → 连适配器都不构造 (零开销);
  *   · 启用了但脚本目录不在 → 仍然构造 (让 `probe()` 能如实报告"配置缺失"),
- *     并把结论写进账本 —— 用户据此知道"我开了但它起不来", 而不是看到行为没变却不知为何。
+ *     并把结论写进账本  用户据此知道"我开了但它起不来", 而不是看到行为没变却不知为何。
  */
 export function wireDecision(deps: DecisionWiringDeps): DecisionWiring {
   // 启用判据: 显式传参 > 设置项 > 环境变量 (后者供无面板的场景临时打开)。
@@ -137,14 +137,18 @@ export function wireDecision(deps: DecisionWiringDeps): DecisionWiring {
 /**
  * 决策层 + 负面/纠正信号链路的**统一接线** (组装根只调这一行)。
  *
- * 为什么把两者收在一处: 它们共用同一个判官实现 (JEV) 与同一个决策账本 —— 各自 new 一份
+ * 为什么把两者收在一处: 它们共用同一个判官实现 (JEV) 与同一个决策账本  各自 new 一份
  * 会出现"两个熔断器互不知道对方在失灵"(实测踩过同类: 两处各判一遍必然分叉)。
  * 而它们的**开关仍然独立**: "注入前要不要判相关性" (decisionGate) 与
  * "被骂了要不要判语义" (negativityJudge) 是两个互不相干的取舍, 合并开关会让用户
  * 为了其中一个去接受另一个的开销。
  */
 export function wireDecisionGate(deps: DecisionGateDeps): DecisionGate {
-  // 召回闸 (可能未启用 —— 那条路径的判据与理由整段在 wireDecision)。
+  // 召回闸 (可能未启用  那条路径的判据与理由整段在 wireDecision)。
+  /**
+   * 决策端口地基 — 端口 / 两层回退 / 账本 / 召回闸
+   * .agents/notes/implemented/architecture/2026-09-29-decision-port-foundation.md
+   */
   const decision = wireDecision({ root: deps.root, readSettings: deps.settings });
   // 负面/纠正信号链路: 词表来自设置 (可配置), 判官复用决策层那一个实例。
   const negativity = wireNegativity({

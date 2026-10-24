@@ -1,7 +1,7 @@
 // tests/s2/schedule-log.test.ts — 注入调度账本: "为什么这一轮注入/没注入" 必须落盘且可查。
 //
 // 为什么必须有这些断言: 触发层的设计目标 ("'为什么没注入'必须和'注入了什么'一样可查")
-// 此前是**没有实现**的 —— TriggerDecision 只活在 Binder 的私有字段里。账本把这条目标变成
+// 此前是**没有实现**的  TriggerDecision 只活在 Binder 的私有字段里。账本把这条目标变成
 // 可执行事实, 而"没注入"的那几种恰恰是最容易漏记的 (只记成功的账本等于没有账本)。
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -203,7 +203,7 @@ describe("pre-step: 每一次判定都落账 (含没注入的那几种)", () => 
   it("账本写失败不许拖垮注入 (best-effort)", () => {
     // root 是一个**文件**而不是目录: mkdir 必然失败。断言 append 返回 false 而不是抛错。
     // (不拿 /proc 之类特殊路径当"不可写": 那类路径在某些内核上会让 mkdir 卡住,
-    //  把一条单元断言变成挂起 —— 真实的坑, 已踩过。)
+    //  把一条单元断言变成挂起  真实的坑, 已踩过。)
     const asFile = join(root, "not-a-dir");
     writeFileSync(asFile, "x");
     const log = new ScheduleLog({ root: asFile });

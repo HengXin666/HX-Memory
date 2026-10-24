@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/deploy-state.sh — 部署状态: dist 是否最新 + 宿主是否加载了它。
 #
-# 为什么需要它 (2026-09-18): 本仓库是**宿主插件** —— `dist` 重建后,
+# 为什么需要它 (2026-09-18): 本仓库是**宿主插件**  `dist` 重建后,
 # **正在运行的宿主进程不会自动重新加载**。于是会出现:
 #   · `git status` 干净、`pnpm run verify` 全绿、`dist` 是最新的;
 #   · 但你在面板上看到的行为**还是旧代码的**。
@@ -12,7 +12,7 @@
 # ⚠ 时间来源踩过两个坑 (都实测过):
 #   1. `ps -o lstart` 在中文 locale 下输出本地化日期 ("六 9月 19 11:35:07 2026"),
 #      而 `date -d` **解析不了** ⇒ 脚本把所有进程都判成了最新 (假阴性)。
-#   2. 改用 `stat -c %Z /proc/<pid>` 也不行 —— 那是**目录 ctime**,
+#   2. 改用 `stat -c %Z /proc/<pid>` 也不行  那是**目录 ctime**,
 #      实测比真实启动晚 1 小时 (目录被 touch 过)。
 #   正确做法: `/proc/<pid>/stat` 的 `starttime` 字段 + `/proc/uptime` 换算 (无 locale 依赖)。
 set -u
@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # 两条独立的构建命令 (`build` / `build:client`)。只检查服务端会让"只跑了一半构建"的情形**报绿**:
 #   · `pnpm run build` 成功、`build:client` 没跑 ⇒ 客户端停留在旧 bundle;
 #   · 而宿主的插件包是**整个 dist 目录** ⇒ 面板会加载旧客户端代码。
-# 判据取**两者较新者** —— 那才是"这次构建完成于何时"。
+# 判据取**两者较新者**  那才是"这次构建完成于何时"。
 DIST="$ROOT/dist/adapters/dsh/index.js"
 CLIENT_DIR="$ROOT/dist/adapters/dsh/client"
 [ -f "$DIST" ] || { echo "no dist build yet — run: pnpm run build && pnpm run build:client" >&2; exit 1; }

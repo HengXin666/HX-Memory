@@ -1,7 +1,7 @@
 // evolution/adjudicator.ts — 冲突裁决端口 + 确定性启发式默认实现。
 //
 // 为什么需要它: evolve.ts 的 decideEvolution 对"没有显式更新信号的矛盾"只标记 contradicts,
-// 两条都保持 active —— 谁对谁错是刻意留给人或模型的裁决, 但那个裁决口一直不存在, 矛盾于是永久堆积。
+// 两条都保持 active  谁对谁错是刻意留给人或模型的裁决, 但那个裁决口一直不存在, 矛盾于是永久堆积。
 // 本文件补上**可插拔端口** (Adjudicator) 与一个保守的默认实现:
 //   - 端口让宿主模型 (LLM) 后续接入, 不需要改动内核与任何调用方;
 //   - 启发式实现只裁决"能用证据说清楚"的情形, 说不清就 keep-both (交给人), 且 reason 必填可审计。
@@ -13,6 +13,10 @@ import type { MemoryEntry } from "../kernel/types.ts";
 import { normalizeFingerprint, overlapOf, tokenSetOf } from "./associate.ts";
 import { hardConflict, numbersIn } from "./evolve.ts";
 
+/**
+ * P0-P2 加固 (性能/跨进程/强化 + 迁移/摘要/裁决 + 门禁)
+ * .agents/notes/implemented/architecture/2026-09-10-p0-p2-hardening.md
+ */
 export type AdjudicationVerdict = "supersede" | "keep-both" | "duplicate";
 
 export interface AdjudicationInput {
@@ -108,7 +112,7 @@ export function heuristicAdjudicator(opts: HeuristicAdjudicatorOptions = {}): Ad
       const targetConfidence = confidenceOf(target.confidence, defaultConfidence);
       const sameKind = candidate.kind === target.kind;
 
-      // 1) 重复: 归一化后完全相同 —— 候选没有新信息, 只强化目标。
+      // 1) 重复: 归一化后完全相同  候选没有新信息, 只强化目标。
       if (normalizeFingerprint(candidate.content) === normalizeFingerprint(target.content)) {
         return {
           verdict: "duplicate",
@@ -204,7 +208,7 @@ export function heuristicAdjudicator(opts: HeuristicAdjudicatorOptions = {}): Ad
         };
       }
 
-      // 6) 无冲突: 只有"换个说法重述"才判重复。只在同 kind 内判定 ——
+      // 6) 无冲突: 只有"换个说法重述"才判重复。只在同 kind 内判定 
       //    同一段文字落在不同 kind 上是两类断言, 不该互相吞并。
       if (sameKind) {
         const candidateTokens = tokenSetOf(candidate.content);

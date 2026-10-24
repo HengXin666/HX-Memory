@@ -5,7 +5,7 @@
 // 判官是**概率模型**, 有两条硬边界 (HX-Jungle 实测标定, 本仓沿用同一结论):
 //   1. state 含糊时它会**稳定地给同一个错答案**, 且置信度 1.00 (实测 12/12);
 //   2. 高置信度/高一致度 **!= 正确** (它只证明"输入指向同一结论")。
-// 所以任何把它当权威用的地方都必须有出口 —— 否则"判官失灵"会变成"记忆静默错掉"。
+// 所以任何把它当权威用的地方都必须有出口  否则"判官失灵"会变成"记忆静默错掉"。
 //
 // ## 两层回退 (这个区分是关键)
 //
@@ -19,7 +19,7 @@
 // **第二层: 系统性失灵 -> 熔断, 整体停用 ("失败 n 次就不显示")**
 //   单次升级解决不了"它整体已经不对了"的情况 (提示词换了 / 模型降级 / 上游改行为)。
 //   判据是**统计的**而非单次的: 连续升级 N 次, 或窗口内升级率超阈值。
-//   触发即进入冷却期, 冷却期内**直接走业务判定, 连判官都不调** —— 省掉那 0.45s 的无效开销。
+//   触发即进入冷却期, 冷却期内**直接走业务判定, 连判官都不调**  省掉那 0.45s 的无效开销。
 //   冷却结束后恢复探测 (半开): 放一次过去试, 成功就复位, 失败就继续熔断。
 //
 // 为什么两层都要有: 只有第一层, 提示词换坏之后每一步都要先白花 0.45s 再升级;
@@ -32,7 +32,7 @@
 //
 // ## 状态必须跨进程存活 (踩过的坑)
 //
-// 熔断状态落盘到 `<root>/decision/<name>.json`: 不落盘的话每次重启都从头犯错 ——
+// 熔断状态落盘到 `<root>/decision/<name>.json`: 不落盘的话每次重启都从头犯错 
 // 而"重启"在插件热重载下是常事, 于是熔断永远追不上失灵。
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -46,7 +46,7 @@ export interface RoutePolicy {
   /**
    * 锐度低于此 → 升级。
    *
-   * 为什么是 0.35: 实测标定里"尖锐"场景 ~1.00、"平缓"场景 0.36 —— 取 0.35 意味着
+   * 为什么是 0.35: 实测标定里"尖锐"场景 ~1.00、"平缓"场景 0.36  取 0.35 意味着
    * 连最平缓的实测样本也仍被接受。这是**刻意的保守取向**: 升级代价 (多花几秒) 高于
    * 偶尔用一次低锐度结果。要更严就调高。
    */
@@ -84,7 +84,7 @@ export interface RouteDecision {
   signals: Record<string, unknown>;
 }
 
-/** 控制器自身的统计。**要暴露给观测面** —— "熔断了但没人知道"是最坏情况。 */
+/** 控制器自身的统计。**要暴露给观测面**  "熔断了但没人知道"是最坏情况。 */
 export interface RouteStats {
   total: number;
   upgraded: number;
@@ -110,7 +110,7 @@ export interface FallbackControllerOptions {
  * 两层回退控制器。不实现决策, 只决定"谁来决策"。
  *
  * 术语取 `RouteDecision` 而不是 `JudgeDecision`: 它路由的是"用谁的结果",
- * 不是"判定对错" —— 后者本层无从知道 (见文件头注的纪律)。
+ * 不是"判定对错"  后者本层无从知道 (见文件头注的纪律)。
  */
 export class FallbackController {
   private readonly policy: RoutePolicy;
@@ -201,6 +201,8 @@ export class FallbackController {
    *
    * @param result 判官输出 (ok/agreement/sharpness/error)。
    * @returns 路由决定 (含可解释的 reason 与信号快照)。
+   
+   * .agents/notes/implemented/architecture/2026-09-29-decision-port-foundation.md
    */
   route(result: Pick<DecisionOutcome, "ok" | "agreement" | "sharpness" | "error">): RouteDecision {
     const signals: Record<string, unknown> = {
@@ -263,7 +265,7 @@ export class FallbackController {
       this.stats.recent = this.stats.recent.slice(-this.policy.upgradeRateWindow);
     }
     this.stats.consecutiveUpgrades = upgraded ? this.stats.consecutiveUpgrades + 1 : 0;
-    // ⚠ 每次决策**都**检查熔断, 不只在升级时 —— 否则"散发式失灵"抓不到:
+    // ⚠ 每次决策**都**检查熔断, 不只在升级时  否则"散发式失灵"抓不到:
     // 升级/成功交替时连续计数永远归零, 只有窗口率能发现它, 而如果只在升级那一次检查,
     // 窗口长度可能刚好还没被填满 (实测用例: [up,ok,up,ok] 四次都没触发)。
     // 每次都检查没有副作用: 全成功时 rate=0, 不会误熔断。

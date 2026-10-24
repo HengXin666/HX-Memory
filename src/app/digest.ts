@@ -7,11 +7,15 @@
 // 本文件只做前一半: 可复算、可测试、无 IO、无依赖。summary 是人能读的句子而不是条目拼接。
 //
 // 保守边界 (与 consolidate.ts 同一套价值观):
-//   1. **只吃 active**: superseded/merged/expired/shadow 一律不进摘要 —— 摘要代表"当前认为成立的知识";
+//   1. **只吃 active**: superseded/merged/expired/shadow 一律不进摘要  摘要代表"当前认为成立的知识";
 //   2. **空输入不抛错**: 返回一个明确说明"无内容"的 digest (人看得懂, 调用方不用 try/catch);
 //   3. **不编造**: 要点只取条目原文片段 (不改写), 数量不足时如实报数而不是硬凑。
 import type { MemoryEntry, MemoryKind } from "../kernel/types.ts";
 
+/**
+ * P0-P2 加固 (性能/跨进程/强化 + 迁移/摘要/裁决 + 门禁)
+ * .agents/notes/implemented/architecture/2026-09-10-p0-p2-hardening.md
+ */
 export interface DigestInput {
   entries: readonly MemoryEntry[];
   project?: string;

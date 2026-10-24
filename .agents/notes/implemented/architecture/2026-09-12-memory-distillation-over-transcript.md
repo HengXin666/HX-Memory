@@ -2,19 +2,26 @@
 
 Status: implemented
 
+Decision-ID: memory-distillation-over-transcript
+
+## Code
+
+- `src/adapters/dsh/runtime.ts`
+- `src/capture/engine.ts`
+
 ## Problem
 
-真实库里 79 条记忆中, 12 条 (15%) 是用户**问句本身**; 对照 107 条 episode, 角色分布是 `{"user": 107}` ——
+真实库里 79 条记忆中, 12 条 (15%) 是用户**问句本身**; 对照 107 条 episode, 角色分布是 `{"user": 107}` 
 助手输出一条都没进过日志。也就是说, "记忆"这一层存的是"我问了什么", 而不是"最后定了什么、为什么"。
 
 根因有三处, 都是设计取舍而不是 bug:
 
-1. `adapters/dsh/runtime.ts` 只监听 `user/message`, 写 episode 时 role 硬编码为 `"user"` ——
+1. `adapters/dsh/runtime.ts` 只监听 `user/message`, 写 episode 时 role 硬编码为 `"user"` 
    助手的输出根本没有入口。
 2. `capture/engine.ts` 把"用户那一句"直接当记忆正文 (`content = explicit ?? text`), 用正则猜 kind
    (问句里出现"采用/选择/修复"就判成 decision)。
 3. `capture/pipeline.ts` 里 AI 结构化只写旁挂字段 `structured`, 永不改正文; 且喂给它的是
-   **只有问题、没有回答**的文本 —— 它被要求总结一个它看不到答案的问题。
+   **只有问题、没有回答**的文本  它被要求总结一个它看不到答案的问题。
 
 第 3 条是关键: 结论与理由长在回答里, 抽取器却拿不到回答。这解释了为什么"沉淀的全是用户原话"。
 
@@ -24,7 +31,7 @@ Status: implemented
 
 - `runtime.ts` 同时收 `assistant/message`; 一轮写两条 episode (真实 role, 共用同一个 `turn` 序号),
   记忆吃 `{question, answer}`。
-  **勘误 (2026-09-15)**: 这条接线当时并未真正生效 —— 读出文本的 `textOf` 只认 `data.content`,
+  **勘误 (2026-09-15)**: 这条接线当时并未真正生效  读出文本的 `textOf` 只认 `data.content`,
   而宿主 `assistant/message` 的文本在信封 `data.message.content` 里, 助手侧恒为 `""`。
   实测 315 条 episode 全是 `user`、账本 `aChars` 恒为 0, 本文描述的"提炼"因此从未落地。
   修复与完整证据见 [assistant-envelope-text](../bug-fix/2026-09-15-assistant-envelope-text.md)。
@@ -38,6 +45,8 @@ Status: implemented
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **只在 prompt 里要求"总结用户的话"。** 不解决问题: 答案不在输入里, 模型无从总结, 产出的仍是问句的压缩。
 
 **保留正文为原文, 只把结论写进 `structured.conclusion`。** 检索与注入读的是 `content`, 结论进不了检索面,
@@ -49,7 +58,7 @@ Status: implemented
 ## Consequences
 
 - 记忆条目的正文不再等于原文。原文逐字留在 episode 日志里 (追加写, 永不改写), 条目通过
-  `derivedFrom` 指回, 因此抽查与全量重放都能回到真相 —— 变的是提炼层, 不是真相层。
+  `derivedFrom` 指回, 因此抽查与全量重放都能回到真相  变的是提炼层, 不是真相层。
 - 助手输出从"完全不进记忆面"变成"经闸门筛选后进记忆面"。风险是助手自己的臆测被固化,
   缓解手段是结论闸门加结构化器的"没有结论就留空"。
 - 记忆质量的上限由结构化器质量决定。宿主不接 LLM 时 (启发式兜底) 等于维持旧行为。

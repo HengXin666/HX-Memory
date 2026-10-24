@@ -2,15 +2,15 @@
 //
 // ## 这只是**一个**实现, 不是唯一可能
 //
-// 任何满足 `DecisionPort` 的实现都能替换它 —— 调用方 import 的是 kernel/ports-decision.ts。
+// 任何满足 `DecisionPort` 的实现都能替换它  调用方 import 的是 kernel/ports-decision.ts。
 // 换成别的模型时, 只需在组装根换一个 `DecisionPort` 实例, 业务代码一行不改。
 //
 // ## 为什么走子进程而不是 HTTP 直连
 //
 // 判官实现 (`.agents/decision/adapters/jev.py`) 是 Python, 且它自己管着账号池、重试与投票。
 // 本仓有两个选择:
-//   · 在 TS 里重写一遍 HTTP + 账号池 + 投票 —— 两份实现必然漂移 (本仓反复踩过);
-//   · 走子进程调用既有实现 —— 单一实现, 且它已被 HX-Jungle 真机验证过。
+//   · 在 TS 里重写一遍 HTTP + 账号池 + 投票  两份实现必然漂移 (本仓反复踩过);
+//   · 走子进程调用既有实现  单一实现, 且它已被 HX-Jungle 真机验证过。
 // 选后者 (与 `spawn-cli.ts` 维护子进程同一纪律: **一处实现**)。
 //
 // ## 能力声明从哪来
@@ -21,8 +21,8 @@
 //
 // ## 不可用的两种形态 (都要能被 doctor() 区分)
 //
-//   · **配置缺失** (没有 key) —— 该提示人去配;
-//   · **上游故障** (超时/500) —— 该静默降级。
+//   · **配置缺失** (没有 key)  该提示人去配;
+//   · **上游故障** (超时/500)  该静默降级。
 // 两者都在 `ok=false` 里, 但 `error` 不同; 由调用方决定怎么处置。
 
 import { spawn } from "node:child_process";
@@ -160,7 +160,7 @@ export class JevDecisionAdapter implements DecisionPort {
       };
     } catch (error) {
       // 输出不是 JSON: 最可能是子进程打了一行 Python traceback (脚本自身的问题)。
-      // 把它截进 error 而不是丢弃 —— 否则"判官不可用"的排查只能靠猜。
+      // 把它截进 error 而不是丢弃  否则"判官不可用"的排查只能靠猜。
       return { ...empty, error: "bad_output: " + String(run.stdout).slice(0, 200) + " " + String(error) };
     }
   }
@@ -174,7 +174,7 @@ export class JevDecisionAdapter implements DecisionPort {
     try {
       const parsed = JSON.parse(run.stdout) as Record<string, unknown>;
       // ⚠ 字段名归一 (实测: Python 侧自报的是 snake_case `latency_ms`, 而本仓契约用 camelCase
-      // `latencyMs`)。不做这一步的话 TS 侧永远读不到延迟 —— 而"判官多慢"正是可用性判断的依据。
+      // `latencyMs`)。不做这一步的话 TS 侧永远读不到延迟  而"判官多慢"正是可用性判断的依据。
       // 其余未知键**原样保留** (契约允许实现自报元信息, 这里是 api/model/usage 等)。
       const latency = parsed["latency_ms"] ?? parsed["latencyMs"];
       return {

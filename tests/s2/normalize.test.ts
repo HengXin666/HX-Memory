@@ -1,10 +1,10 @@
 // tests/s2/normalize.test.ts — 主动整理 / 无损迁移 (s2, 带真实文件 IO)。
 //
 // 三条必须被钉住的契约 (缺一条就不是"无损"):
-//   1. **陌生 frontmatter 键原样保留**: 文件可能由更新版本写过, 写回是整块重组 ——
+//   1. **陌生 frontmatter 键原样保留**: 文件可能由更新版本写过, 写回是整块重组 
 //      不搬运就会在"整理"的那一刻静默吃掉未来字段 (数据丢失);
 //   2. **幂等**: 跑第二遍必须零改动 (否则整理本身就成了每次都改文件的噪声源);
-//   3. **dryRun 不写盘**: 先看清单再决定 —— 真相文件是人的资产, 不是缓存。
+//   3. **dryRun 不写盘**: 先看清单再决定  真相文件是人的资产, 不是缓存。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -86,7 +86,7 @@ describe("MemoryNormalizer: 无损整理", () => {
   });
 
   it("真实库上跑: 干跑不报假改动 (数组字段不能按引用比较)", () => {
-    // 带 tags 的条目曾经被误报"需改动" —— 数组 === 永远为 false, 必须先序列化再比。
+    // 带 tags 的条目曾经被误报"需改动"  数组 === 永远为 false, 必须先序列化再比。
     const file = writeOne("mB");
     const withTags = readFileSync(file, "utf8").replace(
       "status: active",

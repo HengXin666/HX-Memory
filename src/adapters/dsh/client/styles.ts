@@ -9,7 +9,7 @@
 // 无 emoji (仓库约定)。
 
 export const styles = `
-/* 真相文件视图 (§795): 只读浏览 —— 全是读操作, 因此没有按钮主色, 只有层级与可点区域。 */
+/* 真相文件视图 (§795): 只读浏览  全是读操作, 因此没有按钮主色, 只有层级与可点区域。 */
 .hxmem-files { display: flex; flex-direction: column; gap: var(--hxmem-s2, 8px); }
 .hxmem-files-hint { color: var(--dsw-alias-text-secondary, #666); font-size: 12px; line-height: 1.6; margin: 0; }
 .hxmem-files-bar { display: flex; align-items: center; gap: var(--hxmem-s2, 8px); flex-wrap: wrap; }
@@ -525,7 +525,7 @@ body[data-ds-dark-theme] .hxmem-review .badge.s-agent,
 
 /* 提议块 (行 + 展开的依据 + 草稿警告必须作为一个整体可辨识)。
    为什么要这一层: 展开后 .row 与依据列表是相邻兄弟, 没有容器时下一个提议的
-   hover 高亮会盖住上一个的展开内容 —— 人审时会看错属于哪条提议。 */
+   hover 高亮会盖住上一个的展开内容  人审时会看错属于哪条提议。 */
 .hxmem-review .prop {
   display: flex;
   flex-direction: column;

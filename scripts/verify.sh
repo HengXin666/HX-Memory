@@ -8,12 +8,12 @@ set -uo pipefail
 
 # ---- 覆盖面记录 (2026-09-18, §589) ----
 #
-# 为什么需要它: 本脚本此前**只在失败时说话** —— 全绿时输出是一串各自独立的
+# 为什么需要它: 本脚本此前**只在失败时说话**  全绿时输出是一串各自独立的
 # "[verify] X: ..." 行, 读不出"一共检查了什么"。同型缺口已在别处出现过两次:
 #   · deploy-state.sh 只查服务端产物, 不查客户端 bundle (§586);
 #   · verify-agent-note-coverage 只判"有没有 Note", 不判"覆盖了哪些改动" (§583)。
 # 共同机制: **检查器的判据面比它声称的窄, 而它不报"我没检查这部分"**。
-# 所以结尾显式列出跑过的检查 —— 让"检查了什么"本身可见。
+# 所以结尾显式列出跑过的检查  让"检查了什么"本身可见。
 COVERED=()
 step() {
   COVERED+=("$1")
@@ -46,22 +46,19 @@ if ! pnpm exec vitest run --passWithNoTests; then
   exit 1
 fi
 
-# Agent Note 硬约束: 结构 / 格式 / "非平凡改动必须带 Note"。
-# 三条都是 gate 而不是文档 —— 文档可以被忽略, 退出码不行。
-step "notes: classification"
-if ! pnpm run verify-agent-note-classification; then
-  echo "[verify] FAILED: agent-note-classification" >&2
-  exit 1
-fi
-
-step "notes: format"
-if ! pnpm run verify-agent-note-format; then
-  echo "[verify] FAILED: agent-note-format" >&2
+# Agent Notes v2: local checks are strict; GitHub diagnostics are reported by the advisory workflows.
+step "notes: v2 graph"
+if [[ "${GITHUB_ACTIONS:-false}" == "true" ]]; then
+  python3 .agents/skills/hx-agent-notes/scripts/github/collect.py \
+    --skill .agents/skills/hx-agent-notes --output agent-notes-report.json \
+    --base "${HX_NOTE_COVERAGE_BASE:-}" --head "${GITHUB_SHA:-}" --all
+elif ! pnpm run verify-notes:all; then
+  echo "[verify] FAILED: agent-notes-v2 (see exact paths and related code in diagnostics)" >&2
   exit 1
 fi
 
 # 代码质量: lint (未用变量/浮空 promise 类) 与结构 (文件规模/重复率/端口纯度/单一事实源)。
-# 这两道是"防止架构慢慢长歪"的机械约束 —— 它们不会让功能测试变红, 但能拦住持续劣化。
+# 这两道是"防止架构慢慢长歪"的机械约束  它们不会让功能测试变红, 但能拦住持续劣化。
 step "lint: oxlint"
 if ! pnpm run lint; then
   echo "[verify] FAILED: lint" >&2
@@ -74,7 +71,7 @@ if ! pnpm run verify-structure; then
   exit 1
 fi
 
-# 跨层字段契约: 面板渲染的字段必须**有服务端来源** (§568 —— §565 那个"面板显示空白"
+# 跨层字段契约: 面板渲染的字段必须**有服务端来源** (§568  §565 那个"面板显示空白"
 # 就是跨层的: 两侧类型各自声明, tsc 挡不住)。
 step "client contract: rendered fields have server-side declarations"
 if ! pnpm run verify-client-contract; then
@@ -82,7 +79,7 @@ if ! pnpm run verify-client-contract; then
   exit 1
 fi
 
-# 变异探针: **故意破坏实现, 看测试是否变红** —— 全绿不等于断言有效 (§653)。
+# 变异探针: **故意破坏实现, 看测试是否变红**  全绿不等于断言有效 (§653)。
 # 成本约 5 秒 (4 个变异, 每个只跑相关测试文件), 而它守的是"我做过的修复不会被悄悄退回去"。
 step "mutation: 断言是否有防护力 (破坏实现看测试红不红)"
 if ! pnpm run mutation-probe >/dev/null 2>&1; then
@@ -90,7 +87,7 @@ if ! pnpm run mutation-probe >/dev/null 2>&1; then
   exit 1
 fi
 
-# 元验证: **每个判定项都必须能真的失败** (§716) —— 一个永远不触发的检查等于没有。
+# 元验证: **每个判定项都必须能真的失败** (§716)  一个永远不触发的检查等于没有。
 # 成本约 16 次 verify-structure (每次秒级), 而它守的是"检查器自己不是摆设"。
 step "checks: 判定项都能真的失败 (元验证)"
 if ! pnpm run verify-checks-can-fail >/dev/null 2>&1; then
@@ -106,7 +103,7 @@ if ! pnpm run verify-docs; then
 fi
 
 # 门禁**每一步**都必须有"它能失败"的证据 (§759):
-# `verify-checks-can-fail` 只守 `verify-structure` 的判定项, 而门禁各步是**各自独立**的脚本 ——
+# `verify-checks-can-fail` 只守 `verify-structure` 的判定项, 而门禁各步是**各自独立**的脚本 
 # "某一步从来没红过"查不出来 (它每次打印 OK, 与"真的检查过"长得一样)。
 # 沉睡字段登记 (§771): "零填充"的字段必须有明确理由, 否则"有读者却无产出点"会重演 (§765)。
 step "field coverage: 沉睡字段都有理由"
@@ -124,7 +121,7 @@ if ! pnpm run verify-gate-evidence >/dev/null 2>&1; then
 fi
 
 # 输出面覆盖 (§756): 每个 `@Remote` 端点都要在**某个验证面**上出现过。
-# 判据必须**同时搜两层**并把面打进输出 —— §753 我只搜 tests/ 就把 6 个已在真机 smoke 里
+# 判据必须**同时搜两层**并把面打进输出  §753 我只搜 tests/ 就把 6 个已在真机 smoke 里
 # 被真的调用的端点报成"零测试"(虚报缺陷)。本步把那件事机械化。
 step "rpc coverage: 每个 @Remote 端点都在某个验证面上出现"
 if ! pnpm run verify-rpc-coverage; then
@@ -132,7 +129,7 @@ if ! pnpm run verify-rpc-coverage; then
   exit 1
 fi
 
-# 真库一致性验收 (§747 接入): 前三层 (单元/端到端/smoke) 全用**隔离空库** ——
+# 真库一致性验收 (§747 接入): 前三层 (单元/端到端/smoke) 全用**隔离空库** 
 # 它们看不到"索引与真相文件的历史不一致""历史写入的产物""真实数据分布的长尾形态"。
 # 本步补第四层, **只读**地核对 `~/.dsh/hx-memory`。
 #
@@ -152,23 +149,6 @@ step "bench: metric snapshot (无私有语料时自动跳过)"
 if ! pnpm run verify-bench-snapshot; then
   echo "[verify] FAILED: verify-bench-snapshot (指标漂移; 有意变更请跑 bench/snapshot.ts --write)" >&2
   exit 1
-fi
-
-if [[ "${HX_SKIP_NOTE_COVERAGE:-0}" != "1" ]]; then
-  step "notes: coverage (非平凡改动必须带 Note)"
-  # CI 里工作区是干净的, 必须给出比较基线才判得出来; 本地默认比较 HEAD + 工作区。
-  coverage_args=()
-  if [[ -n "${HX_NOTE_COVERAGE_BASE:-}" ]]; then
-    coverage_args=(--base "${HX_NOTE_COVERAGE_BASE}")
-  elif [[ -n "${HX_NOTE_COVERAGE_RANGE:-}" ]]; then
-    coverage_args=(--range "${HX_NOTE_COVERAGE_RANGE}")
-  fi
-  # ⚠ 与其余各步一致走 npm script (§750): 本步此前**唯一**用直接 `node scripts/xxx.ts` 路径 ——
-  # 那意味着改文件名/挪目录时它**不会随 package.json 一起被发现**(其余步都会)。
-  if ! pnpm run verify-agent-note-coverage -- "${coverage_args[@]}"; then
-    echo "[verify] FAILED: agent-note-coverage (纯机械改动可加 --allow-missing)" >&2
-    exit 1
-  fi
 fi
 
 # ---- 覆盖总结: 显式列出**跑过什么** (而不只是"没失败") ----

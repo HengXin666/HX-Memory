@@ -2,6 +2,13 @@
 
 Status: implemented
 
+Decision-ID: store-disposer-for-hmr
+
+## Code
+
+- `src/adapters/dsh/index.ts`
+- `src/adapters/dsh/client/rpc.ts`
+
 ## Problem
 
 DSH 的 cordis HMR (\`@deepseek-ai/cordis-plugin-hmr\`) 语义是 **dispose 旧 fiber → 再 apply() 一次**。
@@ -22,7 +29,7 @@ DSH 的 cordis HMR (\`@deepseek-ai/cordis-plugin-hmr\`) 语义是 **dispose 旧 
 1. **谁创建谁关闭**: 只有 \`!opts.store\` 时才 close。注入进来的 store 属于调用方,
    插件关它属于越权 (调用方可能还要用, 或会重复 close 抛错)。
 2. **close 排在 flush 之后**: \`runtime.flushAll()\` 还要写库。合并进**同一个** disposer 的
-   \`try/finally\` —— 另起一个 effect 的话两者卸载顺序是隐式的, 一旦反过来就是"关库后再写"。
+   \`try/finally\`  另起一个 effect 的话两者卸载顺序是隐式的, 一旦反过来就是"关库后再写"。
 3. **幂等**: 用 \`storeClosed\` 标志挡住重复 close (node:sqlite 的 \`DatabaseSync.close()\`
    对已关连接会抛), HMR 反复 dispose 时不能炸。
 
@@ -30,10 +37,12 @@ DSH 的 cordis HMR (\`@deepseek-ai/cordis-plugin-hmr\`) 语义是 **dispose 旧 
 
 - 热重载不再泄漏 SQLite 句柄, 反复装载/卸载后 fd 回落到基线 (回归用例钉住)。
 - 插件卸载更干净: 之前 \`maintenance.loop.stop()\` + \`flushAll()\` 已做对, 只差 store。
-- 注入 store 的调用方 (测试、codex 适配器) 行为不变 —— 仍由它们自己 close。
+- 注入 store 的调用方 (测试、codex 适配器) 行为不变  仍由它们自己 close。
 - 一次性 CLI 场景无害: posix 进程退出本就会释放 fd。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **另起一个 \`ctx.effect(() => () => store.close())\`。** 不选: 与 flush 的卸载顺序变成隐式的,
 一旦 close 先跑就是"关库后再写缓冲", 而且是静默丢数据。
@@ -54,7 +63,7 @@ exit 钩子根本不会触发, fd 照样累积。
 
 1. 生命周期 (预热 + 卸载清理) 是天然独立的职责, 与组装根的"接线"性质不同;
 2. 组装根撞上 **400 行上限** (\`verify-structure\` 报 "index.ts 有 401 行")。整段搬走后
-   \`index.ts\` 回到 376 行 —— 这条闸门确实拦住了本次改动, 记在这里避免下次再撞。
+   \`index.ts\` 回到 376 行  这条闸门确实拦住了本次改动, 记在这里避免下次再撞。
 
 形态与既有的 \`settings-wiring.ts\` / \`maintenance-wiring.ts\` 一致 (deps 对象进, 不返回句柄)。
 
@@ -69,7 +78,7 @@ exit 钩子根本不会触发, fd 照样累积。
 - lifecycle disposer 返回 Promise (保证 close 在 await flushAll 之后)。
 
 **判据为什么用 fd 计数**: 第一版用"卸载后重开同一 root 能跑 rebuild 且不锁"做断言,
-结果**去掉 close 后 4 条全绿** —— 实测 SQLite 允许未关闭的连接旁边再开一个连接并写入,
+结果**去掉 close 后 4 条全绿**  实测 SQLite 允许未关闭的连接旁边再开一个连接并写入,
 reopen 类断言区分不出有无 close, 是假闸门。改用 \`/proc/self/fd\` 计数后才真正有牙:
 把 close 改成 \`if (false && ...)\` 后该用例报 \`expected 9 to be +0\`。
 
@@ -77,7 +86,7 @@ reopen 类断言区分不出有无 close, 是假闸门。改用 \`/proc/self/fd\
 
 单元测试之外, 在**隔离的 \`DSH_HOME\`** 里真起了宿主 \`dsh web --port 0\` (不碰用户运行中的实例):
 
-- 打开 hmr 后启动**无报错** —— 说明 \`cordis-plugin-loader\` 走的是
+- 打开 hmr 后启动**无报错**  说明 \`cordis-plugin-loader\` 走的是
   \`node-addon-require-builtin\` 兜底, **不需要 \`--expose-internals\`**
   (HMR 构造函数里有 \`if (!this.ctx.loader.internal) throw\` 这道闸, 值得记下);
 - 改 \`dist/\` 下的文件后, 宿主日志真的打印出被改模块的 re-execute 标记 → **热重载生效**;

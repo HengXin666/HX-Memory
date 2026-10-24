@@ -1,31 +1,33 @@
 // adapters/dsh/scheduler.ts — P3 后台维护的**策略** (何时跑, 不是怎么跑)。
 //
 // 补的缺口 (docs/architecture-v2.md §P3 的 ⬜ 调度器): 衰减/TTL 扫描 (`consolidate`) 与
-// digest 刷新此前**只有 CLI 能触发** —— 也就是说, 一个只通过面板/D对话使用记忆的用户,
+// digest 刷新此前**只有 CLI 能触发**  也就是说, 一个只通过面板/D对话使用记忆的用户,
 // 永远不会有任何东西被整合。记忆层因此会单调增长: 事件类条目从不衰减, 没人按过 CLI。
 //
 // 三条设计约束 (每一条都对应一个真实的失败模式):
 //
 //   1. **空闲窗内才跑, 且一个周期只跑一次。** 维护写的是真相文件 (Markdown), 而宿主随时可能
 //      捕获新记忆。策略取保守解: 距离上一次会话活动超过 idleMs 才认为"现在没人写",
-//      并且每个闲置周期最多触发一次 —— 否则一次长空闲会反复启动子进程。
+//      并且每个闲置周期最多触发一次  否则一次长空闲会反复启动子进程。
 //
 //   2. **开关与周期都实时读设置。** 面板改动不必重启 (与 episode 保留期同一处理)。
 //      周期 0 = 关闭后台维护 (但 CLI 仍可手动跑, 这不冲突)。
 //
 //   3. **能观测。** 每次尝试都留一条结果 (跑了什么/成功失败/耗时/为什么跳过), 面板与日志可查。
-//      维护是"悄悄发生的事" —— 没有这条记录, 用户无法知道它有没有在工作。
+//      维护是"悄悄发生的事"  没有这条记录, 用户无法知道它有没有在工作。
 //
 // 组件拆开是一次**可测性**决策, 而不是分层洁癖: 策略 (Policy) 是纯函数,
-// 计时器 (Loop) 是纯调度, 执行 (CliRunner) 是 IO —— 三者里只有最后一项需要真跑子进程。
+// 计时器 (Loop) 是纯调度, 执行 (CliRunner) 是 IO  三者里只有最后一项需要真跑子进程。
 // 我最初把三者写在一起, 结果"周期 0 不跑"这类断言必须靠真实计时器等待几秒, 又慢又不稳。
 /**
  * 维护关心**哪些工作**, 但**不**把它们当 argv 传给 CLI。
  *
  * 区分这两件事是踩过坑之后的分层: CLI 只有一条 `maintain` 命令 (它内部按序做全部工作)。
  * 早期版本把任务名当 argv 传, 于是 `["consolidate", "prune"]` 里的 `prune` 被 CLI 静默忽略
- * (只认第一个位置参数) —— episode 清理从未执行, 而进程 exit 0、记录写"成功"。
+ * (只认第一个位置参数)  episode 清理从未执行, 而进程 exit 0、记录写"成功"。
  * 现在这个列表只用于**展示与记录** ("这次维护覆盖了什么"), 不参与调用约定。
+ 
+ * .agents/notes/implemented/feature/2026-09-13-background-maintenance-scheduler.md
  */
 export type MaintenanceTaskName = "consolidate" | "digest" | "prune" | "relink";
 
@@ -38,7 +40,7 @@ export interface MaintenancePolicyConfig {
   tasks: readonly MaintenanceTaskName[];
 }
 
-// relink 也纳入默认维护: 建边只发生在写入时, 因此判据改进后**存量条目会永久落后** ——
+// relink 也纳入默认维护: 建边只发生在写入时, 因此判据改进后**存量条目会永久落后** 
 // 实测真实库曾出现"可建 401 条边而库里只有 20 条"。靠用户手动跑一次等于缺口长期存在。
 // 注: 这个列表只用于**展示与记录**, 真实调用是 CLI 的 maintain 命令 (见本文件头注)。
 export const DEFAULT_MAINTENANCE_TASKS: readonly MaintenanceTaskName[] = [
@@ -88,7 +90,7 @@ export interface MaintenanceRecord {
   ok: boolean;
   /** 可读结论 (exit:N / killed:SIGKILL / cli-not-found / 抛出的错误)。 */
   detail: string;
-  /** 失败时的子进程输出尾部 —— 只留一个数字不足以排查 (踩过: 记录里只有 "exit:1")。 */
+  /** 失败时的子进程输出尾部  只留一个数字不足以排查 (踩过: 记录里只有 "exit:1")。 */
   output?: string;
   elapsedMs: number;
 }
@@ -117,7 +119,7 @@ export interface MaintenanceLoopOptions {
 }
 
 /**
- * 计时器循环。用 `setInterval(...).unref()` —— 它**不得**阻止宿主进程退出
+ * 计时器循环。用 `setInterval(...).unref()`  它**不得**阻止宿主进程退出
  * (一次性 CLI 场景下, 一个活着的计时器会让命令挂住不返回)。
  */
 export class MaintenanceLoop {

@@ -5,11 +5,11 @@
 // 实测真库 (706 条): 同一句查询不带 scope 返回 9 条, 其中 **7 条属于别的项目**
 // (HX-OutlookRegister / HX-Jungle / ds-test); 带 scope 后才干净。
 //
-// 后果不是"多召回几条", 而是**把别的项目的私有结论当成当前项目的经验** ——
+// 后果不是"多召回几条", 而是**把别的项目的私有结论当成当前项目的经验** 
 // 实测踩坑: 追问"这个项目的目标是什么"时, 命中的是别的项目的目标条目并被当成答案。
 //
 // ⚠ 与本仓另一处同型缺陷的关系: `trigger-cache.ts` 的 `recallFor` 此前也**完全不带 scope**,
-// 修完那处后本处仍是漏的 —— 同一个缺陷形状出现在两个入口。本文件把"两个入口都必须带范围"
+// 修完那处后本处仍是漏的  同一个缺陷形状出现在两个入口。本文件把"两个入口都必须带范围"
 // 钉成断言, 因为只修一处的话, 另一处会**静默**泄漏 (没有报错, 只是答案来自别的项目)。
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -97,7 +97,7 @@ describe("memory_search 的工作区过滤 (跨项目泄露回归)", () => {
 
   it("正例: scopeRequired 不误伤跨项目规则 (global 条目仍可见)", async () => {
     // 为什么单独钉: scopeRequired 挡的是"没有工作区的**项目内**条目";
-    // 若它连 global 一起挡掉, 就会把"跨项目规则"这个本仓最核心的能力弄没 ——
+    // 若它连 global 一起挡掉, 就会把"跨项目规则"这个本仓最核心的能力弄没 
     // 而那正是"修泄露时顺手把功能砍了"的典型形态, 用相关查询词单独测一次。
     const root = mkdtempSync(join(tmpdir(), "hxmem-scope4-"));
     const stack = openMemoryStack(root, { embedder: null });

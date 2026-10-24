@@ -27,7 +27,7 @@ const entry = (over: Partial<MemoryEntry> & { id: string; content: string }): Me
 
 describe("话题漂移 (阈值由实测标定, 断言性质而非魔数)", () => {
   const policy = new TriggerPolicy();
-  // 阈值与 policy 的默认值保持一致 (实现改了默认值, 测试必须跟着变 —— 不要在这里另抄一份)。
+  // 阈值与 policy 的默认值保持一致 (实现改了默认值, 测试必须跟着变  不要在这里另抄一份)。
   const threshold = 0.9;
 
   it("同话题 (含改述与短追问) 落在阈值内, 换话题落在阈值外", () => {
@@ -91,7 +91,7 @@ describe("意图识别 (匹配提问的形状, 不是知识内容)", () => {
     expect(
       detectIntent("HXLoLi支持的专用md格式/文风/目录命名规范/HXLoLiTag(汇总而不是每次都编)"),
     ).toBeNull();
-    // 同一个词进了问句才是真信号 —— 两层判定的分界就在这里。
+    // 同一个词进了问句才是真信号  两层判定的分界就在这里。
     expect(detectIntent("这个项目的命名规范是什么")).not.toBeNull();
     // 祈使式的风险提醒是信号 (用户在提醒别踩坑), 不需要问号。
     expect(detectIntent("注意避免并发超时")).not.toBeNull();
@@ -209,6 +209,10 @@ describe("always-on 内容选择 (保底但受预算约束)", () => {
       entry({ id: "r2", kind: "rule", scope: "global", content: "未确认的规则不该被注入" }),
       entry({ id: "f1", kind: "fact", content: "本项目用 pnpm" }),
     ];
+    /**
+     * 保底通道的 kind 白名单被 lineage 绕过 + 排序缺确定性
+     * .agents/notes/implemented/bug-fix/2026-09-27-alwayson-kind-whitelist-and-determinism.md
+     */
     const picked = selectAlwaysOn(entries, { project: "api", budgetTokens: 1000, estimate });
     expect(picked.map((e) => e.id)).toContain("r1");
     expect(picked.map((e) => e.id)).not.toContain("r2");

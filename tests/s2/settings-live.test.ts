@@ -1,7 +1,7 @@
 // tests/s2/settings-live.test.ts — 设置必须**实时生效**, 而不是重启后才生效。
 //
 // 真实缺陷: 部分设置只在插件构造时读一次 (autoEvolve / captureEpisodes / episodeRetentionDays),
-// 于是面板里改完当轮不生效 —— 这正是用户报告的"只有重启才更新"。
+// 于是面板里改完当轮不生效  这正是用户报告的"只有重启才更新"。
 // 本测试逐个钉住: 改设置后**不重启**就必须生效。
 import { describe, expect, it, afterEach } from "vitest";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -94,7 +94,7 @@ async function runTurn(ctx: FakeCtx, text: string): Promise<void> {
   const start = ctx.handlers.get("agent/session-start")?.[0];
   start?.({ agent: { ctx, session, inject: () => {} } });
   // 注意签名: 插件监听的是 ctx.on("session/event", (session, event) => ...),
-  // 不是把两者打包成一个对象 (写成后者会让 capture 静默什么都不做 —— 真实踩过)。
+  // 不是把两者打包成一个对象 (写成后者会让 capture 静默什么都不做  真实踩过)。
   const capture = ctx.handlers.get("session/event")?.[0];
   await capture?.(session, { type: "turn/start", data: {} });
   await capture?.(session, {
@@ -181,7 +181,7 @@ describe("设置实时生效 (不重启)", () => {
       | undefined;
     expect(preStep, "插件必须挂上 agent/pre-step").toBeDefined();
 
-    // 会话里已经有一条**其它**条目的记忆块 (基线非空, 但没有 rLive) —— first 模式据此关闸。
+    // 会话里已经有一条**其它**条目的记忆块 (基线非空, 但没有 rLive)  first 模式据此关闸。
     const session = {
       id: "s1",
       header: { cwd: "/code/api" },

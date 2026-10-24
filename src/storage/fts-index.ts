@@ -12,6 +12,12 @@
 import type { DatabaseSync } from "node:sqlite";
 import { TOKENIZER_VERSION, indexTermColumns, matchExpression } from "../kernel/cjk.ts";
 
+/**
+ * 引擎准入 = conformance 契约套件 (存储侧 + 检索侧)
+ * .agents/notes/implemented/testing/2026-09-10-engine-conformance-suites.md
+ * 用 ANN 引擎替换内存线性向量索引
+ * .agents/notes/proposed/architecture/2026-09-10-proposed-ann-vector-engine.md
+ */
 export interface FtsHit {
   id: string;
   /** BM25 归一后的正分 (越大越相关); 仅用于同一查询内排序, 不跨查询比较。 */
@@ -22,7 +28,7 @@ const TABLE = "memories_fts";
 const META = "index_meta";
 
 export class FtsIndex {
-  // 注意: 不使用 TS 参数属性 (constructor(private x)) ——
+  // 注意: 不使用 TS 参数属性 (constructor(private x)) 
   // Node 的 strip-only TS 模式 (子进程直接 import .ts) 不支持这种非可擦除语法, 会直接崩。
   private readonly db: DatabaseSync;
   private enabled = false;

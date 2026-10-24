@@ -1,16 +1,16 @@
 // tests/s2/client-review-render.test.ts — 面板真的能渲染出期待的元素吗?
 //
-// 为什么需要它 (2026-09-18): 加"注入预览" tab 时, 我发现**没有任何测试断言过面板渲染** ——
+// 为什么需要它 (2026-09-18): 加"注入预览" tab 时, 我发现**没有任何测试断言过面板渲染** 
 // 已有的 `client-injection-card.test.ts` 只测 locale 键与注册契约, 不碰渲染树。
 // 而面板此前真踩过渲染类缺陷 (绑定页漏了 {var} 插值, 把 "{n}" 原样显示给用户)。
 //
 // 做法 (不引入新依赖): React 内部有一个 **dispatcher 槽**
 // (`ReactCurrentDispatcher.current`), hooks 通过它取实现。
 // 我们提供一个最小实现 (useState 取初值 / useEffect 不执行 / useCallback 返回原函数…),
-// 就能**真实调用**函数组件并遍历它返回的元素树 —— 足以回答"这个 tab 被渲染出来了吗"。
+// 就能**真实调用**函数组件并遍历它返回的元素树  足以回答"这个 tab 被渲染出来了吗"。
 //
 // **二次渲染也可测** (2026-09-18 补): `useState` 返回的 setter 把值写回槽位,
-// 于是"改状态 → 再渲染一次"可以在同一进程里驱动 —— 这覆盖了"切到某个 tab 后内容区渲染什么"。
+// 于是"改状态 → 再渲染一次"可以在同一进程里驱动  这覆盖了"切到某个 tab 后内容区渲染什么"。
 //
 // **仍不在范围内 (必须说清)**: 浏览器里的**最终 DOM**、**事件处理**、样式是否生效。
 // 它挡的是"元素根本没进树"这一类缺陷, 不挡"渲染出来但长得不对"。
@@ -92,13 +92,13 @@ describe("面板渲染 (组件函数的输出树)", () => {
     const { id, registered } = registerPanels();
     expect(id).toBe("@hengxin666/hx-memory");
     // ⚠ 判据从"数量 == 3"改成"**id 集合包含已知项**" (2026-09-20, §795):
-    // 那个数字断言在加"真相文件"面板时变红 —— 而它想守的并不是"恰好三个",
+    // 那个数字断言在加"真相文件"面板时变红  而它想守的并不是"恰好三个",
     // 而是"每个面板都接上了"。与下面那条 tab 断言同一原则 ("加 tab 不该让测试变红")。
     // 现在: 新增面板**要显式加进这个集合**, 于是"漏接线"仍会被抓到, 而"多一个面板"不会假红。
     const ids = registered.map((r) => r.spec.id).sort();
-    // 三个 settings 区段靠 id 定位; 注入卡走 registerInjectionCard (另一套 spec, 无 id) —— 故为 undefined。
+    // 三个 settings 区段靠 id 定位; 注入卡走 registerInjectionCard (另一套 spec, 无 id)  故为 undefined。
     // 注入卡自身注册几条 (0.1.7 起是"新槽位 + 旧槽位"双注册, 见 register-card.ts) 不是本断言的
-    // 关注点: 这里只钉"三个区段都在"。用集合而非逐项相等, 与上面那条原则一致 ——
+    // 关注点: 这里只钉"三个区段都在"。用集合而非逐项相等, 与上面那条原则一致 
     // 加一条卡片接线不该让这条断言假红, 而"漏接某个区段"仍会被抓到。
     expect(new Set(ids)).toEqual(
       new Set(["hx-memory-bindings", "hx-memory-files", "hx-memory-review", undefined]),
@@ -118,7 +118,7 @@ describe("面板渲染 (组件函数的输出树)", () => {
       const texts = collectTexts(tree);
       const tabs = texts.filter((x) => x.startsWith("tab"));
       expect(tabs).toContain("tabInjection");
-      // 断言的是"每个 tab 都在树里", 而不是具体条数 —— 加 tab 不该让这条测试变红
+      // 断言的是"每个 tab 都在树里", 而不是具体条数  加 tab 不该让这条测试变红
       for (const k of ["tabProposals", "tabRecent", "tabCaptureReview"]) expect(tabs).toContain(k);
       expect(texts.length).toBeGreaterThan(10);
     } finally {
@@ -148,7 +148,7 @@ describe("面板渲染 (组件函数的输出树)", () => {
 function makeReentrant() {
   const states: unknown[] = [];
   const setters: Array<(v: unknown) => void> = [];
-  // ⚠ 每次渲染都要把 hook 游标归零 —— 否则 useState 的索引会跨渲染累积,
+  // ⚠ 每次渲染都要把 hook 游标归零  否则 useState 的索引会跨渲染累积,
   // 最终形成无界数组 (实测: 不重置会让 vitest 进程栈溢出崩溃, 而不是给出断言失败)。
   let cursor = 0;
   const d: Record<string, unknown> = {
@@ -187,7 +187,7 @@ function makeReentrant() {
     /**
      * 逐个槽位试填 v, 返回"填哪个槽会让 marker 出现"(-1 = 没有)。
      *
-     * **每轮试填前把全部槽位还原到快照** —— 否则上一轮的脏值会污染本轮渲染
+     * **每轮试填前把全部槽位还原到快照**  否则上一轮的脏值会污染本轮渲染
      * (实测表现为 `hits.map is not a function`: 一个本该是数组的槽位被留成了别的值)。
      * 命中后**保留**该槽位的值, 调用方接着 `render()` 就能看到目标分支。
      */
@@ -201,7 +201,7 @@ function makeReentrant() {
           texts = this.render(comp);
         } catch {
           // 试填到**不相关的槽位**会让组件在渲染中抛错 (例如把数组槽改成了字符串)。
-          // 那不是缺陷, 是"试错了位置" —— 还原后继续试下一个。
+          // 那不是缺陷, 是"试错了位置"  还原后继续试下一个。
           continue;
         }
         if (texts.includes(marker)) return i;
@@ -244,7 +244,7 @@ describe("面板二次渲染 (驱动 setState 之后的分支)", () => {
       budgetTokens: 400,
       selectedTokens: 30,
     };
-    // 数据槽的初值是 null (injectView) —— 按"填它会渲染出 injPicked"来定位
+    // 数据槽的初值是 null (injectView)  按"填它会渲染出 injPicked"来定位
     expect(h.findSlot(target.comp, "injPicked", PAYLOAD)).toBeGreaterThanOrEqual(0);
     const texts = h.render(target.comp);
     // 这是这张 tab 存在的理由: 用户必须能看见"哪些被挡了"以及"为什么"

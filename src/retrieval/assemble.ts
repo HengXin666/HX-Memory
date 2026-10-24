@@ -1,7 +1,7 @@
 // retrieval/assemble.ts — 融合之后的收尾: 去冗余、预算裁剪、图候选补位、返回顺序。
 //
 // 为什么独立成文件: 这一段的职责是"把已经算好分的候选整理成最终命中列表", 与
-// hybrid.ts 关心的"从各通道取数并融合"是两件事 —— 前者改排序策略, 后者改通道与取数。
+// hybrid.ts 关心的"从各通道取数并融合"是两件事  前者改排序策略, 后者改通道与取数。
 // 它们的变化原因不同 (历史上排序缺陷改了三次, 通道增删改过两次), 放在一起会让
 // 最长的那段逻辑淹没另一段 (实测 hybrid.ts 破 400 行上限)。
 //
@@ -24,7 +24,7 @@ export interface AssembleOptions {
   mmrLambda: number;
   /** 图候选的补位配额 (0 = 不追加)。 */
   graphTierQuota: number;
-  /** 实体反查候选的配额 (0 = 不追加)。与图配额分开 —— 两个通道的候选质量不同。 */
+  /** 实体反查候选的配额 (0 = 不追加)。与图配额分开  两个通道的候选质量不同。 */
   entityQuota: number;
   /** 第二梯队候选 (不与主榜单竞争分数; 各自占独立配额)。channel 决定它吃哪份配额。 */
   tier2: ReadonlyArray<{ id: string; channel: string }>;
@@ -100,11 +100,11 @@ export function assembleHits(
     });
   }
 
-  // ⚠ 2026-09-18 修复: extras 此前**无条件追加**, 完全绕过 tokenBudget ——
+  // ⚠ 2026-09-18 修复: extras 此前**无条件追加**, 完全绕过 tokenBudget 
   // 实测 (真实库, tokenBudget=100): 返回的 6 条**全部来自 graph/entity**, 单条最大 1400 token
   // (总预算的 14 倍); 而预算内的 primary **一条都没进**。注入路径因此超支 5.8 倍 (实测 4994 vs 700)。
   //
-  // 修法: extras 只在**预算还有余量**时追加。这与既有契约**不冲突** ——
+  // 修法: extras 只在**预算还有余量**时追加。这与既有契约**不冲突** 
   // 契约场景 (conformance 的"图扩展邻居被召回") 不传 tokenBudget, 走默认 1200, 余量充足;
   // 而"预算紧张时优先保证主榜单"是预算机制的应有之义 (它此前只对 primary 生效)。
   const extraBudget = Math.max(0, opts.tokenBudget - budgeted.tokens);

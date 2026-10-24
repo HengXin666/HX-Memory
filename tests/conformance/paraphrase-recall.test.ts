@@ -1,6 +1,6 @@
 // tests/conformance/paraphrase-recall.test.ts — 语义检索的端到端质量契约 (用户核心诉求)。
 //
-// 为什么要有这条: "记忆是精确匹配"是本项目最初的硬伤 —— 同一件事换个说法就找不到。
+// 为什么要有这条: "记忆是精确匹配"是本项目最初的硬伤  同一件事换个说法就找不到。
 // 这条测试固定一份语料与同义改写查询, 断言 Recall@3 达到阈值; 任何回归都会在这里被拦下。
 import { describe, expect, it } from "vitest";
 import { MemoryBackend } from "../../src/storage/memory-store.ts";

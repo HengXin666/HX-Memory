@@ -3,7 +3,7 @@
 // 这是"真相在文件"这条不变量落地的地方: 一条记忆 ↔ 一个块; 文件是 git 可 diff 的文本。
 // 设计要点 (每一条都对应一个踩过的坑):
 //   1. **正文不可伪造块边界**: 正文里形如 "---\nid: " 的行写入时转义 (反斜杠前缀),
-//      读取时逆序还原 —— 否则一条普通记忆能在重建后"长出"一个假条目。
+//      读取时逆序还原  否则一条普通记忆能在重建后"长出"一个假条目。
 //   2. **前言原样保留**: 第一个块之前的手写笔记不参与解析, 写回时原样保留。
 //   3. **时间戳必须 ISO (Z 结尾)**: 它们参与文件名与时间切片, 不合法就 fail-closed 跳过。
 //   4. **块间分隔容忍单换行**: 手写/旧文件可能不是空行; 但此时"正文以换行结尾"会丢一个换行
@@ -11,7 +11,7 @@
 //   5. **追加是 O(1)**: 新条目只 truncate 掉文件终止换行再 append, 不重写整个文件
 //      (批量导入 10k 条从分钟级降到秒级); 但这要求内容与 readFileParts 的产物逐字节等价。
 //   6. **未知 frontmatter 键原样带回**: 写回是"整块重组", 若不显式搬运, 更新一条记忆就会
-//      把它身上当前代码不认识的键 (更新版本写的 / 手写的) 静默吃掉 —— 见 frontmatter.ts。
+//      把它身上当前代码不认识的键 (更新版本写的 / 手写的) 静默吃掉  见 frontmatter.ts。
 import {
   appendFileSync,
   closeSync,
@@ -77,7 +77,7 @@ export function entryToMarkdown(e: MemoryEntry, unknown: readonly string[] = [])
   if (e.project) lines.push("project: " + e.project);
   if (e.tags?.length) lines.push("tags: " + JSON.stringify(e.tags));
   if (e.structured) lines.push("structured: " + JSON.stringify(e.structured));
-  // v2 字段: 全部写进 frontmatter —— 否则重建 (删索引/换引擎) 会静默丢掉关联性与衰减状态。
+  // v2 字段: 全部写进 frontmatter  否则重建 (删索引/换引擎) 会静默丢掉关联性与衰减状态。
   if (e.entities?.length) lines.push("entities: " + JSON.stringify(e.entities));
   if (e.importance !== undefined) lines.push("importance: " + String(e.importance));
   if (e.confidence !== undefined) lines.push("confidence: " + String(e.confidence));
@@ -117,7 +117,7 @@ export function readFileParts(file: string, skipped?: string[]): FileParts {
   const pieces = rest.split(/\n(?=---\nid: )/);
   const blocks: string[] = [];
   for (let i = 0; i < pieces.length; i++) {
-    // 块间分隔符: 规范写法是空行, 但单个换行也要容忍 —— 每个非末块恰好去掉一个分隔换行。
+    // 块间分隔符: 规范写法是空行, 但单个换行也要容忍  每个非末块恰好去掉一个分隔换行。
     let piece = pieces[i]!;
     if (i < pieces.length - 1 && piece.endsWith("\n")) piece = piece.slice(0, -1);
     if (!piece.startsWith("---\n")) {
@@ -132,18 +132,18 @@ export function readFileParts(file: string, skipped?: string[]): FileParts {
 /**
  * 原子写: 先写同目录的临时文件, `fsync` 落盘后再 `rename` 覆盖目标。
  *
- * 为什么需要它 (2026-09-18 实测): 此前 `writeFileParts` 直接 `writeFileSync` **原地覆盖** ——
+ * 为什么需要它 (2026-09-18 实测): 此前 `writeFileParts` 直接 `writeFileSync` **原地覆盖** 
  * 若进程在写入中途崩溃/断电, 文件会被**截断到写入进度**, 后面的块全部丢失。
  *
  * 与 `appendBlockToFile` 的对比 (风险面不同):
  *   · `appendBlockToFile` (O(1) 快路径): 崩溃只丢**末尾一个换行**, 不影响解析;
  *   · `writeFileParts` (整文件重写): 崩溃会**丢整段内容** ← 这才是真风险。
  *
- * 为什么必须同目录: `rename` 只在**同一文件系统内**是原子的 —— 跨盘会退化成"复制+删除"。
+ * 为什么必须同目录: `rename` 只在**同一文件系统内**是原子的  跨盘会退化成"复制+删除"。
  *
  * 顺带解决跨进程丢更新 (盲审遗留第 2 条): 两个进程各自读-改-写时,
  * 此前是"后写者覆盖先写者的中间态"; 现在是"最后完成 rename 的胜出",
- * **不会产生半文件**, 但**仍会丢一方的更新** —— 那是读-改-写的固有问题,
+ * **不会产生半文件**, 但**仍会丢一方的更新**  那是读-改-写的固有问题,
  * 需要跨进程锁才能根治 (不在本次范围)。
  */
 function writeFileAtomic(file: string, content: string): void {
@@ -152,7 +152,7 @@ function writeFileAtomic(file: string, content: string): void {
   const fd = openSync(tmp, "w");
   try {
     writeSync(fd, content);
-    // fsync 是必要的: 没有它, rename 可能先于数据落盘 —— 断电后会得到一个**空的**目标文件。
+    // fsync 是必要的: 没有它, rename 可能先于数据落盘  断电后会得到一个**空的**目标文件。
     fsyncSync(fd);
   } finally {
     closeSync(fd);
@@ -181,7 +181,7 @@ export function writeFileParts(file: string, parts: FileParts): void {
 /**
  * 新增或替换某 id 的块 (按块数组重写, 不碰其它块与前言的字节)。
  *
- * 替换时会先把**旧块里的陌生 frontmatter 键**搬运到新块 (见 frontmatter.ts) ——
+ * 替换时会先把**旧块里的陌生 frontmatter 键**搬运到新块 (见 frontmatter.ts) 
  * 这是"无损"的落点: 升级/整理/普通更新都走这条路径, 必须先保证不丢字段。
  */
 export function upsertBlockInFile(file: string, e: MemoryEntry): void {
@@ -225,7 +225,7 @@ function readTail(file: string, count: number): string {
 /**
  * 追加一个新块 (新条目专用快路径)。
  * O(1) 追加: 只把"文件终止换行"这一个字节截掉, 再补 "空行 + 新块 + 终止换行"。
- * 与 writeFileParts 的产物逐字节等价 (含"上一条正文自带尾部空行"的歧义情况) —— 有回归测试钉住。
+ * 与 writeFileParts 的产物逐字节等价 (含"上一条正文自带尾部空行"的歧义情况)  有回归测试钉住。
  */
 export function appendBlockToFile(file: string, e: MemoryEntry): void {
   const block = entryToMarkdown(e);

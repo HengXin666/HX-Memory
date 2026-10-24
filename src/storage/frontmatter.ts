@@ -1,7 +1,7 @@
 // storage/frontmatter.ts — frontmatter 的**键级**工具 (解析与写回共用的单一事实源)。
 //
 // 为什么独立成文件: 解析 (markdown-parse) 与写回 (markdown-codec) 都需要"按行取键"的同一套口径。
-// 此前两边各自用正则全文扫 (parse 的 field()) 或干脆不认识陌生键 (codec 整块重组) ——
+// 此前两边各自用正则全文扫 (parse 的 field()) 或干脆不认识陌生键 (codec 整块重组) 
 // 后者会让**更新一条记忆 = 静默丢掉所有当前代码不认识的字段**(降级运行/手写字段/未来版本字段)。
 // 迁移与整理必须以"不丢字段"为前提, 所以这把尺子必须先存在。
 //
@@ -10,7 +10,7 @@
 
 /**
  * frontmatter 里的所有顶层 `key: value` 行。
- * 同名多次出现按顺序保留 —— 取值时取第一条, 与旧的"正则取首个匹配"语义逐字一致。
+ * 同名多次出现按顺序保留  取值时取第一条, 与旧的"正则取首个匹配"语义逐字一致。
  */
 export function frontmatterFields(head: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -85,6 +85,10 @@ export function frontmatterHeadOf(block: string): string | null {
 export function blockFormat(block: string): number | undefined {
   const head = frontmatterHeadOf(block);
   if (head === null) return undefined;
+  /**
+   * 无损迁移与主动整理 (形态规范化 + 陌生字段保留)
+   * .agents/notes/implemented/feature/2026-09-11-lossless-normalize-and-migration.md
+   */
   const raw = frontmatterFields(head).get("format")?.[0];
   if (raw === undefined) return undefined;
   const n = Number(raw);

@@ -11,10 +11,10 @@
 // if (req.coverageMode !== "candidate" && … && shouldAbstain(…)) { result.hits = []; }
 // ```
 //
-// 而**唯一的调用方**是 `app/neighbors.ts:77` (写入期近邻查找) —— 那意味着
+// 而**唯一的调用方**是 `app/neighbors.ts:77` (写入期近邻查找)  那意味着
 // "近邻查找**永不弃权**"。那是有意的 (候选生成要召回, 不是回答), 但它**没有任何断言**。
 //
-// 实测分叉: 拿一个"字面沾一个词但整体不相关"的查询 ——
+// 实测分叉: 拿一个"字面沾一个词但整体不相关"的查询 
 // | 模式 | 结果 |
 // | --- | --- |
 // | `precision` (默认) | **弃权** (hits 清空) |
@@ -30,7 +30,7 @@ import { HybridRetriever } from "../../src/retrieval/hybrid.ts";
 import type { MemoryEntry } from "../../src/kernel/types.ts";
 
 const T = { validAt: "2026-01-01T00:00:00Z", assertedAt: "2026-01-01T00:00:00Z" };
-/** 只沾一个词 ("回归测试"), 其余全是别的技术栈 —— 覆盖率必然低于门槛。 */
+/** 只沾一个词 ("回归测试"), 其余全是别的技术栈  覆盖率必然低于门槛。 */
 const BODY = "回归测试可以在上线前发现大部分问题";
 const QUERY = "如何给 Kubernetes 集群做回归测试并自动扩容节点";
 
@@ -47,7 +47,7 @@ function abstained(out: { hits: unknown[]; degraded?: readonly string[] }): bool
 }
 
 describe("coverageMode: 一个开关三件事", () => {
-  it("**precision (默认) 会弃权** —— 低覆盖率查询必须返回空", () => {
+  it("**precision (默认) 会弃权**  低覆盖率查询必须返回空", () => {
     const { store, r, root } = setup();
     try {
       const out = r.retrieveSync({ text: QUERY, limit: 10, purpose: "recall" } as never);
@@ -55,7 +55,7 @@ describe("coverageMode: 一个开关三件事", () => {
     } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
   });
 
-  it("**candidate 不弃权** —— 候选生成要的是召回, 不是回答", () => {
+  it("**candidate 不弃权**  候选生成要的是召回, 不是回答", () => {
     const { store, r, root } = setup();
     try {
       const out = r.retrieveSync({ text: QUERY, limit: 10, purpose: "recall", coverageMode: "candidate" } as never);

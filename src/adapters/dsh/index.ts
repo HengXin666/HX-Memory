@@ -10,8 +10,9 @@ import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
 import { FileBackend } from "../../storage/file-store.js";
 import { CapturePipeline } from "../../capture/pipeline.js";
-import { createPendingGuidance, makeSessionStartHandler } from "./session-start.js";
-import { makeRegistrationCheck, wireSessionLifecycle } from "./session-wiring.js";
+import { createPendingGuidance } from "./session-start.js";
+import { makeRegistrationCheck, mountSessionLifecycle } from "./session-wiring.js";
+import { makeReceiptSender } from "./receipt.js";
 import { wirePrestepAndCapture } from "./prestep-wiring.js";
 import { HxMemoryRuntime, scopeOfSession } from "./runtime.js";
 import type { ProjectScopeArg } from "../../kernel/project-lineage.ts";
@@ -19,6 +20,7 @@ import { registerMemoryTools } from "./tools.js";
 import { captureReviewBridge } from "./capture-review-bridge.ts";
 import { makeAlwaysOnDetailedReader } from "./gateway-injection.ts";
 import { EpisodeStore } from "../../storage/episode-store.js";
+import { buildTranscript, transcriptItemsOf } from "../../capture/transcript.js";
 import { GeneralizerService } from "../../generalize/service.ts";
 import { makeLlmAbstractor } from "./llm-abstractor.js";
 import { makeLlmStructurer } from "./llm-structurer.js";
@@ -56,30 +58,27 @@ export const inject = ["tools"];
 // 入口选项与默认路径整段在 plugin-options.ts; 这里再导出, 保持既有导入路径不变。
 export type { HxMemoryPluginOptions } from "./plugin-options.js";
 export { defaultMemoryRoot } from "./plugin-options.js";
-// 上面两行只做再导出 (不引入本地绑定), 但本模块自己要使用它们 —— 因此仍需本地导入。
+import { safeAgent } from "./plugin-options.js";
+// 上面两行只做再导出 (不引入本地绑定), 但本模块自己要使用它们  因此仍需本地导入。
 import { defaultMemoryRoot, type HxMemoryPluginOptions } from "./plugin-options.js";
 
 /** 尝试构造 AI 能力; agents 服务不可用或构造失败 → undefined (调用方回退启发式)。 */
-function safeAgent<T>(fn: () => T): T | undefined {
-  try {
-    return fn();
-  } catch {
-    return undefined;
-  }
-}
-
 export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const opts = options;
   const root = opts.root ?? defaultMemoryRoot();
+  /**
+   * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+   * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+   */
   const store = opts.store ?? new FileBackend({ root });
   // 谁创建谁关闭: FileBackend 持有 SQLite 句柄, 热重载 (HMR 会 dispose 旧 fiber 再 apply())
   // 时若不关, 每次重载漏一个句柄并叠加 WAL 争用, 最终 "database is locked"。
-  // 注入进来的 store 属于调用方, 由它负责关闭 —— 这里只关自己建的那个。
+  // 注入进来的 store 属于调用方, 由它负责关闭  这里只关自己建的那个。
   const ownsStore = !opts.store;
   const reviewDir = opts.reviewDir ?? join(root, "review");
   // 组合配置 (插件 entry) 是 base; 0.1.7+ 由 volatile 引用覆盖, 旧宿主由 wireSettings 接 thunk。
   // 三步的顺序是硬约束 (写错的表现是"设置看着生效、其实读默认值"且无报错), 因此收在
-  // createLiveSettings 里由结构保证 —— 见 settings-live.ts 的说明。
+  // createLiveSettings 里由结构保证  见 settings-live.ts 的说明。
   const liveSettings = createLiveSettings(opts.settings ?? {}, opts);
   const settingsSource = liveSettings.source;
   const settings = liveSettings.read;
@@ -91,13 +90,17 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   // 否则用本地零依赖哈希嵌入器 (同步, 零配置也能跑)。
   const httpEmbedder = openAiEmbedderFromEnv();
   const localEmbedder = new LexicalEmbedder();
+  /**
+   * 四层切面 (Surface / Application / Ports / Engines)
+   * .agents/notes/implemented/architecture/2026-09-10-four-layer-seams.md
+   */
   const retriever = new HybridRetriever(store, {
     vectorIndex: httpEmbedder
       ? new ProjectedVectorIndex({ embedder: httpEmbedder })
       : new LinearVectorIndex({ embedder: localEmbedder }),
   });
   // 推广服务实例在下方构造 (依赖 reviewDir 与模型); Facade 需要它的"人审提议"出口，
-  // 但不需要在构造时就有 —— 用一个持有器打破"组装顺序"这个隐式契约 (const, 只填空一次)。
+  // 但不需要在构造时就有  用一个持有器打破"组装顺序"这个隐式契约 (const, 只填空一次)。
   const generalizerHolder: { current?: GeneralizerService } = {};
   // 使用层唯一 API: DSH 的工具/召回都经由它, 与 MCP/CLI 共用同一套语义 (ADR-021)。
   const facade = new MemoryFacade(
@@ -109,7 +112,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   facade.withIndexStatus(() => store.ftsStatus());
   // 证据链: 条目 → 原文 (与 app/stack.ts 同一接线, 保证各宿主行为一致)。
   facade.withEvidence(new EpisodeStore({ root, retentionDays: settings().episodeRetentionDays }));
-  // 治理出口延后接线 (generalizer 建在下方, 依赖 reviewDir 与模型) ——
+  // 治理出口延后接线 (generalizer 建在下方, 依赖 reviewDir 与模型) 
   // 坏评超标的记忆据此产出人审提议; 不接线则标注照常落盘, 只是不产生提议。
   facade.withGeneralizer({
     enqueueProposal: (input) => {
@@ -120,7 +123,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   });
 
   // 注入调度账本 (可观测性真相文件): 每一步的判定都落一条, 含"没注入"的那几种。
-  // 保留期按函数传入 —— 面板改设置当轮生效 (与 episode 同一套理由)。
+  // 保留期按函数传入  面板改设置当轮生效 (与 episode 同一套理由)。
   // 关掉时置 null: 写入路径与面板出口都跟着消失, 但**代码路径不变** (少一个分支就少一处漏判)。
   const scheduleLog = new ScheduleLog({
     root,
@@ -139,10 +142,14 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     facade,
     revision: () => store.revision(),
     budgetTokens: 400,
-    // 条数上限: 传**函数** —— 面板改动当轮生效 (与 autoEvolve/episodeRetentionDays 同一约定)。
+    // 条数上限: 传**函数**  面板改动当轮生效 (与 autoEvolve/episodeRetentionDays 同一约定)。
     // 缓存已把条数纳入失效判据 (见 trigger-cache 的 caches), 因此改条数不会命中旧缓存。
     maxEntries: () => settings().alwaysOnMaxEntries,
   });
+  /**
+   * 单文件 400 行约束与大文件拆分
+   * .agents/notes/implemented/simplification/2026-09-11-400-line-limit-and-split.md
+   */
   const refreshAlwaysOn = (scope?: ProjectScopeArg): Promise<void> => triggerCache.refresh(scope);
 
   const binder = new Binder(
@@ -159,7 +166,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       recallFor: (text, decision, scope) => triggerCache.recallFor(text, decision, scope),
       now: () => new Date().toISOString(),
       // 工作区范围一路透传到这里 (会话的 scopeOf → binder.warm → 缓存刷新):
-      // 兜底通道此前丢掉了它, 于是 always-on 退化成"不区分项目" —— 泄漏与缓存串味都由此而来。
+      // 兜底通道此前丢掉了它, 于是 always-on 退化成"不区分项目"  泄漏与缓存串味都由此而来。
       warm: (scope) => refreshAlwaysOn(scope),
       // 命中即强化: 确定性注入是每轮都在跑的主通道, 注入过的记忆必须算"被用到"。
       // Facade.reinforce 自带 60s 合并窗口 (同窗口内重复命中只写一次), 失败静默 (不拖垮注入)。
@@ -174,9 +181,30 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const pipe = new CapturePipeline(store, {
     structurer: structurer ?? undefined,
     reviewRoot: root,
+    // 负面轮次的**全量上下文** (2026-10-06, 用户实测: "要有全量上下文…缓存是基于前缀的")。
+    //
+    // 材料来源是 episode 日志  那里按 session 存着每一轮 user/assistant 的**原文**,
+    // 因此不需要任何新增存储: 读它、拼成对话流、交给提炼器 (见 capture/transcript.ts)。
+    //
+    // ⚠ 这里用**惰性求值** (: () => episodeStore()), 与 episodes 同一约定:
+    // 保留期/开关在面板里可改, 构造期抓一次会让改动必须重启才生效。
+    // 读失败返回 undefined  少一份上下文, 不是故障 (提炼器退回看那句批评)。
+    transcriptFor: (session: string) => {
+      try {
+        const es = episodeStore();
+        if (!es) return undefined;
+        return buildTranscript(transcriptItemsOf(es.all(), session));
+      } catch {
+        return undefined;
+      }
+    },
   });
 
   // AI 调用记录: 订阅宿主事件, 存环形缓冲供面板展示 (透明可审计)。
+  /**
+   * 注入调度账本 (把触发层的"为什么"落成可查的证据)
+   * .agents/notes/implemented/feature/2026-09-13-injection-schedule-ledger.md
+   */
   const invocationLog = new InvocationLog();
   (ctx.on as (name: string, cb: (r: unknown) => void) => void)(
     "hx-memory/llm-invocation",
@@ -192,7 +220,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       // 日志失败不影响宿主
     }
   };
-  // 启动时清一次过期账本 (只跑一次; 与 episode prune 同位置同理由 —— 不需要后台定时器)。
+  // 启动时清一次过期账本 (只跑一次; 与 episode prune 同位置同理由  不需要后台定时器)。
   if (settings().scheduleLog) {
     try {
       const removedSchedule = scheduleLog.prune();
@@ -225,6 +253,12 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   } catch (error) {
     logWarn("episode prune failed: %s", error);
   }
+  // 对话内回执的**唯一投递器** (装配整段在 receipt.ts): runtime 与 prestep 共用它。
+  const sendReceipt = makeReceiptSender({
+    enabled: () => settings().captureReceipt !== false,
+    agentOf: (sessionId) => agents.get(sessionId),
+  });
+
   const runtime = new HxMemoryRuntime(pipe, settings, {
     onError: (error) => logWarn("capture failed: %s", error),
     surface: "dsh",
@@ -233,6 +267,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     captureLog: () => (settings().captureLog ? captureLog : null),
     // 负面/纠正信号判定面 (词表可配置 ⇒ 必须每次求值, 不能构造期固化)。
     negativity: () => gate.negativity.capture,
+    // 对话内回执 (用户实测: "看不到它真的在沉淀")  装配在 receipt.ts。
+    receipt: (sessionId) => (r) => sendReceipt(sessionId, r),
   });
   // AI 推广抽象: 经 agents 服务调最小 agent 提炼规则; 不可用/失败时回退启发式。
   const generalizer = new GeneralizerService(
@@ -256,11 +292,11 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     },
   );
   generalizerHolder.current = generalizer;
-  // 待发指引: 会话开始装入、首轮预步取走后清空 —— 记忆**只有 pre-step 一个注入点**。
+  // 待发指引: 会话开始装入、首轮预步取走后清空  记忆**只有 pre-step 一个注入点**。
   const pendingGuidance = createPendingGuidance();
 
   // 后台维护 (P3 的 ⬜ 调度器) 的组装: 策略/执行/记录在 maintenance-wiring.ts。
-  // 放在 gateway 之前 —— Service 构造即注册, 它的 maintenance RPC 要读这份记录。
+  // 放在 gateway 之前  Service 构造即注册, 它的 maintenance RPC 要读这份记录。
   const maintenance = wireMaintenance({
     ctx,
     root,
@@ -280,7 +316,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       facade,
       // 主动整理 (面板 dryRun → 确认 → 写回) 与 CLI 共用同一实现。
       normalizer: { run: (opts: Parameters<MemoryNormalizer["run"]>[0]) => new MemoryNormalizer(store, root).run(opts) },
-      // 待审队列: 从磁盘现读 (队列是追加写的真相文件, 不做缓存 —— 面板刷新要看到最新)。
+      // 待审队列: 从磁盘现读 (队列是追加写的真相文件, 不做缓存  面板刷新要看到最新)。
       captureReview: captureReviewBridge(root),
       alwaysOnDetailed: makeAlwaysOnDetailedReader(() => Promise.resolve(store.all())),
       schedule: scheduleLog,
@@ -292,14 +328,14 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
       currentProject: () => runtime.project(),
     },
   });
-  // 旧宿主 (<= 0.1.6) 的 installSection 把"权威配置 thunk"交给消费方 —— 必须接住,
+  // 旧宿主 (<= 0.1.6) 的 installSection 把"权威配置 thunk"交给消费方  必须接住,
   // 否则用户改的设置永远不会被读到。0.1.7+ 已在 createLiveSettings 里由 volatile 引用接管,
   // 这里只负责"别让宿主再为它自动生成一份页面"。
   // 宿主版本差异的处理整段在 settings-wiring.ts (组装根只负责调用)。
   wireSettings({
     ctx,
     // 必须是**补全过默认值**的组合层 (旧宿主 0.1.1 的 register 拿它当 base, 传裸
-    // opts.settings 会让宿主侧大部分字段是 undefined —— 见 LiveSettings.composition)。
+    // opts.settings 会让宿主侧大部分字段是 undefined  见 LiveSettings.composition)。
     compositionSettings: liveSettings.composition,
     settingsSource,
   });
@@ -311,11 +347,19 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     logWarn,
     // 以往同类纠正: 用使用层检索 (`purpose:"recall"` 只按相关性排, 不占保底通道)。
     recallLessons: async (text) => {
+      /**
+       * 远程端点整组 404 — 跨实例的 Typert marker
+       * .agents/notes/implemented/bug-fix/2026-09-14-typert-remote-404-cross-instance.md
+       */
       const scope = runtime.scope();
       const ranged = {
         ...(scope?.project ? { project: scope.project } : {}),
         ...(scope?.lineage?.length ? { lineage: scope.lineage } : {}),
       };
+      /**
+       * 记忆反馈通道 — 由 agent 标注召回质量
+       * .agents/notes/implemented/feature/2026-09-11-memory-feedback-channel.md
+       */
       const hits = facade.recall({
         text: text + " 禁止 改为 教训 被否决",
         purpose: "recall",
@@ -350,33 +394,30 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     warmUp: () => pipe.warmUp(),
     warmSync: () => retriever.warmSync(),
     loop: maintenance.loop,
-    flushAll: () => runtime.flushAll(),
+    flushAll: /**
+               * 插件卸载释放 store 句柄 (热重载前提)
+               * .agents/notes/implemented/bug-fix/2026-09-16-store-disposer-for-hmr.md
+               */
+              () => runtime.flushAll(),
     store,
     ownsStore,
   });
 
-  // 会话开始: **只登记, 不注入** (指引装入待发容器, 由首轮预步随记忆块发出)。
-  // 判定在 session-start.ts (组装根只负责把它接上事件)。
-  const onSessionStart = makeSessionStartHandler({
+  // 会话生命周期的一站式接线 (注册表 + handler + 双事件名 + 离开时冲刷) 在 session-wiring.ts。
+  const agents = mountSessionLifecycle({
+    ctx,
+    runtime,
+    pendingGuidance,
     settings: () => ({
       rootAgentsOnly: settings().rootAgentsOnly,
       injectGuidance: settings().injectGuidance,
       language: settings().language,
     }),
-    pending: pendingGuidance,
-  });
-  // 会话生命周期接线 (会话开始的双事件名 + 离开时的冲刷) 整段在 session-wiring.ts。
-  // 那一段独立成文件的原因不只是行数: 它承载的是一次真实故障的修法 (见该文件头注)。
-  wireSessionLifecycle({
-    ctx,
-    runtime,
-    onSessionStart,
-    pendingGuidance,
     warn: (message) => logWarn(message, ""),
   });
 
   // 逐轮确定性注入 + 捕获。两段接线整段在 prestep-wiring.ts:
-  // 前者是"每步注入什么", 后者是"每一轮沉淀什么" —— 它们共享一个**上下文来源**
+  // 前者是"每步注入什么", 后者是"每一轮沉淀什么"  它们共享一个**上下文来源**
   // (会话的 scope), 而那正是本次 dsh 0.2.0 故障打断的东西 (见 session-wiring.ts 头注)。
   wirePrestepAndCapture({
     ctx,
@@ -388,6 +429,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     scopeOf: scopeOfSession,
     logWarn,
     negativity: gate.negativity,
+    sendReceipt,
     checkRegistration: makeRegistrationCheck(runtime, (m) => logWarn(m, "")),
   });
 }

@@ -2,16 +2,20 @@
 //
 // 为什么需要它 (2026-09-18, §565): 面板的注入预览渲染 `{b.content}` (review-page.tsx),
 // 而 `projectAlwaysOnPreview` **硬编码 `content: ""`** ⇒ 用户只看到徽标与条数,
-// **看不出被挡的是什么** —— 而"哪些被挡了"正是那个出口存在的理由
+// **看不出被挡的是什么**  而"哪些被挡了"正是那个出口存在的理由
 // (规则是用户确认过的不变量, 保底通道承诺无条件注入; 挡了什么必须可查)。
 //
-// ⚠ 类型上 `content` 是 `string`, 所以 `content: ""` **不报错** —— 这类缺陷只能靠测试锁。
+// ⚠ 类型上 `content` 是 `string`, 所以 `content: ""` **不报错**  这类缺陷只能靠测试锁。
 // 本文件同时钉住"整条链的每一环都带 content"(§565 是一次**跨 4 个类型声明**的修复)。
 import { describe, expect, it } from "vitest";
 import { selectAlwaysOnDetailed } from "../../src/trigger/policy.ts";
 import { projectAlwaysOnPreview } from "../../src/adapters/dsh/gateway-injection.ts";
 import type { MemoryEntry } from "../../src/kernel/types.ts";
 
+/**
+ * 索引侧判据的硬化 (tags / 实体 / 跨层契约)
+ * .agents/notes/implemented/bug-fix/2026-09-18-index-side-predicate-hardening.md
+ */
 const rule = (id: string, content: string, at = "2026-01-01T00:00:00.000Z"): MemoryEntry =>
   ({
     id,
@@ -53,7 +57,7 @@ describe("always-on 预览: 被挡条目要带正文", () => {
     }
   });
 
-  it("被挡条目的 content 会被截断到 400 (与 picked 一致 —— 这是预览出口不是全文出口)", async () => {
+  it("被挡条目的 content 会被截断到 400 (与 picked 一致  这是预览出口不是全文出口)", async () => {
     const long = "很长的约束".repeat(200);   // > 400
     const entries = [rule("r1", long), rule("r2", "短约束")];
     const sel = selectAlwaysOnDetailed(entries, { budgetTokens: 30, estimate: (t) => t.length });

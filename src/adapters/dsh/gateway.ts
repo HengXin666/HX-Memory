@@ -16,7 +16,7 @@ import {
   type CaptureReviewView,
 } from "./gateway-memory.ts";
 import { handleAlwaysOnPreview, type AlwaysOnPreview } from "./gateway-injection.ts";
-// 真相文件视图 (§795): 只读列举/读取 —— 让"真相在文件"在人侧也看得见。
+// 真相文件视图 (§795): 只读列举/读取  让"真相在文件"在人侧也看得见。
 import { listTruthFiles, readTruthFile, type TruthFileInfo } from "./truth-files.ts";
 import type { LlmInvocationRecord } from "./llm-agent.js";
 import {
@@ -39,6 +39,10 @@ import {
 export type { FlaggedMemoryView, ReviewEntryView, ReviewQueueView } from "./gateway-review.js";
 
 // 依赖面声明搬到 gateway-deps.ts (本文件有 400 行上限; 它属"契约"不属"服务生命周期")。
+/**
+ * 四类证据面的 RPC 投影 (契约面不搬家, 实现面按行数上限拆)
+ * .agents/notes/implemented/architecture/2026-09-13-evidence-surface-rpc-projection.md
+ */
 export type { HxMemoryGatewayDeps } from "./gateway-deps.ts";
 import type { HxMemoryGatewayDeps } from "./gateway-deps.ts";
 
@@ -59,13 +63,17 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   @Remote("reviewQueue")
+  /**
+   * 人审提议必须能看见依据 (covers 展开 + 草稿标记)
+   * .agents/notes/implemented/feature/2026-09-13-review-evidence-expansion.md
+   */
   reviewQueue(status: ProposalStatus): ReviewQueueView[] {
     return this.deps.generalizer.listQueue(status).map(toReviewView);
   }
 
   /**
    * 单条记忆 (按 id 取)。**面板人审提议时读它**: 提议只带 covers 的 id 列表,
-   * 没有这个出口前端就无法把"它概括的那几条原文"显示给人看 —— 而人审的判断对象
+   * 没有这个出口前端就无法把"它概括的那几条原文"显示给人看  而人审的判断对象
    * 恰恰是原文, 不是 id, 也不是一个 covers 计数。
    *
    * 走 store.get (与 confirm 落规则时读 covers 的同一入口): 人审要看的是**被引用的那条**,
@@ -98,13 +106,13 @@ export class HxMemoryGateway extends TypertRemoteService {
 
   /**
    * 被 agent 负面标注过的记忆 (按坏评数倒序)。
-   * 为什么需要: 标注会**降权排序**并可能产出人审提议 —— 这两件事都必须可解释,
+   * 为什么需要: 标注会**降权排序**并可能产出人审提议  这两件事都必须可解释,
    * 否则"这条为什么排到后面了"无从回答 (治理动作不能是黑箱)。
    */
   @Remote("flaggedMemories")
   async flaggedMemories(limit?: number): Promise<FlaggedMemoryView[]> {
     // 走 facade.recent 而不是 store.all: 可见性 (shadow/merged/expired 默认隐藏)
-    // 与排序口径只有一处 —— 面板不该看到已撤回的条目出现在"被标注"列表里。
+    // 与排序口径只有一处  面板不该看到已撤回的条目出现在"被标注"列表里。
     const rows = this.deps.facade ? await this.deps.facade.recent(500) : [];
     return projectFlagged(rows, limit);
   }
@@ -154,7 +162,7 @@ export class HxMemoryGateway extends TypertRemoteService {
   /**
    * 列举真相文件 (只读, §795 文件视图)。
    *
-   * 为什么这个出口重要: ADR-002 的承诺是"真相在 Markdown 文件, 索引可重建" ——
+   * 为什么这个出口重要: ADR-002 的承诺是"真相在 Markdown 文件, 索引可重建" 
    * 而面板此前**每个视图都经 SQLite**。于是"真相在文件"在**人侧没有兑现**:
    * 用户看不到 hx-memory 到底写了什么文件、写了多少、什么时候写的。
    *
@@ -172,7 +180,7 @@ export class HxMemoryGateway extends TypertRemoteService {
    * 读一个真相文件的原文 (只读, §795)。
    *
    * ⚠ **目录穿越防护在 `readTruthFile` 里** (白名单目录 + 扩展名 + 规范化后仍在 root 内);
-   * 返回 `null` 时本方法统一答"读不到" —— **不区分"不存在"与"不允许"**, 区分等于泄露路径存在性。
+   * 返回 `null` 时本方法统一答"读不到"  **不区分"不存在"与"不允许"**, 区分等于泄露路径存在性。
    */
   @Remote("truthFile")
   truthFile(path: string): { path: string; text: string } | null {
@@ -215,7 +223,7 @@ export class HxMemoryGateway extends TypertRemoteService {
    * 注入调度账本 (按会话聚合)。
    *
    * 为什么要有这个出口: 触发层的设计目标写着"'为什么没注入'必须和'注入了什么'一样可查",
-   * 而 TriggerDecision 此前只活在内存里、无人读取 —— 面板是它唯一的兑现处。
+   * 而 TriggerDecision 此前只活在内存里、无人读取  面板是它唯一的兑现处。
    * 投影逻辑在 gateway-observability.ts (缺依赖时返回形状完整的降级对象)。
    */
   @Remote("scheduleLog")
@@ -226,7 +234,7 @@ export class HxMemoryGateway extends TypertRemoteService {
   /**
    * 后台维护状态 (最近记录 + 开关/周期)。
    *
-   * 为什么这个出口是必要的: 维护是"悄悄发生的事" —— 一个只在空闲期启动子进程的任务,
+   * 为什么这个出口是必要的: 维护是"悄悄发生的事"  一个只在空闲期启动子进程的任务,
    * 如果没有一个地方能看见"它跑了没有/成功没有", 用户就只能相信它。
    */
   @Remote("maintenance")
@@ -237,7 +245,7 @@ export class HxMemoryGateway extends TypertRemoteService {
   /**
    * 捕获耗时账本 (分位数 + 分阶段均值 + 最近原始记录)。
    *
-   * 为什么要有这个出口: 捕获是异步的, 但异步不等于免费 —— 它调 LLM、读全库建边、同步写
+   * 为什么要有这个出口: 捕获是异步的, 但异步不等于免费  它调 LLM、读全库建边、同步写
    * SQLite, 全在对话所在的 event loop 上。没有它, "这一轮怎么慢了"只能靠猜 (真实问题)。
    */
   @Remote("captureLog")
@@ -263,7 +271,7 @@ export class HxMemoryGateway extends TypertRemoteService {
     }>
   > {
     // recent 在端口上是**可选**的 (不是所有引擎都有"按写入时间倒序"的概念):
-    // 没有就退回 query 并按 assertedAt 自行排序 —— 不假设实现具备该能力。
+    // 没有就退回 query 并按 assertedAt 自行排序  不假设实现具备该能力。
     const entries = this.deps.facade
       ? await this.deps.facade.recent(limit ?? 20)
       : (this.deps.store.recent?.(limit ?? 20) ??
@@ -283,7 +291,7 @@ export class HxMemoryGateway extends TypertRemoteService {
 
   /**
    * 主动整理: 把老形态的块补成当前形态 (字段补全 + 版本标记)。
-   * **默认干跑**: 面板先展示"会改什么", 由人点确认才落盘 —— 真相文件是人的资产, 不是缓存。
+   * **默认干跑**: 面板先展示"会改什么", 由人点确认才落盘  真相文件是人的资产, 不是缓存。
    */
   @Remote("normalizeMemory")
   normalizeMemory(dryRun?: boolean): NormalizeReport | { error: string } {
@@ -300,7 +308,7 @@ export class HxMemoryGateway extends TypertRemoteService {
    * 待裁决的矛盾集合 (双向 contradicts 边)。
    *
    * 为什么需要它: 写入期裁决为 keep-both 时只落了一条边并注释"需人工处理",
-   * 但此前**没有任何入口能列出这些矛盾** —— 数据在库里, 却没人看得见, 等于永久悬空。
+   * 但此前**没有任何入口能列出这些矛盾**  数据在库里, 却没人看得见, 等于永久悬空。
    */
   @Remote("contradictions")
   contradictions(
@@ -354,7 +362,7 @@ export class HxMemoryGateway extends TypertRemoteService {
   }
 
   // 证据链: 面板侧"追来源"入口 (投影在 gateway-memory.ts, 与 memory_evidence 工具共用同一 Facade 方法)。
-  // 形参名是**协议面**: Typert 按名映射 args, 写成 (q: {id}) 会被宿主拒 —— 单测绕过该校验。
+  // 形参名是**协议面**: Typert 按名映射 args, 写成 (q: {id}) 会被宿主拒  单测绕过该校验。
   @Remote("evidenceChain")
   async evidenceChain(id: string): Promise<unknown> {
     return await projectEvidenceChain(this.deps.facade, id);

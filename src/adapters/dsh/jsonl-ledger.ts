@@ -3,12 +3,12 @@
 // 为什么要有它: 本目录已经有两个"按天分文件、只追加、永不改写、best-effort、带保留期与行数上限"
 // 的账本 (schedule-log 与 capture-log)。把这段语义写第二遍就会引出两个问题:
 //   1. 结构 gate (verify-structure) 的 jscpd 会把它判成重复块;
-//   2. 更要紧的是它会**分叉** —— 保留期/上限/失败语义只改了一处, 另一处静默保持旧行为,
+//   2. 更要紧的是它会**分叉**  保留期/上限/失败语义只改了一处, 另一处静默保持旧行为,
 //      而这类账本的失效恰恰是静默的 (写不进去只是少几行, 没人会注意到)。
 // 因此共同部分收敛在这里, 两个账本各自只保留"记录形状 + 聚合视图"。
 //
 // 三条不变量 (与 schedule-log 原始设计一致, 这里只是把它变成共享的):
-//   1. 账本是**真相文件**: 只追加、永不改写, 坏了只丢一行 —— 因此没有重建路径, 只有保留期;
+//   1. 账本是**真相文件**: 只追加、永不改写, 坏了只丢一行  因此没有重建路径, 只有保留期;
 //   2. 写入永远 **best-effort**: append 不抛错, 失败只置一个可观测标志 (记忆层不许拖垮对话);
 //   3. 单日行数上限: 账本不许长成拖垮宿主的东西 (到顶就拒写, 不轮转、不重写)。
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -30,7 +30,7 @@ export interface JsonlLedgerConfig {
  * 一个按天分文件的追加式 JSONL 账本。
  *
  * 子类 (ScheduleLog / CaptureLog) 负责记录形状与聚合视图; 本类只管**落盘语义**。
- * 子类的 append 应当只是"把强类型记录交给 appendLine", 不要再自己拼一条写路径 ——
+ * 子类的 append 应当只是"把强类型记录交给 appendLine", 不要再自己拼一条写路径 
  * 那正是这条共享实现要消灭的东西。
  */
 export class JsonlLedger {
@@ -39,7 +39,7 @@ export class JsonlLedger {
   private readonly maxLinesPerDay: number | (() => number);
   /** 写失败只记一次 (每步都报会刷屏, 而刷屏的日志等于没有日志)。 */
   private writeFailed = false;
-  /** 每写 200 条做一次懒 prune —— 不需要后台定时器。 */
+  /** 每写 200 条做一次懒 prune  不需要后台定时器。 */
   private writes = 0;
 
   constructor(config: JsonlLedgerConfig) {
@@ -78,7 +78,7 @@ export class JsonlLedger {
     }
   }
 
-  /** 原始行 (新→旧)。坏行也原样返回 —— 解析由子类负责 (坏行跳过, 不让整份不可读)。 */
+  /** 原始行 (新→旧)。坏行也原样返回  解析由子类负责 (坏行跳过, 不让整份不可读)。 */
   lines(limit = 100): string[] {
     const max = Math.max(1, Math.min(10_000, limit));
     const out: string[] = [];

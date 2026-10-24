@@ -4,22 +4,22 @@
 // @deepseek-ai/dsh-typert-protocol 里**, 而"有哪些端点"是宿主 (dsh-api-gateway) 用它自己那份
 // 去读的。两份实例不等价时, 插件的 19 个 @Remote 一个都不可见:
 //
-//   - protocol 0.1.1-rc.2 把标记存进**模块私有 WeakMap** —— 另一份实例读不到, 结果是
+//   - protocol 0.1.1-rc.2 把标记存进**模块私有 WeakMap**  另一份实例读不到, 结果是
 //     `remoteMethods(gateway)` 返回 `[]`。宿主据此判定 claimsEndpoint=false, 于是
 //     /api/<namespace>/<method> 对**所有**方法一起回 404 not found;
 //   - protocol >= 0.1.2-rc.1 改成原型上的字符串键属性
-//     `"@deepseek-ai/dsh-typert-protocol/remote-methods"` —— 跨实例可读。
+//     `"@deepseek-ai/dsh-typert-protocol/remote-methods"`  跨实例可读。
 //
-// 更糟的是故障形态: fiber 仍显示 active、插件组合正常、日志干净 —— 只有面板静默报错
+// 更糟的是故障形态: fiber 仍显示 active、插件组合正常、日志干净  只有面板静默报错
 // ("状态读取失败: transport failure ... HTTP 404")。单测也测不到: 直接调方法绕过了发现环节。
 //
 // 因此这里做两件事:
 //   1. 让"宿主读到的端点集"成为**可导入的运行时能力** (`remoteMethodNames`), 测试与冒烟共用;
-//   2. `assertRemoteContract` 在插件装配时把关 —— 这是"在更早、更清楚的地方失败"的落点,
+//   2. `assertRemoteContract` 在插件装配时把关  这是"在更早、更清楚的地方失败"的落点,
 //      而不是让 19 个端点一起变成 404。
 //
 // 下面刻意不 import 任何 @deepseek-ai 包: marker 的键是协议公开面的一部分 (字符串字面量, 跨版本不变),
-// 用字面量读原型的属性描述符, 于是判定结果与"本模块加载了哪一份 protocol"无关 ——
+// 用字面量读原型的属性描述符, 于是判定结果与"本模块加载了哪一份 protocol"无关 
 // 任何一份依赖都改不动这个判定。
 import { createRequire } from "node:module";
 
@@ -88,7 +88,7 @@ function loadedProtocolVersion(): string | undefined {
 /**
  * 装配期把关: 宿主发现的方法集必须与插件声明的一致, 否则抛错。
  *
- * 为什么是抛错而不是打个 warning: 不匹配时全部端点 404, 而插件表面一切正常 ——
+ * 为什么是抛错而不是打个 warning: 不匹配时全部端点 404, 而插件表面一切正常 
  * 这是"最坏的可观测性"。宁可让插件组装载失败 (profile 里立刻能看出), 也不要半死。
  */
 export function assertRemoteContract(contract: RemoteContract): void {

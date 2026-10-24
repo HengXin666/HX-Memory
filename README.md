@@ -13,7 +13,7 @@
 
 大多数 Agent 记忆系统只有**单个项目内的"记与取"**: 今天在这个仓库踩的坑, 明天换一个仓库, 同样的坑再踩一遍。
 
-HX-Memory 补上缺的那一环 —— **跨项目推广**:
+HX-Memory 补上缺的那一环  **跨项目推广**:
 
 ```text
 在项目 A 踩坑 "我所有容器实际上都有并发策略问题"
@@ -25,7 +25,7 @@ HX-Memory 补上缺的那一环 —— **跨项目推广**:
 项目 B、C、D… 的 AI 从此都知道这个教训
 ```
 
-**没有你的确认, 机器不会推广任何规则** —— 推广是人工闸门, 不是 AI 自作主张。
+**没有你的确认, 机器不会推广任何规则**  推广是人工闸门, 不是 AI 自作主张。
 
 ---
 
@@ -52,7 +52,7 @@ cd <本仓库目录> && dsh plugin --profile web add .
 > 各安装通道的实测对照见 [docs/plugin-install.md](docs/plugin-install.md)。
 
 **本地开发时更新插件 (`file:` 依赖有个坑)**: 改完代码先 `pnpm run build && pnpm run build:client`,
-再重装。但 pnpm 对"内容变了的 `file:` 依赖"**会显示 `Already up to date` 而不重新拷贝** ——
+再重装。但 pnpm 对"内容变了的 `file:` 依赖"**会显示 `Already up to date` 而不重新拷贝** 
 若两次构建之间**新增或删除过文件**, 结果是新旧混杂 (被改动的文件因硬链接变成新版, 新增文件根本没进来),
 插件启动即崩。可靠做法是先删掉再装:
 
@@ -69,13 +69,13 @@ diff -rq dist ~/.dsh/profiles/web/node_modules/@hengxin666/hx-memory/dist && ech
 ```
 
 > 注意 `scripts/smoke-dsh.sh` 用的是**隔离的临时 DSH_HOME**, 因此跑它不会碰你的真实记忆。
-> 若要手动对真实 host 跑 `scripts/smoke-dsh-http.mjs`, 它会**覆盖 `<root>/bindings.json`** —— 先备份。
+> 若要手动对真实 host 跑 `scripts/smoke-dsh-http.mjs`, 它会**覆盖 `<root>/bindings.json`**  先备份。
 
 **版本**: 插件声明 `peerDependencies: @deepseek-ai/dsh-* ^0.1.5-rc.1` (**宿主必须 ≥ 0.1.5-rc.1**):
 
 > 为什么下限是 0.1.5-rc.1 而不是更低: `@Remote` 标记的存储介质在 `0.1.2-rc.1` 变过一次。
 > `0.1.1-rc.2` 把标记存在协议的**模块私有 WeakMap** 里, 而"有哪些端点"是宿主用它**自己那份**
-> `dsh-typert-protocol` 去读的 —— 两份实例不等价时插件的方法一个都不可见, 结果是
+> `dsh-typert-protocol` 去读的  两份实例不等价时插件的方法一个都不可见, 结果是
 > `/api/hxMemory/*` **整组 404**, 而插件 fiber 依旧 `active`、日志干净。
 > 另外 `0.1.5-rc.1` 正是 `dsh` 的 npm `latest`, 与本机实测的宿主一致。
 > 插件现在会在装配期自校验这道契约 (`src/adapters/dsh/remote-contract.ts`), 不一致时**直接
@@ -127,7 +127,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 
 > 简单说: **① 自动记, ④ 自动注入, ② 管绑定, ③+⑥ 管推广, ⑤ 手动兜底, ⑦⑧ 换宿主用, ⑨ 管遗忘**。
 >
-> 所有入口 (DSH 工具/面板、MCP、CLI) 都经由同一个 `MemoryFacade` —— **换宿主不换语义**:
+> 所有入口 (DSH 工具/面板、MCP、CLI) 都经由同一个 `MemoryFacade`  **换宿主不换语义**:
 > 同一条检索排序、同一套治理闸门 (未确认规则永不召回)、同一份可见性口径 (shadow/expired 默认隐藏)。
 
 ### 换成别的宿主 (MCP)
@@ -144,7 +144,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 ```
 
 工具: `memory_search` / `memory_save` / `memory_link` / `memory_history` / `memory_forget` / `memory_stats`。
-它们与 DSH 工具**共用同一个 Facade 与同一条检索语义** —— 换宿主不换记忆, 也不换规则 (共识与治理闸门一致)。
+它们与 DSH 工具**共用同一个 Facade 与同一条检索语义**  换宿主不换记忆, 也不换规则 (共识与治理闸门一致)。
 
 > 推广闭环有两个触发点: 面板按钮 (聚类最近的经验) 与 `memory_rule_propose` 工具 (模型直接提议)。
 > 两条都只进人工队列, 都不会自动变成规则。
@@ -168,7 +168,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 
 4. 在项目 B 开新会话, 讨论"给容器加并发限制"
    → agent/pre-step 确定性注入: 模型一上来就带着"容器→并发策略"这条经验
-   → 不用你说, 它先检查并发策略 —— 而不是等你踩完坑再教它
+   → 不用你说, 它先检查并发策略  而不是等你踩完坑再教它
 ```
 
 **双线对照** (`tests/s2/dual-line.test.ts`): 同一条规则、同一份记忆库, 旧线 (靠模型自觉调 memory_search) 用"模型 60% 概率记得调工具"模拟出 6/10; 新线 (声明式绑定 + 确定性注入) 由代码判定, **10/10**。
@@ -188,7 +188,7 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 
 ### 🎯 2. 读记忆不靠模型自觉 (VCP 式声明式绑定)
 
-- 传统做法: 告诉模型"你可以调 memory_search" —— 模型是概率机, 该搜时不搜 (幻觉自足), 不该搜时乱搜。
+- 传统做法: 告诉模型"你可以调 memory_search"  模型是概率机, 该搜时不搜 (幻觉自足), 不该搜时乱搜。
 - 本版: 项目声明**记忆绑定拓扑** (查询/权重/条数/信号词门控), 代码在 `agent/pre-step` **确定性注入**, 每步用最新用户文本检索。
 - 绑定配置存 `root/bindings.json` (真相在文件), 设置面板可视化编辑, 保存即生效。 <!-- verify-docs:allow (运行时数据文件) -->
 
@@ -199,18 +199,18 @@ Node ≥ 22.5 (存储层用 `node:sqlite`)。
 - 双时态 `validAt` / `assertedAt`; 演化链语义在 `kernel/evolution.ts` 且关联可重建。
 - `project` 是第一等字段, 记忆因此分三层: **全局规则** (跨项目) / **项目经验** (按仓库隔离) /
   **`scope:"agent"` 共享层** (跨工作区, 不属于任何项目, 对每个项目都常驻注入)。
-  项目键 = **会话工作目录所属仓库的目录名** (git root; 非 git 目录回退目录名) ——
+  项目键 = **会话工作目录所属仓库的目录名** (git root; 非 git 目录回退目录名) 
   同一 monorepo 的任意子包得到同一个键, 经验不会按子包碎片化; 跨仓库仍然隔离。
 - 检索按**目的**分层: 注入 (`purpose:"inject"`, 默认) 带规则保底; 显式搜索/面板浏览
-  (`purpose:"recall"`) 只按相关性排 —— 面板搜索的前几条不再是无条件垫在最前的规则。
+  (`purpose:"recall"`) 只按相关性排  面板搜索的前几条不再是无条件垫在最前的规则。
 
 ### ♻️ 6. 记忆会自己更新 (三档演化, 规则永不被机器改)
 
 写入时按"证据强度"分三档 (ADR-024):
 
 - **合并 (自动)**: 换个说法重记 → 不重复落盘, 强化老条目并把新标签/实体并进去;
-- **取代 (自动, 需显式信号)**: 说"上限**改为** 50"或"这条**不再**适用"时 —— 新条目 `supersedes` 旧的, 旧的置 `superseded` + `supersededBy`, **不删除**, `history` 可查完整版本链, 检索只注入最新版;
-- **冲突标记 (不裁决)**: 数字/极性矛盾但没有更新信号 → 双向 `contradicts` 边, **两条都保留** —— 谁对谁错交给人, 机器不猜。
+- **取代 (自动, 需显式信号)**: 说"上限**改为** 50"或"这条**不再**适用"时  新条目 `supersedes` 旧的, 旧的置 `superseded` + `supersededBy`, **不删除**, `history` 可查完整版本链, 检索只注入最新版;
+- **冲突标记 (不裁决)**: 数字/极性矛盾但没有更新信号 → 双向 `contradicts` 边, **两条都保留**  谁对谁错交给人, 机器不猜。
 
 **规则 (rule) 豁免**: 机器只能标记"某条规则可能过时", 永不自动改写/删除规则 (人工闸门)。
 另外, 共享标签/实体的记忆会自动建 `relates` 边 (默认最多 3 条, 有上限防关联爆炸), 这条边进真相文件、重建后仍在。
@@ -249,12 +249,12 @@ hx-memory rebuild --root <memRoot> --episodes   # T2: 记忆 ← 原文重放
 hx-memory consolidate --root <memRoot> [--dry-run]  # 衰减扫描 (过期可逆, rule/lesson 永不过期)
 ```
 
-`evidence` 的退出码是**三分**的: `0` = 可完整溯源, `2` = 溯源不完整 (原因随输出给出), `1` = 条目不存在 ——
+`evidence` 的退出码是**三分**的: `0` = 可完整溯源, `2` = 溯源不完整 (原因随输出给出), `1` = 条目不存在 
 脚本据此决定要不要人工核对, 不必解析输出文本。
 
 **用进废退**: 被检索并注入的记忆会 `reinforcement+1` 并刷新 `lastHitAt` (同一分钟内的重复命中合并成一次),
 因此常用记忆衰减更慢; 反之从未被用到的 `event`/`context` 会先过期。
-`lesson`/`decision`/`rule` 永不自动过期 (只降权), 且"过期"只是状态 —— 真相文件里仍在, `revive` 可拉回。
+`lesson`/`decision`/`rule` 永不自动过期 (只降权), 且"过期"只是状态  真相文件里仍在, `revive` 可拉回。
 
 > [!NOTE] 未实现: `supersedes` 链目前由**重建 (T2)** 与人工 `memory_link` 写入;
 > 会话中的自动冲突消解 (新记忆推翻旧记忆) 仍在计划中 (见 docs/architecture-v2.md §4.3),
@@ -347,7 +347,7 @@ pnpm run verify           # build + static + 全部单测 (统一入口)
 bash scripts/smoke-dsh.sh # 真机 DSH 行为门禁 (需要 dsh + 网络)
 ```
 
-**为什么要有真机门禁**: 插件可以"装得上、进程不崩、fiber active", 而面板仍然整块 404 ——
+**为什么要有真机门禁**: 插件可以"装得上、进程不崩、fiber active", 而面板仍然整块 404 
 组合层 (`isolate`)、模块 id、RPC 约定这三类问题只有真机跑一遍才看得见。所以
 `scripts/smoke-dsh.sh` 逐条断言 profile 组合、两个 fiber 状态、6 个 RPC 端点、
 以及客户端 bundle 注册的模块 id 与 boot manifest 行 id 一致。

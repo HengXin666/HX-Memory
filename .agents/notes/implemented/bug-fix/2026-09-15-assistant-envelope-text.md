@@ -2,12 +2,19 @@
 
 Status: implemented
 
+Decision-ID: assistant-envelope-text
+
+## Code
+
+- `src/kernel/rule-shape.ts`
+- `tests/s2/qa-pair-capture.test.ts`
+
 ## Problem
 
 用户反复反馈"沉淀的记忆内容总是我的输入"、"目前记忆好像没有什么价值"。实测证据:
 
 - `~/.dsh/hx-memory/episodes/` 下 **315 条 episode 全部是 `role: user`**, 助手侧一条都没有。
-- `capture/*.jsonl` 账本 36 行全部 `aChars: 0`, `enrichMs: 0` —— AI 结构化器**从未被调用成功过**。
+- `capture/*.jsonl` 账本 36 行全部 `aChars: 0`, `enrichMs: 0`  AI 结构化器**从未被调用成功过**。
 - 114 条 active 记忆里 27 条 (`c*`) 是用户输入逐字转录, **全部没有 `conclusion`**;
   另有 10 条机器占位规则。
 
@@ -20,7 +27,7 @@ Status: implemented
 "只有问题" → `conclusion` 恒为空 → 要么被结论闸门丢弃, 要么把用户原话当记忆落盘。
 
 **为什么长期没被发现**: `tests/s2/qa-pair-capture.test.ts` 等三处测试自己构造的载荷是
-`data: { content: [...] }` —— 一个宿主从不发出的形状。测试与生产形状不一致,
+`data: { content: [...] }`  一个宿主从不发出的形状。测试与生产形状不一致,
 把"助手输出恒为空"完整地放过了。
 
 ## Decision
@@ -34,13 +41,15 @@ Status: implemented
 ## Consequences
 
 - 助手输出重新进入 episode 与 `{question, answer}` 配对, 结构化器拿到"回答"才能读出结论,
-  记忆内容从"用户原话"变成提炼后的结论 —— 这是"记忆没有价值"的直接解药。
+  记忆内容从"用户原话"变成提炼后的结论  这是"记忆没有价值"的直接解药。
 - 该修复**在宿主重启前不生效**: 运行中的进程仍用旧代码。
 - 已存的历史数据不会被追溯修复: 315 条 user-only episode 可重放, 但重放需要 assistant 原文,
   而那份原文当时就没被记下来。历史条目按人工整理另行处置 (见下文)。
 - `reasoning` 块被过滤, 思维链不会污染记忆。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 - **在 host 侧改 `assistant/message` 载荷**: 不可行, 那是宿主契约, 且 user/assistant 形状不一致
   是既有事实, 适配器本就该同时兼容两种。

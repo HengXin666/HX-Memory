@@ -1,7 +1,7 @@
 // src/storage/file-store.ts — FileBackend: 真相在文件, 索引在 SQLite (可重建).
 //
 // 本文件只做"真相 ↔ 索引"的**编排**与 SQL。布局、各文件职责边界、写入语义与全部不变量
-// 见 src/storage/README.md (单一事实源) —— 拆成多文件的理由也记在那里。
+// 见 src/storage/README.md (单一事实源)  拆成多文件的理由也记在那里。
 // 最关键的一条不变量 (改任何写路径前先读): **陌生 frontmatter 键必须原样保留**,
 // 否则"更新一条记忆"就等于静默丢掉当前代码不认识的字段, 迁移/整理都会变成破坏性操作。
 import { DatabaseSync } from "node:sqlite";
@@ -56,7 +56,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   private writeRevision = 0;
   /**
    * 本进程内已经"由自己规范化写过"的真相文件。
-   * 只有这些文件才允许走 O(1) 追加快路径 —— 外部手写文件里有前言, 必须先经通用路径归一化。
+   * 只有这些文件才允许走 O(1) 追加快路径  外部手写文件里有前言, 必须先经通用路径归一化。
    */
   private readonly touchedFiles = new Set<string>();
   /** 派生索引的读取侧 (查询/投影/hydrate 都在那里; 本类只管写与编排)。 */
@@ -68,6 +68,12 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   /** 只读自述面 (能力/自检/FTS 状态); 见 index-status.ts。 */
   private readonly status: IndexStatus;
 
+  /**
+   * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+   * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+   * 单文件 400 行约束与大文件拆分
+   * .agents/notes/implemented/simplification/2026-09-11-400-line-limit-and-split.md
+   */
   constructor(config: FileBackendConfig) {
     this.root = config.root;
     this.allowTruthDelete = config.allowTruthDelete ?? false;
@@ -84,7 +90,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     this.db.exec("PRAGMA busy_timeout = 5000");
     // WAL + synchronous=NORMAL: 批量写入从"每条一次 fsync"降到"每次提交一次"。
     // 权衡: 进程崩溃不丢已提交事务; 仅操作系统级崩溃可能丢最后一笔 (这正是 NORMAL 的定义)。
-    // 本地记忆场景下这个取舍是划算的 —— 真相文件仍在, 索引可重建。
+    // 本地记忆场景下这个取舍是划算的  真相文件仍在, 索引可重建。
     try {
       this.db.exec("PRAGMA journal_mode = WAL");
       this.db.exec("PRAGMA synchronous = NORMAL");
@@ -103,14 +109,14 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     if (rows.n === 0 && this.hasTruthFiles()) this.rebuildFromFiles();
 
     // 全文索引: 建表 + 分词版本校验 + 缺失回填。
-    // 版本不一致时 ensure() 会清表并返回 true —— 混用两种分词的索引 = 静默召回失真。
+    // 版本不一致时 ensure() 会清表并返回 true  混用两种分词的索引 = 静默召回失真。
     const needsRebuild = this.fts.ensure(rows.n);
     if (needsRebuild || this.maintenance.needsFtsRebuild(this.countMemories())) {
       this.maintenance.repopulateFts();
     }
 
     // 实体倒排: 与 FTS 同理, 它是**派生物**, 可能比 memories 晚一代 (老库升级 / 新增这张表)。
-    // 判定信号必须是**能被记住的东西** —— "entities 表为空"会永远为真 (纯中文陈述型条目
+    // 判定信号必须是**能被记住的东西**  "entities 表为空"会永远为真 (纯中文陈述型条目
     // 一条实体都抽不出), 于是每次打开都全量重算。因此按抽取器版本水位判定 (见 index-maintenance.ts)。
     if (this.countMemories() > 0 && this.maintenance.needsEntityRebuild()) {
       this.maintenance.repopulateEntities();
@@ -135,7 +141,9 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return this.maintenance.repopulateEntities();
   }
 
-  /** 实体倒排可观测面 (rows/entries/version)。 */
+  /** 实体倒排可观测面 (rows/entries/version)。 
+   * .agents/notes/implemented/feature/2026-09-13-entity-reverse-lookup.md
+   */
   entityStatus(): { rows: number; entries: number; version: string } {
     return this.maintenance.entityStatus();
   }
@@ -153,7 +161,9 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     return `format${FORMAT_VERSION}+tokenizer${this.fts.tokenizerVersion}`;
   }
 
-  /** T1 级重建 (索引 ← 真相文件)。语义等价于 rebuildFromFiles(), 端口名是给引擎消费者的。 */
+  /** T1 级重建 (索引 ← 真相文件)。语义等价于 rebuildFromFiles(), 端口名是给引擎消费者的。 
+   * .agents/notes/implemented/architecture/2026-09-10-truth-in-files-and-tiered-rebuild.md
+   */
   rebuildFromTruth(): number {
     const n = this.rebuildFromFiles();
     this.writeRevision++;
@@ -184,7 +194,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
    * 写版本号: 任何索引写入 (add/update/remove/rebuild) 都会 +1, 用于"变了才同步"。
    *
    * **跨进程**: 别的进程 (CLI / 另一个 host 实例) 写入时本进程的 writeRevision 不会动,
-   * 于是内存派生索引 (向量) 会长期陈旧 —— 实测: 外部写入的条目 BM25 查得到、向量通道查不到。
+   * 于是内存派生索引 (向量) 会长期陈旧  实测: 外部写入的条目 BM25 查得到、向量通道查不到。
    * `PRAGMA data_version` 会在**其它连接提交后**变化 (本连接自己的提交不变), 正好用来识别外部写入。
    * 两者合成一个复合版本号, 保证"任何来源的变更都能触发重新同步"。
    */
@@ -252,9 +262,9 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     if (full.kind === "rule" && !isConfirmed(full)) {
       throw new Error("rule entries must carry a confirmation record (confirmedBy/confirmedAt)");
     }
-    // ⚠ 空内容闸门 (§701): 与 MemoryStore 同口径 —— 两引擎的**不变量必须一致**
+    // ⚠ 空内容闸门 (§701): 与 MemoryStore 同口径  两引擎的**不变量必须一致**
     // ("换引擎不等于换规则")。上游 (memory_save / facade.remember) 已有两道判断, 真库 0 条空内容,
-    // 但在存储层补它是"不变量该在最低层成立" —— 与上面那条 rule 闸门同一个理由。
+    // 但在存储层补它是"不变量该在最低层成立"  与上面那条 rule 闸门同一个理由。
     if (!full.content.trim()) {
       throw new Error("entry content must not be empty");
     }
@@ -271,7 +281,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     const file = join(this.root, relative);
     const previous = this.db.prepare("SELECT file FROM memories WHERE id = ?").get(entry.id) as
       { file: string } | undefined;
-    // 索引里存的是相对路径, 必须与相对路径比较 —— 否则每次 update 都会误判"换了文件",
+    // 索引里存的是相对路径, 必须与相对路径比较  否则每次 update 都会误判"换了文件",
     // 先把块摘掉再追加 (条目被挪到文件末尾 + 中间崩溃窗口)。
     if (previous && previous.file !== relative) {
       const oldFile = join(this.root, previous.file);
@@ -328,7 +338,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
 
   /**
    * 实体反查 (实体倒排; RetrievalSource.byEntities)。
-   * 没有它是**静默**少一个通道 —— 检索器只在能力存在时才启用实体通道, 所以这里必须如实暴露。
+   * 没有它是**静默**少一个通道  检索器只在能力存在时才启用实体通道, 所以这里必须如实暴露。
    */
   byEntities(keys: readonly string[], limit = 50): MemoryEntry[] {
     return this.reader.byEntities(keys, limit);
@@ -354,7 +364,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   /**
    * 移除条目。
    * - allowTruthDelete=true: 从真相文件里摘掉该块 (同日其他条目不受影响), 索引行删除;
-   * - 默认: 真相文件写 status: shadow (可审计), 索引置 shadow —— 重建不会复活。
+   * - 默认: 真相文件写 status: shadow (可审计), 索引置 shadow  重建不会复活。
    * 两种情况都保留关系/标签行: 对方的真相文件里仍声明着指向它的关系, 删行会让索引与真相互不一致。
    */
   remove(id: string): void {
@@ -372,7 +382,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     }
     this.writer.markShadow(id);
     this.writeRevision++;
-    // 注意: shadow 条目的全文行**保留** —— FTS 行与 memories 行必须一一对应 (计数一致),
+    // 注意: shadow 条目的全文行**保留**  FTS 行与 memories 行必须一一对应 (计数一致),
     // 可见性由 searchText 的 status 过滤决定。在这里删掉会让"计数一致性"自检每次打开都触发重建。
   }
 

@@ -1,6 +1,6 @@
 # .tmp/bench/embed_server.py — 本地真语义嵌入服务 (OpenAI 兼容 /v1/embeddings)。
 # 用途: 给 HX-Memory 的远端嵌入端口和 mem0 的 openai embedder 提供同一个"真语义"后端,
-# 保证两边用的是**模型相同**的向量 —— 否则语义通道的对比没有意义。
+# 保证两边用的是**模型相同**的向量  否则语义通道的对比没有意义。
 import os, json
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")

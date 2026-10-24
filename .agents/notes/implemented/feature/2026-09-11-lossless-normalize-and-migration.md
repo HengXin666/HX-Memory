@@ -2,11 +2,19 @@
 
 Status: implemented
 
+Decision-ID: lossless-normalize-and-migration
+
+## Code
+
+- `src/app/normalize.ts`
+- `src/kernel/types.ts`
+- `src/storage/frontmatter.ts`
+
 ## Problem
 
 用户观察到"知识库里老记忆跟新记忆混在一起了", 希望升级时能**无损地**把旧记忆迁移为新形态。
 
-实测澄清了病因 —— 不是格式版本不一致, 而是**同一格式版本下字段形态不一致**:
+实测澄清了病因  不是格式版本不一致, 而是**同一格式版本下字段形态不一致**:
 
 - 真相文件 28/28 都标着 `format: 2`, 但字段数从 9 到 17 不等;
 - 原因是强化/更新只重写**被命中的那一个块**, 没被命中的老块永远停在旧形态;
@@ -15,12 +23,12 @@ Status: implemented
 - `FileBackend.schemaVersion` 的端口注释宣称"不符即重建", 但全 src 没有生产消费者。
 
 真正会让"迁移"变成破坏性操作的是另一件事: 写回是**整块重组**, 而解析对未知 frontmatter 键
-**静默忽略** —— 于是"更新一条记忆"的那一刻, 它身上所有当前代码不认识的字段被无声吃掉。
+**静默忽略**  于是"更新一条记忆"的那一刻, 它身上所有当前代码不认识的字段被无声吃掉。
 (可能来自更新版本写入的字段, 或人的手工编辑。)
 
 ## Decision
 
-**先保证无损, 再谈迁移** —— 两层:
+**先保证无损, 再谈迁移**  两层:
 
 1. **陌生 frontmatter 键原样保留** (`storage/frontmatter.ts` + `markdown-codec.upsertBlockInFile`):
    写回旧块时先把不认识的键搬运到新块。键级 frontmatter 没有顺序语义, 位置附在末尾即可。
@@ -34,6 +42,8 @@ Status: implemented
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 - **给 `MemoryEntry` 加 schemaVersion 字段**: 那是存储层元数据, 进 domain 类型会污染 kernel
   (`kernel/types.ts` 明确 kernel 不得依赖存储), 且会被写进每一条记忆的 frontmatter。**否掉**。
 - **用 sqlite `PRAGMA user_version` 当版本**: 真相在文件, 索引是可重建的派生物,
@@ -41,17 +51,17 @@ Status: implemented
 - **打开时批量重写全部真相文件**: 一是违反"读不改写"; 二是把 git 历史变成一大堆 diff;
   三是中途崩溃留下半迁移状态。**否掉**。
 - **新建 `plainUpdate` 绕过治理闸门**: 我一度以为"确认记录不全的历史 rule"需要特权路径才能整理,
-  **实测推翻了它** —— 未确认 rule 在写入端就被挡在索引之外, 根本不会出现在待整理集合里。**移除**。
+  **实测推翻了它**  未确认 rule 在写入端就被挡在索引之外, 根本不会出现在待整理集合里。**移除**。
 
 ## Consequences
 
 换来的: 整理可干跑、可解释 (逐条列 id/文件/字段)、幂等; 未知字段不再因一次更新而消失;
 未来给条目加字段时, 老数据能安全地被补全。
 
-诚实边界: 整理只补**字段形态**, 不重写 `content` ——
+诚实边界: 整理只补**字段形态**, 不重写 `content` 
 库里 29 个块中只有 1 个带 `structured`, 也就是说抽取器产出的 summary/tags 多数没落盘,
 正文是口语原话。把正文重抽成结构化内容是**另一条链** (episode 重放), 不在本次范围。
-另外 `from` (磁盘原有 format 值) 只用于报告 —— 因为当前所有块都是 2, 无法用它区分形态。
+另外 `from` (磁盘原有 format 值) 只用于报告  因为当前所有块都是 2, 无法用它区分形态。
 
 ## Testing
 

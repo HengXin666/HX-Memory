@@ -1,7 +1,7 @@
 // storage/memory-store.ts — 内存实现 (第二实现, 证明端口是真的)。
 //
 // 它有三个用途:
-//   1. 端口不是"只写在文档里"的装饰 —— 同一套 conformance 测试必须同时跑通文件实现与内存实现;
+//   1. 端口不是"只写在文档里"的装饰  同一套 conformance 测试必须同时跑通文件实现与内存实现;
 //   2. 测试里当"快后端"用 (不需要文件/索引的用例跑得快且零清理);
 //   3. 迁移期的参照物: 新引擎的行为差异, 先和它对齐再谈优化。
 //
@@ -71,7 +71,7 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     //     `isLiveEntry` 当成"活着" ⇒ **既无效也过滤不掉**);
     //   · 非法 `id` ⇒ FileBackend 拒绝 / **本引擎接受**;
     //   · 且手写版**缺归一** (CRLF→LF、单行字段、tags 类型过滤) ⇒ 两引擎存下来的数据不同形状。
-    // 现在两条路共用同一个入库边界 —— "换引擎不等于换规则"。
+    // 现在两条路共用同一个入库边界  "换引擎不等于换规则"。
     const entry = normalizeEntry({
       ...input,
       id: input.id ?? entryId(),
@@ -87,13 +87,13 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     if (entry.kind === "rule" && !(entry.confirmedBy && entry.confirmedAt)) {
       throw new Error("rule entries must carry a confirmation record (confirmedBy/confirmedAt)");
     }
-    // ⚠ **空内容闸门** (§701 实测: 此前 `store.add({content: ""})` 被接受, 而它**会进 always-on** ——
+    // ⚠ **空内容闸门** (§701 实测: 此前 `store.add({content: ""})` 被接受, 而它**会进 always-on** 
     // 一个空条目占保底预算、注入一块空白)。
     //
-    // 而它是**第三道**防线, 不是唯一一道 —— 上游已有两道:
+    // 而它是**第三道**防线, 不是唯一一道  上游已有两道:
     //   · `memory_save` 工具: `if (!content) return "Error: content cannot be empty."`;
     //   · `facade.remember`: `if (!content) throw new Error("remember: content is required")`.
-    // 真库实测 **0 条空内容** ⇒ 上游足够。但在**存储层**补它是"不变量该在最低层成立"——
+    // 真库实测 **0 条空内容** ⇒ 上游足够。但在**存储层**补它是"不变量该在最低层成立"
     // 与上面那条 rule 闸门同一个理由: 换引擎/新调用点**绕不过**。
     if (!entry.content.trim()) {
       throw new Error("entry content must not be empty");
@@ -193,7 +193,7 @@ export class MemoryBackend implements MemoryStore, SyncMemoryStore, RetrievalSou
     if (!needle) return [];
     const scored: Array<{ entry: MemoryEntry; score: number }> = [];
     for (const entry of this.entries.values()) {
-      // ⚠ 用 isLiveEntry 而不是手写三态 (§698): 语义本来就对 (三态齐全), 但那是**第四种写法** ——
+      // ⚠ 用 isLiveEntry 而不是手写三态 (§698): 语义本来就对 (三态齐全), 但那是**第四种写法** 
       // 而"新增第四种状态时是否记得改这一处"没有任何机制保证。统一到权威实现。
       if (!isLiveEntry(entry)) continue;
       const haystack = (entry.content + " " + (entry.structured?.summary ?? "")).toLowerCase();

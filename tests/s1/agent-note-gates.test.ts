@@ -1,6 +1,6 @@
 // tests/s1/agent-note-gates.test.ts — Agent Note 硬约束的**拒绝能力**测试。
 //
-// 为什么要有这个文件: 一个"永远返回通过"的 gate 比没有 gate 更糟 —— 它会给人虚假的保证。
+// 为什么要有这个文件: 一个"永远返回通过"的 gate 比没有 gate 更糟  它会给人虚假的保证。
 // 这里逐个构造违规样本, 断言 gate 真的会拒绝; 同时断言合法样本会通过 (防止过严导致无法落地)。
 import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -42,7 +42,7 @@ function implementedNote(
   ].join("\n");
 }
 
-describe("结构 gate (verify-agent-note-classification)", () => {
+describe("v1 historical tree fixture reader", () => {
   it("接受合法的 {lifecycle}/{class}/yyyy-mm-dd-topic.md", () => {
     const root = tree({
       "implemented/architecture/2026-09-10-ok.md": implementedNote(),
@@ -95,7 +95,7 @@ describe("结构 gate (verify-agent-note-classification)", () => {
   });
 });
 
-describe("格式 gate (verify-agent-note-format)", () => {
+describe("v1 historical format fixture reader", () => {
   const note = (lifecycle: string) => ({
     lifecycle,
     rel: `${lifecycle}/architecture/2026-09-10-x.md`,

@@ -1,6 +1,6 @@
 # 市面开源 Agent 记忆系统调研 (对标与取舍)
 
-> 目的: 回答两个问题 —— ①别人已经解决了哪些问题 (值得抄); ②我们哪些做法是别人没有的 (值得留)。
+> 目的: 回答两个问题  ①别人已经解决了哪些问题 (值得抄); ②我们哪些做法是别人没有的 (值得留)。
 > 边界 (不写什么): 不复述各家安装文档; 不做跑分对比 (各家 benchmark 口径不一致, 只在有公开论文出处时引用); 不写实现细节 (在 [architecture-v2.md](architecture-v2.md))。
 > 与代码的关系: 本文的"值得抄"逐条映射到 `src/` 的实现或 `docs/adr.md` 的决策; 标 `[已实现]` 的是本仓库已有测试的活动代码, `[计划]` 的在 architecture-v2.md 的路线图里。
 > 证据口径: 数据截至 **2026-09**, 尽量核到一手仓库/文档; 有版本时效性的结论都在行内标注。未能核实的写"待核实"。
@@ -11,7 +11,7 @@
 
 两个反直觉的发现决定了我们的路线:
 
-1. **开源头部正在收缩"记忆演化"**: mem0 OSS v3 (2026-04 起) 改为 **ADD-only** 并把图记忆整体移出 OSS; Zep 社区版已废弃转向 Cloud。也就是说"可自建的冲突消解 + 图谱"这一层在开源侧**正在变少**, 我们 ADR-005 的 supersedes 链不是落伍, 而是踩在少数仍开放的位置上 —— 该补齐它, 而不是外包出去。
+1. **开源头部正在收缩"记忆演化"**: mem0 OSS v3 (2026-04 起) 改为 **ADD-only** 并把图记忆整体移出 OSS; Zep 社区版已废弃转向 Cloud。也就是说"可自建的冲突消解 + 图谱"这一层在开源侧**正在变少**, 我们 ADR-005 的 supersedes 链不是落伍, 而是踩在少数仍开放的位置上  该补齐它, 而不是外包出去。
 2. **最接近我们的 Letta 已经转向"文件即记忆"**: Letta Code 的 MemFS 用 **git 仓库 + Markdown/YAML frontmatter** 存记忆, 默认**不建向量索引**。这与我们的 truth-in-files 是同一个判断。
 
 因此策略是: **端口切面 + 抄机制 + 换引擎**, 不整包引入运行时。
@@ -36,7 +36,7 @@
 | **MemoRAG / Memobase**     | —                                                                | —                                                                   | —                                                                                                                         | —                                                      | —                                                               | Apache-2.0; **停更 8–12 个月**             | —                                                           | 不建议选型                                    |
 
 > 许可地雷 (选型必须排除或只允许进程外调用): **FalkorDB = SSPL v1** (非 OSI 开源), **Basic Memory = AGPL-3.0** (传染性), **Neo4j Community = GPL-3.0**。
-> **Kuzu 上游已归档 (2025-10)**, Graphiti 已弃用它 —— 任何以 Kuzu 为前提的设计都是死路。
+> **Kuzu 上游已归档 (2025-10)**, Graphiti 已弃用它  任何以 Kuzu 为前提的设计都是死路。
 > 我们自身是 Apache-2.0 + 100% 自维护, 这是资产: 引擎选型只允许"可进程外调用 或 许可宽松 (MIT/Apache/公共领域)"。
 
 ## 2. 真正值得抄的机制 (逐条, 带出处)
@@ -54,7 +54,7 @@
 > 出处: [mem0 论文 (arXiv 2504.19413)](https://arxiv.org/abs/2504.19413); 机制经参考笔记交叉核对。注意 **OSS v3 已改为 ADD-only**, 论文描述的是早期流水线。
 
 机制: 抽候选 → 检索 top-s 相似记忆 → LLM 用工具调用选 ADD/UPDATE/DELETE/NOOP。
-我们的落地: `[已实现]` 确定性版本 (`src/evolution/associate.ts`: 归一化指纹 + 候选覆盖率 + 自动建边); `[计划]` LLM 裁决。**关键差异: 我们不做 DELETE** —— 矛盾只产生 `supersedes`/`contradicts` 关系与状态变更 (ADR-019)。
+我们的落地: `[已实现]` 确定性版本 (`src/evolution/associate.ts`: 归一化指纹 + 候选覆盖率 + 自动建边); `[计划]` LLM 裁决。**关键差异: 我们不做 DELETE**  矛盾只产生 `supersedes`/`contradicts` 关系与状态变更 (ADR-019)。
 
 ### 2.3 三层结构 + 四元组双时态 + 三阶段检索 (Zep/Graphiti)
 
@@ -62,7 +62,7 @@
 
 - 三层: episode (原始不丢) → 语义实体/事实 (带有效期) → community 摘要。
 - 双时态**四元组**: `valid_at/invalid_at` (事实世界) + `created_at/expired_at` (系统世界) + `reference_time` (事件真实发生时间)。我们目前只有两个 (validAt/assertedAt), v2 的 `expiresAt` 补上了系统侧的一半。
-- 矛盾消解: 新事实与旧边冲突 → 旧边 `invalid_at = 新边.valid_at`, `expired_at = now` —— **不删除**, 支持时间旅行查询。
+- 矛盾消解: 新事实与旧边冲突 → 旧边 `invalid_at = 新边.valid_at`, `expired_at = now`  **不删除**, 支持时间旅行查询。
 - 检索: search (cosine + BM25 + BFS) → rerank (RRF/MMR/cross-encoder/node_distance) → construct context (带有效期区间)。
 - 我们的落地: `[已实现]` 混合检索 + RRF + MMR + 时间衰减 + `asOf` 切片; `[已实现]` 演化链读侧; `[计划]` episode 真值层 (ADR-018) 与写入侧失效链。
 
@@ -70,7 +70,7 @@
 
 > 出处: [Letta MemFS 概念文档](https://docs.letta.com/concepts/memfs)。
 
-- `system/` 目录每轮进系统提示 (常驻块), 其余靠"文件树当路标"按需读 —— 与我们的"声明式绑定 + 按需召回"同构。
+- `system/` 目录每轮进系统提示 (常驻块), 其余靠"文件树当路标"按需读  与我们的"声明式绑定 + 按需召回"同构。
 - **dreaming (sleep-time compute)**: 后台子代理整合记忆; git worktree 让后台改写不阻塞主代理; `/doctor` 审计重复与 token 占用。
 - 我们的落地: `[已实现]` 声明式绑定 + 确定性预步注入 (ADR-008) + token 预算; `[计划]` 后台整合调度器 (S3), 并且**规则类改动永远走人工闸门** (ADR-003)。
 
@@ -78,7 +78,7 @@
 
 > 出处: [A-MEM `memory_system.py`](https://github.com/agiresearch/A-mem/blob/main/agentic_memory/memory_system.py)。
 
-机制: 新记忆写入时让 LLM 返回结构化动作 `{should_evolve, actions:[strengthen|update_neighbor], suggested_connections, tags_to_update, new_context_neighborhood, new_tags_neighborhood}`, 用 `evo_threshold` 控制批频率 —— **注意它允许新记忆反向更新邻居**, 这是"关联性"落地最具体的一份协议。
+机制: 新记忆写入时让 LLM 返回结构化动作 `{should_evolve, actions:[strengthen|update_neighbor], suggested_connections, tags_to_update, new_context_neighborhood, new_tags_neighborhood}`, 用 `evo_threshold` 控制批频率  **注意它允许新记忆反向更新邻居**, 这是"关联性"落地最具体的一份协议。
 我们的落地: `[已实现]` 写入期建边 (relates, 权重=相似度); `[计划]` 链接触发的反向更新 (S2), 但**动作白名单化**: 只允许加边/合并标签实体/建议 supersede, 不允许直接改写他人正文。
 
 ### 2.6 MCP 工具面与资源 (官方 memory server)
@@ -94,7 +94,7 @@
 
 **这是本轮调研里对我们最直接有用的一条** (同一个宿主, 同样的坑):
 
-1. 召回**硬时限** `min(recallTimeoutMs, 3000)` —— 记忆层不许拖慢对话;
+1. 召回**硬时限** `min(recallTimeoutMs, 3000)`  记忆层不许拖慢对话;
 2. 同轮 `agent/pre-step` **重入去重** (我们已有内容级去重, 但"同轮重入"这一层要显式化);
 3. 超时**降级到 safeCutoff** 并把降级说出来, 而不是静默给空;
 4. 注入包 `<memos_context>` 并标 source;

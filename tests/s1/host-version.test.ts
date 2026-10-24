@@ -1,6 +1,6 @@
 // tests/s1/host-version.test.ts — 门禁要装的宿主版本如何解析 (scripts/lib/host-version.mjs)。
 //
-// 为什么值得单测: 这段逻辑决定"CI 测的是哪个宿主", 而它的三种失败都是有代价的 ——
+// 为什么值得单测: 这段逻辑决定"CI 测的是哪个宿主", 而它的三种失败都是有代价的 
 // 解析到用户拿不到的版本 (测了个没人跑的组合)、越界时静默降级 (上游把用户推到不支持的宿主上
 // 而 CI 假装没事)、以及缺少 dsh.host 时猜一个默认值。三种都不该靠"跑一次 CI 看看"发现。
 //
@@ -39,7 +39,11 @@ describe("hostRange", () => {
 });
 
 describe("resolveHostVersion: 装用户会装到的那一个", () => {
-  it("取 latest (而不是范围内的最高版 —— 后者可能是 dist-tag next, 用户拿不到)", () => {
+  it("取 latest (而不是范围内的最高版  后者可能是 dist-tag next, 用户拿不到)", () => {
+    /**
+     * 门禁装载的宿主版本与 package.json 同源
+     * .agents/notes/implemented/process/2026-09-14-host-version-gate-single-source.md
+     */
     const exec = fakeNpm({ latest: "0.1.7-rc.2", "^0.1.7-rc.2 || ^0.2.0-rc.1": ["0.1.7-rc.2", "0.1.7-rc.3"] });
     expect(resolveHostVersion(MANIFEST, { exec: exec as never })).toBe("0.1.7-rc.2");
   });
@@ -54,7 +58,7 @@ describe("resolveHostVersion: 装用户会装到的那一个", () => {
 
   it("latest 越界时**抛错**, 不降级成范围内的另一个版本", () => {
     // 场景: 上游把 0.3.0 推成 latest, 而插件只声明到 0.2.x。
-    // 此时用户装到的是一个插件没适配过的宿主 —— 必须有人看见, 而不是让 CI 换一个版本跑绿。
+    // 此时用户装到的是一个插件没适配过的宿主  必须有人看见, 而不是让 CI 换一个版本跑绿。
     const exec = fakeNpm({
       latest: "0.3.0-rc.1",
       "^0.1.7-rc.2 || ^0.2.0-rc.1": ["0.1.7-rc.2", "0.2.0-rc.2"],
@@ -93,6 +97,10 @@ describe("package.json 与 workflow 的接线", () => {
     const { resolve: resolvePath, dirname } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const root = resolvePath(dirname(fileURLToPath(import.meta.url)), "../..");
+    /**
+     * peer 范围与 dsh.host 漂移会让整个插件包被静默跳过
+     * .agents/notes/implemented/bug-fix/2026-09-30-peer-range-drift-silently-skips-bundle.md
+     */
     const manifest = JSON.parse(readFileSync(resolvePath(root, "package.json"), "utf8"));
     expect(hostRange(manifest)).toMatch(/\^0\.1\./);
   });
@@ -109,7 +117,7 @@ describe("package.json 与 workflow 的接线", () => {
   });
 
   // 为什么单列一条: 宿主在装载 bundle 前会用 `evaluatePluginCompatibility` 逐个校验
-  // **peerDependencies** 里的 `@deepseek-ai/dsh*` 范围, 不满足就整包跳过 ——
+  // **peerDependencies** 里的 `@deepseek-ai/dsh*` 范围, 不满足就整包跳过 
   // 而 `dsh.host` 只决定"CI 装哪个版本", 门禁根本不读它。于是两者漂移时,
   // CI 全绿而插件在真机上**整个不加载** (2026-09-30 实测: dsh.host 已含 ^0.2.0-rc.1
   // 而 peer 仍停在 ^0.1.7-rc.2, 宿主 0.2.0-rc.2 上 `skipping profile bundle`)。
@@ -123,7 +131,7 @@ describe("package.json 与 workflow 的接线", () => {
     const host = hostRange(manifest);
     const dshPeers = Object.entries(manifest.peerDependencies as Record<string, string>)
       .filter(([name]) => name === "@deepseek-ai/dsh" || name.startsWith("@deepseek-ai/dsh-"));
-    // 一个都没有时这条断言会空转通过 —— 显式挡住, 否则删光 peer 也算"同源"。
+    // 一个都没有时这条断言会空转通过  显式挡住, 否则删光 peer 也算"同源"。
     expect(dshPeers.length).toBeGreaterThan(0);
     for (const [name, range] of dshPeers) expect([name, range]).toEqual([name, host]);
   });

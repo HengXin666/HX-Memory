@@ -1,7 +1,7 @@
 // scripts/graph-preview.ts — 生成"记忆关系图"的单文件 HTML 预览 (零依赖, 零构建)。
 //
 // 为什么是独立脚本而不是服务: 这是**预览**, 不是产品面。它只回答"当前库画出来长什么样",
-// 因此直接读真相文件 (scanTruth), 不碰索引、不起 HTTP、不需要宿主 —— 一个文件双击就能看。
+// 因此直接读真相文件 (scanTruth), 不碰索引、不起 HTTP、不需要宿主  一个文件双击就能看。
 //
 // 边界: 只读。绝不写任何记忆; 输出默认落在 .tmp/ (gitignore 已排除)。
 //
@@ -18,6 +18,10 @@ import { probeChannels, type ChannelProbeResult } from "./lib/channel-probe.ts";
 import type { MemoryEntry, RelationType } from "../src/kernel/types.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
+/**
+ * 已撤回的节点不得从图里继续扩张 (图枢纽上的死边)
+ * .agents/notes/implemented/bug-fix/2026-09-18-shadow-source-edges.md
+ */
 const TEMPLATE = join(ROOT, "scripts", "lib", "graph-view.html");
 
 /** 与前端 EDGE_COLORS 的键集合保持一致 (未知类型仍会渲染, 只是没有专属颜色)。 */
@@ -44,8 +48,10 @@ interface Flags {
  *
  * 两种来源, 都**不是编造的**:
  *   - 语料里已有的查询字段 (若提供 --queries 文件);
- *   - 从条目自身的标签/实体派生 —— 这些是真实存在的检索锚点 (人真的会拿它们当关键词)。
+ *   - 从条目自身的标签/实体派生  这些是真实存在的检索锚点 (人真的会拿它们当关键词)。
  * 刻意不做"拿整条内容当查询": 那等于用答案问答案, 会把每条都染成命中, 读数没有任何信息量。
+ 
+ * .agents/notes/implemented/architecture/2026-09-13-graph-channel-coloring.md
  */
 export function deriveQueries(entries: readonly MemoryEntry[], limit = 200): string[] {
   const out = new Set<string>();
@@ -164,7 +170,7 @@ function buildGraph(
     tags: e.tags ?? [],
     entities: e.entities ?? [],
     relations: (e.relations ?? []).filter((r) => keptIds.has(r.toId)).map((r) => ({ type: r.type, to: r.toId, weight: r.weight ?? 0 })),
-    // 检索通道: 这张图上前所未有的一维 —— "它靠什么被找到"。
+    // 检索通道: 这张图上前所未有的一维  "它靠什么被找到"。
     // 没被任何查询召回的条目这里为空数组, 前端渲染成灰色 (那是真实结论, 不是缺数据)。
     channels: opts.probe ? [...(opts.probe.channels.get(e.id) ?? [])].sort() : null,
     recalledBy: opts.probe ? (opts.probe.hits.get(e.id) ?? []).slice(0, 5) : null,
@@ -221,7 +227,7 @@ function main(argv: string[]): number {
   }
   const { entries, skipped } = scanTruth(flags.root);
   const all = [...entries.values()];
-  // 通道着色: 需要一组**真实问题**。给不出来 (没 --queries 且条目也没有标签/实体) 时不做 ——
+  // 通道着色: 需要一组**真实问题**。给不出来 (没 --queries 且条目也没有标签/实体) 时不做 
   // 宁可图上没有这一维, 也不要造一组问题再拿它的读数冒充"真实检索行为"。
   const queries = flags.queries.length ? flags.queries : deriveQueries(all, 200);
   const probe = queries.length
@@ -269,10 +275,14 @@ function main(argv: string[]): number {
   return 0;
 }
 
-// 只在**被当作脚本执行**时跑 main —— 否则"import 一个纯函数 (deriveQueries) 会顺带整份重建图"
+// 只在**被当作脚本执行**时跑 main  否则"import 一个纯函数 (deriveQueries) 会顺带整份重建图"
 // 就成了真实副作用: tests/s2/channel-probe.test.ts 为了测派生逻辑 import 本文件时,
 // 会真的去读 ~/.dsh/hx-memory 并覆盖 .tmp/memory-graph.html (踩过: 跑单测时打印出了整份生成日志)。
-// 副作用只能来自显式执行, 不能来自 import —— 这是脚本与库混在一个文件里的经典陷阱。
+// 副作用只能来自显式执行, 不能来自 import  这是脚本与库混在一个文件里的经典陷阱。
+/**
+ * 记忆关系图预览 (单文件 HTML) + 评测补 H@k
+ * .agents/notes/implemented/feature/2026-09-12-memory-graph-preview.md
+ */
 const invokedDirectly =
   process.argv[1] !== undefined &&
   resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));

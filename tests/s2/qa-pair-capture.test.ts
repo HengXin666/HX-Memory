@@ -43,7 +43,7 @@ async function turn(
   await runtime.capture(session, {
     type: "assistant/message",
     // 真实宿主载荷是**信封** { turn, step, message } (文本在 message.content)。
-    // 早先这里写成 data.content —— 测试与生产形状不一致, 长期放过了"助手输出恒为空"。
+    // 早先这里写成 data.content  测试与生产形状不一致, 长期放过了"助手输出恒为空"。
     data: { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "text", text: answer }] } },
   });
   await runtime.capture(session, { type: "turn/end", data: { reason: { kind: "completed" } } });
@@ -59,6 +59,10 @@ function mkRuntime(structurer?: TurnStructurer): HxMemoryRuntime {
 
 describe("episode: 助手输出必须进日志且 role 正确", () => {
   it("一轮写两条 episode, role 分别是 user / assistant", async () => {
+    /**
+     * 助手输出恒为空, 记忆只沉淀用户原话
+     * .agents/notes/implemented/bug-fix/2026-09-15-assistant-envelope-text.md
+     */
     const runtime = mkRuntime();
     const session = { id: "s1" };
     runtime.onSessionStart(session);
@@ -132,7 +136,7 @@ describe("宿主载荷契约: assistant/message 是信封, 不是裸消息", () 
   // 回归 (2026-09-15 实测): 真实宿主把助手消息放在 data.message 里
   // (data = { turn, step, message, usage, stream }), 而 data.content 只存在于 user/message。
   // runtime.textOf 早先只读 data.content, 于是助手输出恒为空: 315 条 episode 全是 user,
-  // 账本 aChars 恒为 0, 结构化器永远读不到"回答" —— 沉淀下来的自然全是用户原话。
+  // 账本 aChars 恒为 0, 结构化器永远读不到"回答"  沉淀下来的自然全是用户原话。
   // 这个用例直接喂**磁盘上真实的信封形状**, 防止再退回"测试形状 ≠ 生产形状"。
   it("信封形状 (data.message.content) 能被读出来", async () => {
     const runtime = mkRuntime();

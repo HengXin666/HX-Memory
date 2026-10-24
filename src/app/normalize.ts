@@ -1,6 +1,6 @@
 // app/normalize.ts — 主动整理 / 无损迁移 (真相文件的规范化写回)。
 //
-// 要解决的问题 (实测): 库里的记忆"新旧形态混在一起" —— 字段数从 9 到 17 不等,
+// 要解决的问题 (实测): 库里的记忆"新旧形态混在一起"  字段数从 9 到 17 不等,
 // 因为强化/更新只重写**被命中的那一个块**, 没被命中的老块永远停在旧形态;
 // 而版本标记 (format: N) 此前只是写入端常量, 读取端从不比较, 因此升级既不会迁移也不会报错。
 //
@@ -8,10 +8,10 @@
 // (字段补全 + 版本标记), 两者都会写真相文件, 但判据完全不同, 所以是两个服务。
 //
 // 三条硬约束 (缺一条就不是"无损"):
-//   1. **dryRun**: 先看清楚会改什么, 再决定改 —— 与 ConsolidationService 同一契约;
+//   1. **dryRun**: 先看清楚会改什么, 再决定改  与 ConsolidationService 同一契约;
 //   2. **幂等**: 跑第二遍必须是零改动 (否则它就是一个每次运行都改文件的噪声源);
 //   3. **不碰未知字段**: 写回路径 (upsertBlockInFile) 会搬运陌生 frontmatter 键 (见 storage/frontmatter.ts),
-//      否则"整理"会静默吃掉更新版本写入的字段 —— 那是数据丢失, 不是整理。
+//      否则"整理"会静默吃掉更新版本写入的字段  那是数据丢失, 不是整理。
 //
 // 为什么不做成"打开时自动跑": 读操作不得改写用户文件 (真相是人的资产, 不是缓存)。
 import type { MemoryEntry, MemoryEntryInput, Query } from "../kernel/types.ts";
@@ -22,12 +22,12 @@ import { sweepAtomicTemps, walkMd } from "../storage/markdown-parse.ts";
 
 /** 规范化需要的存储面 (窄端口: 适配层只依赖这四项)。 */
 export interface NormalizerStore {
-  /** 全量读取 (必须含 shadow —— 被撤回的条目也是真相的一部分, 也要能整理)。 */
+  /** 全量读取 (必须含 shadow  被撤回的条目也是真相的一部分, 也要能整理)。 */
   query(q: Query): MemoryEntry[];
   get(id: string): MemoryEntry | null;
   /**
    * 写回 (只补形态, 不改语义)。
-   * 用既有的 update 即可: 它走的校验对"整理"同样成立 —— 未确认的 rule 在**写入端**就被
+   * 用既有的 update 即可: 它走的校验对"整理"同样成立  未确认的 rule 在**写入端**就被
    * 治理闸门挡在索引之外 (file-store 的 indexEntry), 因此不存在"需要绕过闸门才能整理"的条目
    * (这一点已实测, 不是推断)。整理了它的就是它的写入路径, 不是特权路径。
    */
@@ -68,7 +68,7 @@ export interface NormalizeReport {
   /**
    * 顺手清扫的**原子写孤儿临时文件**数量 (见 storage/markdown-parse 的 sweepAtomicTemps)。
    *
-   * dryRun 时它是"待清扫数", 真跑时是"已清扫数" —— 两者共用一个字段,
+   * dryRun 时它是"待清扫数", 真跑时是"已清扫数"  两者共用一个字段,
    * 因为它们的判据相同 (只差一个 delete 开关), 分开会让报告与行为有分叉。
    */
   sweptTemps: number;
@@ -98,7 +98,7 @@ const SHAPE_KEYS = [
 ] as const;
 
 /**
- * 取"可比形状"。数组/对象必须先序列化再比 ——
+ * 取"可比形状"。数组/对象必须先序列化再比 
  * 直接 === 比较数组永远不等 (引用不同), 会让**任何带 tags/relations 的条目**都被误报成"需改动"。
  * 这个 bug 在真实库上一跑就暴露: 3 条带 tags/derivedFrom 的条目全被误判。
  */
@@ -153,13 +153,13 @@ export class MemoryNormalizer {
 
   /**
    * 跑一次整理。**幂等**: 第二遍必然 changed=0 (由"先规范化再比形状"保证)。
-   * dryRun 时只出报告 —— 这是默认用法: 先看清单, 再决定是否落盘。
+   * dryRun 时只出报告  这是默认用法: 先看清单, 再决定是否落盘。
    */
   run(opts: NormalizeOptions = {}): NormalizeReport {
     const dryRun = opts.dryRun ?? false;
     // 顺手清扫原子写留下的孤儿临时文件 (见 sweepAtomicTemps 的说明)。
     //
-    // **dryRun 时必须跳过** —— 这个整理入口的语义是"先看清单, 再决定是否落盘",
+    // **dryRun 时必须跳过**  这个整理入口的语义是"先看清单, 再决定是否落盘",
     // 而删除是不可逆的。dryRun 下只**报告**有多少待清扫, 不动它们。
     // dryRun 传 `false` 给 sweep 的"真删"参数 ⇒ 只统计不删除, 与真删共用同一判据。
     const temps = sweepAtomicTemps(this.root, { delete: !dryRun }).length;
@@ -185,6 +185,10 @@ export class MemoryNormalizer {
         report.missing += 1;
         continue;
       }
+      /**
+       * 无损迁移与主动整理 (形态规范化 + 陌生字段保留)
+       * .agents/notes/implemented/feature/2026-09-11-lossless-normalize-and-migration.md
+       */
       const next = normalizeEntry(entry as MemoryEntryInput & { id: string });
       const fields = changedFields(entry, next);
       const staleFormat = onDisk.format !== FORMAT_VERSION;

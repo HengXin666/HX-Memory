@@ -66,7 +66,7 @@ describe("整合: 衰减过期", () => {
     expect(store.get("old-lesson")?.status).toBe("active");
   });
 
-  it("命中过的 (reinforcement>0) 不受衰减影响 —— 强化即生命", async () => {
+  it("命中过的 (reinforcement>0) 不受衰减影响  强化即生命", async () => {
     add({ id: "hit", reinforcement: 3, lastHitAt: "2026-01-02T00:00:00.000Z" });
     const report = await service().run();
     expect(report.expiring).toEqual([]);

@@ -1,7 +1,7 @@
 // app/facade-types.ts — MemoryFacade 的公开类型面与端口要求。
 //
 // 为什么独立成文件: 类型是**契约**, 实现是**编排**。契约的读者是宿主适配层 (它们只 import 类型),
-// 实现的读者是维护检索/演化逻辑的人 —— 两类读者关系不大。分开后 facade.ts 只剩编排逻辑,
+// 实现的读者是维护检索/演化逻辑的人  两类读者关系不大。分开后 facade.ts 只剩编排逻辑,
 // 适配层也能只依赖类型文件 (不把实现拖进编译单元)。
 //
 // 本文件的类型必须与实现**逐字一致**: 它们是宿主 (DSH 工具 / MCP / CLI) 编译期的唯一契约。
@@ -24,7 +24,7 @@ export interface FacadeStore {
   recent?(limit?: number): Awaitable<MemoryEntry[]>;
   /**
    * 可选: always-on 选择所需的廉价投影 (单条 SQL, 不 hydrate)。
-   * 有它时 alwaysOn() 走快路径 —— 这条路径在预步每轮都跑, 用 all() 会白付 hydrate 成本。
+   * 有它时 alwaysOn() 走快路径  这条路径在预步每轮都跑, 用 all() 会白付 hydrate 成本。
    */
   entrySummaries?(): Awaitable<
     Array<
@@ -88,7 +88,7 @@ export interface RecallResponse {
   degraded: string[];
 }
 
-/** agent 对召回的**负面**标注原因 (没有"有用"这一类 —— 好的不记)。 */
+/** agent 对召回的**负面**标注原因 (没有"有用"这一类  好的不记)。 */
 export type RecallReason = "irrelevant" | "wrong";
 
 export interface FlagResult {
@@ -141,7 +141,7 @@ export interface FacadeOptions {
   /**
    * episode 原文源 (可选): 提供给"证据链"下钻用。
    *
-   * 为什么是可选的: 真相层里有 episode 日志 (ADR-018), 但 facade 此前完全不持有它 ——
+   * 为什么是可选的: 真相层里有 episode 日志 (ADR-018), 但 facade 此前完全不持有它 
    * 于是 `derivedFrom` 里存了 id 却没有任何路径能换回原文, 产品层"可溯源"不可执行。
    * 缺省时 evidenceChain 返回 traceable:false 并说明原因 (能力可降级, 但不假装成功)。
    */

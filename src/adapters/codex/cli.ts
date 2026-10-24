@@ -29,7 +29,7 @@ import { exportMemory, importMemory } from "../../app/transfer.ts";
 
 /**
  * 解析 --key value 与布尔开关 --flag。
- * 注意: 末尾的 --flag 没有后继值时必须是 "true" 而不是 "" ——
+ * 注意: 末尾的 --flag 没有后继值时必须是 "true" 而不是 "" 
  * 后者在 `if (flags["flag"])` 里是假值, 会把"打开开关"静默解释成"没打开" (真实踩过)。
  */
 /** 报告里"是否真的写入了"的可读判定 (dryRun 与 applied 组合, 避免两处措辞漂移)。 */
@@ -66,6 +66,10 @@ export async function main(argv: string[]): Promise<number> {
     );
     return 1;
   }
+  /**
+   * 质量闸门 (lint / 结构 / 端口纯度 / 单一事实源) 与实测审计
+   * .agents/notes/implemented/process/2026-09-10-quality-gates-and-audit.md
+   */
   const store = new FileBackend({ root });
 
   if (cmd === "rules") {
@@ -128,7 +132,7 @@ export async function main(argv: string[]): Promise<number> {
     // 维护是批量改写真相文件的工作, 因此签名里没有任何交互式输出; 结果以 JSON 打到 stdout,
     // 由父进程记进环形缓冲 (失败时 stdout 的那一行就是证据)。
     // 保留期由调用方 (DSH 调度器) 显式传入: 本命令是**子进程**, 拿不到用户在面板里配的值,
-    // 而 EpisodeStore 的缺省是 "0 = 永久" —— 不传就等于清理永远不生效 (静默 no-op, 踩过)。
+    // 而 EpisodeStore 的缺省是 "0 = 永久"  不传就等于清理永远不生效 (静默 no-op, 踩过)。
     // 缺省仍按 0 处理: 手动跑 maintain 时不该意外删掉用户的 episode 日志。
     const retentionRaw = flags["episode-retention-days"];
     const retention = retentionRaw === undefined ? 0 : Number(retentionRaw);
@@ -144,11 +148,11 @@ export async function main(argv: string[]): Promise<number> {
       // 重新建边: 补齐"建边判据改进后存量条目没跟上"的缺口。
       //
       // 为什么把它放进定期维护 (而不是只留手动命令): 建边**只发生在写入时**, 因此判据一旦改进,
-      // 存量条目就永远停在旧口径上 —— 实测真实库曾出现"有 401 条边可建, 库里却只有 20 条"。
+      // 存量条目就永远停在旧口径上  实测真实库曾出现"有 401 条边可建, 库里却只有 20 条"。
       // 依赖用户手动跑一次, 等于这个缺口长期存在。
       //
       // 安全性: relink 只**追加** relations 字段 (不删任何既有边, 含人工显式建的),
-      // 且幂等 (重跑 0 新增) —— 与 consolidate 同级别的保守改动。真跑才写盘 (dryRun 只报告)。
+      // 且幂等 (重跑 0 新增)  与 consolidate 同级别的保守改动。真跑才写盘 (dryRun 只报告)。
       const relink = await relinkAll(stack.store, { dryRun: flags["dry-run"] === "true" });
       const out = {
         command: "maintain",
@@ -169,6 +173,10 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "digest") {
     // 摘要是派生视图 (不落盘): 每次按当前库现算, 避免"摘要陈旧"。
     const stack = openMemoryStack(root);
+    /**
+     * memory_search 跨项目泄露 (agent 侧检索缺省必须"不给")
+     * .agents/notes/implemented/bug-fix/2026-09-27-memory-search-cross-project-leak.md
+     */
     const digest = await stack.facade.digest(flags["project"] ? { project: flags["project"] } : {});
     console.log("# " + digest.title);
     console.log();
@@ -182,7 +190,7 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   if (cmd === "search") {
-    // 与人侧交互: 面板已有搜索, CLI 此前没有 —— 而无 GUI 的环境 (远程 shell / 脚本) 只能直连存储,
+    // 与人侧交互: 面板已有搜索, CLI 此前没有  而无 GUI 的环境 (远程 shell / 脚本) 只能直连存储,
     // 那会绕过使用层语义 (覆盖率过滤 / 预算 / 可见性 / 降级说明), 拿到与面板不一致的结果。
     const keyword = flags["text"] ?? flags["q"];
     const limit = Number(flags["limit"] ?? 10);
@@ -242,7 +250,7 @@ export async function main(argv: string[]): Promise<number> {
 
   if (cmd === "relink") {
     // 给**存量条目**补结构关联边 (只加 relates, 不动内容)。
-    // 为什么需要 CLI 入口: 建边只在写入时发生, 因此"判据改进"只对新条目生效 ——
+    // 为什么需要 CLI 入口: 建边只在写入时发生, 因此"判据改进"只对新条目生效 
     // 实测真实库 active 154 条而 relates 边仅 20 条 (按当前判据重算可得约 400 条)。
     const stack = openMemoryStack(root);
     const report = await relinkAll(stack.store, {
@@ -308,7 +316,7 @@ export async function main(argv: string[]): Promise<number> {
 
   if (cmd === "normalize") {
     // 主动整理: 把老形态的块补成当前形态 (字段补全 + 版本标记)。
-    // 默认干跑 —— 先看"会改什么", 再决定是否落盘 (真相文件是人的资产, 不是缓存)。
+    // 默认干跑  先看"会改什么", 再决定是否落盘 (真相文件是人的资产, 不是缓存)。
     const stack = openMemoryStack(root);
     const dryRun = flags["dry-run"] !== "false"; // 默认 true: 必须显式 --dry-run=false 才写入
     const report = stack.normalize.run({ dryRun });
@@ -358,7 +366,7 @@ export async function main(argv: string[]): Promise<number> {
 
   if (cmd === "mcp") {
     // MCP stdio 服务: 任何 MCP 客户端 (Claude Code/Desktop、Cursor、Cline…) 都能接。
-    // 注意 stdout 被协议独占 —— 任何调试输出都必须走 stderr。
+    // 注意 stdout 被协议独占  任何调试输出都必须走 stderr。
     store.close();
     const stack = openMemoryStack(root, { episodeRetentionDays: 0 });
     try {
@@ -378,7 +386,7 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 // 自执行入口: 只有被当作脚本直接运行时才跑 (被 import 时保持纯函数, 便于测试)。
-// 之前这里没有入口 —— bin 指向 cli.js 但没人调 main(), 于是 `hx-memory rules` 静默什么都不做。
+// 之前这里没有入口  bin 指向 cli.js 但没人调 main(), 于是 `hx-memory rules` 静默什么都不做。
 const invoked = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invoked && invoked === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2))

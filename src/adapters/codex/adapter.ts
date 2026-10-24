@@ -43,7 +43,7 @@ export class CodexAdapter implements HarnessAdapter {
 
   /**
    * 会话开始: 把规则同步进 AGENTS.md。返回是否更新。
-   * 保守策略: 索引里查不到规则时**不要**把已有规则段清空 —— 空结果更可能是索引丢失
+   * 保守策略: 索引里查不到规则时**不要**把已有规则段清空  空结果更可能是索引丢失
    * (虽然 FileBackend 现在会自动重建), 而误清会把已同步的规则抹掉。
    */
   async onSessionStart(_ctx: SessionContext): Promise<unknown> {

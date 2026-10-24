@@ -65,7 +65,7 @@ export async function resolveNeighbors(
       if (!found.has(entry.id)) found.set(entry.id, entry);
     }
   };
-  // 裁决用的检索: 关掉图扩展、向量通道与去冗余 —— 近邻裁决只要"字面最像的几条",
+  // 裁决用的检索: 关掉图扩展、向量通道与去冗余  近邻裁决只要"字面最像的几条",
   // 语义相似度由 embedding 余弦单独提供, 不需要走向量召回通道。
   // 这样每次写入就不会触发"向量索引全量对账"(实测这是写入路径的主要开销)。
   collect(
@@ -95,7 +95,7 @@ export async function resolveNeighbors(
  * 对候选与近邻做冲突**预裁决** (只处理"同 kind 且硬冲突"的那些)。
  * 为什么只挑硬冲突: 裁决器是为"矛盾但没有显式更新信号"准备的; 其余情形由
  * duplicate/link/supersede 的既有规则直接决定, 多跑一次裁决纯属浪费 (还可能引入噪声)。
- * 失败时静默返回空表 —— 裁决是增强, 不该让一次写入失败。
+ * 失败时静默返回空表  裁决是增强, 不该让一次写入失败。
  */
 export async function adjudicateNeighbors(
   adjudicator: Adjudicator,

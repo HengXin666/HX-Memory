@@ -49,15 +49,18 @@
     "mutation-probe": "node --experimental-strip-types scripts/mutation-probe.ts",
     "verify-checks-can-fail": "node --experimental-strip-types scripts/verify-checks-can-fail.ts",
     "verify-docs": "node --experimental-strip-types scripts/verify-docs.ts",
-    "verify-agent-note-classification": "node --experimental-strip-types scripts/verify-agent-note-classification.ts",
-    "verify-agent-note-format": "node --experimental-strip-types scripts/verify-agent-note-format.ts",
-    "verify-agent-note-coverage": "node --experimental-strip-types scripts/verify-agent-note-coverage.ts",
-    "notes:new": "node --experimental-strip-types scripts/new-agent-note.ts",
+    "verify-agent-note-classification": "uv run scripts/redlines/agent_notes.py --all",
+    "verify-agent-note-format": "uv run scripts/redlines/agent_notes.py --all",
+    "verify-agent-note-coverage": "uv run scripts/redlines/agent_notes.py --diff",
+    "notes:new": "uv run .agents/skills/hx-agent-notes/scripts/setup/new_note.py",
     "graph:preview": "node --experimental-strip-types scripts/graph-preview.ts",
     "verify-bench-snapshot": "node --experimental-strip-types bench/snapshot.ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{json,md,yml,yaml}\"",
     "build:client": "node scripts/build-client.mjs",
-    "cli:rules": "node dist/adapters/codex/cli.js rules"
+    "cli:rules": "node dist/adapters/codex/cli.js rules",
+    "verify-notes": "uv run scripts/redlines/agent_notes.py --diff",
+    "verify-notes:all": "uv run scripts/redlines/agent_notes.py --all",
+    "verify-notes:staged": "uv run scripts/redlines/agent_notes.py --staged"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

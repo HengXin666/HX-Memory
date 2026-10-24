@@ -1,12 +1,12 @@
 // tests/s2/injection-dedupe.test.ts — 同一会话内的注入去重与差量注入 (s2)。
 //
-// 回归的真实缺陷 (2026-09, 用户实测): 一次会话里同一批记忆出现两三遍 ——
+// 回归的真实缺陷 (2026-09, 用户实测): 一次会话里同一批记忆出现两三遍 
 //   ①会话开始时注入的块 (无标题/无框架句) 与预步的块 (有标题+框架句) 永不相等 → 首次预步必然重复;
 //   ②预步每步重新拼块, 只要条目集合变一条, 整块文本就变 → 已注入过的条目被整份重发;
 //   ③14 轮的一条真实会话注入 7 次 (约 256 token/次, 逐轮在历史里累积)。
 //
 // 修法: 注入行带**稳定 id 标记** (kernel/injection-format.ts), 调用方把"已注入过的条目 id"
-// 交给 Binder 排除 —— 常驻记忆只进一次, 之后只补真正的新条目。
+// 交给 Binder 排除  常驻记忆只进一次, 之后只补真正的新条目。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,14 +73,14 @@ async function makeBinder() {
 describe("注入行的 id 承载方式 (2026-09-29 改: 正文不再带 id)", () => {
   it("注入行只有 kind + 内容, 正文里没有任何机器标记", () => {
     const line = formatEntryLine("r123", "规则内容");
-    // 行首没有 [id] (句柄对模型无用), 行尾也没有 `<!--hx-memory:id=…-->` ——
+    // 行首没有 [id] (句柄对模型无用), 行尾也没有 `<!--hx-memory:id=…-->` 
     // 后者曾占 88 token/块 (9 条), 已移到消息 source.entryIds (见 injection-format 头注)。
     expect(line).toBe("- 规则内容");
     expect(line.startsWith("- [r123]")).toBe(false);
     expect(parseInjectedIds(line)).toEqual([]);
   });
 
-  it("id 改走 source.entryIds —— 顺序与去重语义与旧标记一致", () => {
+  it("id 改走 source.entryIds  顺序与去重语义与旧标记一致", () => {
     // 旧形态靠正文标记解析; 新形态直接读 source。这里钉住"读得到、且去重"。
     expect(entryIdsOfSource({ entryIds: ["a", "b", "a"] })).toEqual(["a", "b", "a"]);
     // 去重是调用方 (Set) 的职责; 本函数只管原样取出。
@@ -129,7 +129,7 @@ describe("差量注入 (同会话不再重发同一批常驻记忆)", () => {
   it("整轮内容都已注入过 → 返回空串 (不产生任何新块)", async () => {
     const { stack, binder } = await makeBinder();
     const first = binder.injectFor("api", "容器并发上限怎么设");
-    // ⚠ 基线必须取 `lastInjectedIds()` 而不是解析正文 —— 2026-09-29 起正文里**没有** id,
+    // ⚠ 基线必须取 `lastInjectedIds()` 而不是解析正文  2026-09-29 起正文里**没有** id,
     // 解析它会得到空数组 (那条路径现在只在读历史会话时有用)。这正是真实调用方的用法:
     // prestep 用 `binder.lastInjectedIds()` 写进消息 source, 后续轮次从 source 读回。
     const ids = [...binder.lastInjectedIds()];

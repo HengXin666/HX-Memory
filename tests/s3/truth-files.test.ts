@@ -1,11 +1,11 @@
 // tests/s3/truth-files.test.ts — 真相文件视图的服务端契约 (§795)。
 //
-// 为什么需要它: ADR-002 承诺"真相在 Markdown 文件, 索引可重建" —— 而面板此前**每个视图都经
+// 为什么需要它: ADR-002 承诺"真相在 Markdown 文件, 索引可重建"  而面板此前**每个视图都经
 // SQLite**。这两个端点是"真相在人侧可见"的唯一入口, 因此它们的**边界**必须被钉住:
 //
 // | 契约 | 若失去它 |
 // | --- | --- |
-// | 只列/只读 {daily,digest,rules} 下的 .md | 目录穿越 —— 面板能读任意文件 |
+// | 只列/只读 {daily,digest,rules} 下的 .md | 目录穿越  面板能读任意文件 |
 // | `..` / 绝对路径被拒 | 同上 (而且是最直接的那种) |
 // | 未挂载时返回空数组而非抛错 | 面板在没有 truthFiles 依赖的环境里会崩 |
 // | 读不到时返回 null 且**不区分**原因 | 区分"不存在"与"不允许" = 泄露路径存在性 |
@@ -82,9 +82,9 @@ describe("真相文件视图: 列举与读取的边界", () => {
     expect((gw.truthFile as (p: string) => unknown)("digest/x.md")).toBeNull();
   });
 
-  it("### 负例: **符号链接穿不出 root** (§795 实测缺口 —— 唯一 load-bearing 的一条)**", () => {
+  it("### 负例: **符号链接穿不出 root** (§795 实测缺口  唯一 load-bearing 的一条)**", () => {
     // 为什么这条必须单独测: 上面那三条 (白名单目录 / name 校验 / normalize) **都不是**
-    // load-bearing —— 逐条拆掉它们测试仍绿 (因为彼此冗余)。而 \`normalize\` **不解析 symlink**:
+    // load-bearing  逐条拆掉它们测试仍绿 (因为彼此冗余)。而 \`normalize\` **不解析 symlink**:
     // 在 digest/ 下放 \`leak.md -> /tmp/outside.md\`, 前三层全部通过, 而 readFileSync
     // 会真的把外部文件读出来 (实测读到 OUTSIDE-SECRET)。⇒ 只有 realpath 那一条能挡住它。
     const root = mkdtempSync(join(tmpdir(), "truthsym-"));

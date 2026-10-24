@@ -1,6 +1,6 @@
 // storage/index-schema.ts — 派生索引的 DDL 与迁移 (纯函数, 不含业务逻辑)。
 //
-// 为什么独立: 表结构与迁移策略是"索引的内部实现细节", 与"真相文件怎么读写"完全无关 ——
+// 为什么独立: 表结构与迁移策略是"索引的内部实现细节", 与"真相文件怎么读写"完全无关 
 // 它们的变化原因不同 (改表 vs 改格式)。放在一起会让 file-store 每次加列都变长。
 //
 // 迁移原则: 索引是**派生物**, 加列不会丢真相 (真值文件是唯一事实源)。
@@ -61,7 +61,7 @@ const DDL = `
 
 /**
  * v2 新增列 (老库逐列补齐)。
- * check-then-ALTER 不是原子的: 并发打开时可能撞 duplicate column, 这里吞掉该错误 ——
+ * check-then-ALTER 不是原子的: 并发打开时可能撞 duplicate column, 这里吞掉该错误 
  * 目标状态已达成, 报错没有信息量 (另一个进程刚补过)。
  */
 const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [

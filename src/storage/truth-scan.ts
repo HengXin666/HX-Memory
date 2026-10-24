@@ -2,7 +2,7 @@
 //
 // 为什么独立: "真相目录里现在有哪些记忆"是一个自洽的问题, 与索引/检索/SQL 都无关。
 // 重建 (rebuildFromFiles)、一致性自检 (verify)、以及"索引为空是首次使用还是索引丢失"的判断
-// 都需要它 —— 三处共用同一份遍历口径, 才不会出现"重建看到 100 条、verify 看到 98 条"的鬼故事。
+// 都需要它  三处共用同一份遍历口径, 才不会出现"重建看到 100 条、verify 看到 98 条"的鬼故事。
 //
 // 去重规则: 同一 id 出现在多个文件 (kind/日期变更的残留) 时取 assertedAt **较新**的那个,
 // 且不依赖遍历顺序 (文件系统返回顺序不保证稳定)。被丢弃的会记进 warnings, 不静默吞掉。
@@ -18,6 +18,8 @@ export const TRUTH_DIRS = [DAILY_DIR, DIGEST_DIR, RULES_DIR] as const;
 /**
  * 扫描真相目录, 返回按 id 去重后的条目表 (以及解析/去重过程中被跳过的原因)。
  * 纯读: 不修改磁盘, 不碰索引。
+ 
+ * .agents/notes/implemented/feature/2026-09-12-memory-graph-preview.md
  */
 export function scanTruth(root: string): { entries: Map<string, MemoryEntry>; skipped: string[] } {
   const skipped: string[] = [];

@@ -1,6 +1,6 @@
 // tests/s2/evidence-chain.test.ts — 证据链 (条目 → 原始对话原话) 的端到端契约。
 //
-// 为什么要有这条: 产品承诺"可溯源", 而 `derivedFrom` 存了 episode id 却长期没有查询路径 ——
+// 为什么要有这条: 产品承诺"可溯源", 而 `derivedFrom` 存了 episode id 却长期没有查询路径 
 // "这句话是怎么来的"回答不了。本测试钉住三件事:
 //   ① 能追到原文; ② 原文是**未经改写**的 (不是摘要冒充); ③ 追不到时如实说明, 不假装成功。
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
@@ -23,9 +23,9 @@ afterEach(() => {
 /**
  * 经**真实捕获路径**产生一条带血缘的记忆 (而不是手工造 derivedFrom)。
  *
- * 注意: 捕获自 v3 起是**提炼**而非转录 —— 条目的 content 可能是结构化器给出的结论,
+ * 注意: 捕获自 v3 起是**提炼**而非转录  条目的 content 可能是结构化器给出的结论,
  * 不一定逐字包含问句。因此这里按"有 derivedFrom 的新条目"来定位, 而不是按问句前缀匹配
- * (按前缀匹配会找不到条目 —— 那是测试自己的 bug, 不是实现的)。
+ * (按前缀匹配会找不到条目  那是测试自己的 bug, 不是实现的)。
  */
 async function seed(stack: ReturnType<typeof openMemoryStack>, question: string, answer: string, turn = 1) {
   const before = new Set(stack.store.all().map((e) => e.id));

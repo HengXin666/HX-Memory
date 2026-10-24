@@ -2,7 +2,7 @@
 //
 // 宿主契约 (dsh-client-connection 的 ClientConnectionRpc + dsh-api-gateway 的 /api 拦截):
 //   rpc.call(channel, endpoint, payload, signal?)
-//     channel   必须匹配 /^\/[A-Za-z0-9._~-]+$/ —— Typert gateway 挂在共享通道 "/api";
+//     channel   必须匹配 /^\/[A-Za-z0-9._~-]+$/  Typert gateway 挂在共享通道 "/api";
 //     endpoint  "hxMemory/<method>" (namespace/method, 两段);
 //     payload   必须恰好是 { args: { ...命名参数 } } (Host 方法形参名 → 值);
 //     返回值    RpcResult: { ok: true, value } | { ok: false, error }。
@@ -11,7 +11,15 @@
 
 import { isHxMemoryRemoteMethod, type HxMemoryRemoteMethod } from "../remote-methods.js";
 
+/**
+ * 四层切面 (Surface / Application / Ports / Engines)
+ * .agents/notes/implemented/architecture/2026-09-10-four-layer-seams.md
+ */
 export const HXMEM_CHANNEL = "/api";
+/**
+ * 插件卸载释放 store 句柄 (热重载前提)
+ * .agents/notes/implemented/bug-fix/2026-09-16-store-disposer-for-hmr.md
+ */
 export const HXMEM_NAMESPACE = "hxMemory";
 
 /** 面板能拿到的最小 RPC 面 (ctx.get("connection").rpc)。 */

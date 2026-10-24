@@ -1,7 +1,7 @@
 // tests/s1/adjudicator-digest.test.ts — 冲突裁决器与摘要整合的纯逻辑契约 (无 IO)。
 //
 // 断言的是**性质** (该取代就取代 / 不确定就不取代 / 同输入同输出 / 只吃 active),
-// 不锁死具体分数与文案 —— 否则改一句 reason 就会让测试变红, 却什么行为都没坏。
+// 不锁死具体分数与文案  否则改一句 reason 就会让测试变红, 却什么行为都没坏。
 import { describe, expect, it } from "vitest";
 import { heuristicAdjudicator } from "../../src/evolution/adjudicator.ts";
 import { heuristicDigestBuilder } from "../../src/app/digest.ts";

@@ -2,9 +2,17 @@
 
 Status: implemented
 
+Decision-ID: semantic-retrieval-three-layers
+
+## Code
+
+- `src/retrieval/hybrid.ts`
+- `src/kernel/ports-engines.ts`
+- `scripts/eval-retrieval.ts`
+
 ## Problem
 
-用户实测的核心缺陷是"记忆只认精确匹配, 换个说法就找不到"。定位时发现两件事: (a) 词汇袋哈希嵌入对同义改写几乎无用 —— 实测同义改写 cos≈0.17、无关文本 cos≈0.08, 区分度太低, 等于没有语义能力; (b) 本机无法访问 HuggingFace, 无法把"下载 ONNX 模型"作为唯一路径。另外, 远端嵌入服务是异步的, 而 `agent/pre-step` 的注入判定是同步的 —— 直接引入 async 会让注入路径变形或拖慢对话。
+用户实测的核心缺陷是"记忆只认精确匹配, 换个说法就找不到"。定位时发现两件事: (a) 词汇袋哈希嵌入对同义改写几乎无用  实测同义改写 cos≈0.17、无关文本 cos≈0.08, 区分度太低, 等于没有语义能力; (b) 本机无法访问 HuggingFace, 无法把"下载 ONNX 模型"作为唯一路径。另外, 远端嵌入服务是异步的, 而 `agent/pre-step` 的注入判定是同步的  直接引入 async 会让注入路径变形或拖慢对话。
 
 ## Decision
 
@@ -20,6 +28,8 @@ Status: implemented
 - **预步注入的预热有硬时限**: `Binder.warm(deadlineMs, query)` 尽力补齐投影, 超时不报错; 预步默认最多等 50ms (可设 0), 未就绪时结果带 `vector:projection-warming` 降级说明。预热必须把**本轮查询**一起嵌入, 否则"文档就绪、查询未就绪"会让第一轮永远没有语义召回。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **只做远端嵌入。** 语义质量最好, 但没网/没配置就完全没有语义能力, 且每轮注入都要等网络。作为可选升级层更合适。
 

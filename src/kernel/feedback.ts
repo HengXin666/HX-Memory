@@ -4,11 +4,11 @@
 // 判定与阈值必须与存储/宿主无关, 才能被单测直接钉住 (见 tests/s1/feedback.test.ts)。
 //
 // 三条不可动摇的性质:
-//   1. **只记坏的**。没有 used/good 之类的正向计数 —— 好的不记, 沉默是默认且期望的状态。
+//   1. **只记坏的**。没有 used/good 之类的正向计数  好的不记, 沉默是默认且期望的状态。
 //      逼 agent 逐条表态会造成义务感, 它会为交差而编造评价, 而噪声比没有信号更糟。
 //   2. **两类分开**。irrelevant (召回了但不相关 → 检索/排序问题) 与
 //      wrong (内容不符/过时 → 内容问题, 需人审) 修法完全不同, 合成一个分数会丢掉指向。
-//   3. **样本少必须向中性收缩**。曝光 1 次就错 1 次时, 不能把条目一棒打死 ——
+//   3. **样本少必须向中性收缩**。曝光 1 次就错 1 次时, 不能把条目一棒打死 
 //      分母太小, 单次标注没有统计意义。
 import type { RecallFeedback } from "./types.ts";
 
@@ -44,7 +44,7 @@ export function badCount(feedback: RecallFeedback | undefined): number {
  *     它的问题是被误用成质量分; 在这里它是正确的分母。
  *   - **向中性收缩**: 曝光少时因子贴近 1 (不惩罚), 样本够了坏评才显出威力。
  *     exposure=0 的条目**完全不受影响** (从未展示过就谈不上质量)。
- *   - 下限 0.2: 即使坏评压倒性, 也只降权不消失 —— 丢弃是治理动作, 不是排序动作。
+ *   - 下限 0.2: 即使坏评压倒性, 也只降权不消失  丢弃是治理动作, 不是排序动作。
  */
 export function qualityFactor(feedback: RecallFeedback | undefined, exposure: number): number {
   const bad = badCount(feedback);
@@ -53,7 +53,7 @@ export function qualityFactor(feedback: RecallFeedback | undefined, exposure: nu
   if (shown === 0) return 1;
   // 贝叶斯平滑 (先验坏评率 + 伪计数), 使小样本向中性收缩:
   //   ratio = (bad + α·PRIOR) / (shown + α)
-  // 分母**只能用曝光次数**。我第一版写成 bad+shown 是错的 —— 它把分子重复计进分母,
+  // 分母**只能用曝光次数**。我第一版写成 bad+shown 是错的  它把分子重复计进分母,
   // 于是"全错"时 ratio 也只能趋近 0.5, 因子永远降不到 0.5 以下。
   const ALPHA = 4;
   const PRIOR_BAD_RATE = 0.2;

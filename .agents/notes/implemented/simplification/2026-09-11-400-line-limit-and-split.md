@@ -2,6 +2,18 @@
 
 Status: implemented
 
+Decision-ID: 400-line-limit-and-split
+
+## Code
+
+- `scripts/verify-structure.ts`
+- `src/adapters/dsh/index.ts`
+- `src/app/facade.ts`
+- `src/kernel/ports.ts`
+- `src/retrieval/hybrid.ts`
+- `src/storage/file-store.ts`
+- `src/trigger/policy.ts`
+
 ## Problem
 
 上一轮的质量审计把单文件行数上限设成 1400 (当时最大 1373), 只是"止血"。本轮把它按决策收紧到 **400 行**,
@@ -9,7 +21,7 @@ Status: implemented
 以及拆分过程中一度超标的中间产物。
 
 同时暴露了一个此前**只在子进程运行时才炸**的隐患: 新拆出的模块里我用了 TS 参数属性
-(`constructor(private readonly db: ...)`), 而 Node 的 strip-only 模式不支持它 ——
+(`constructor(private readonly db: ...)`), 而 Node 的 strip-only 模式不支持它 
 单测与 tsc 全绿, 但 CLI / MCP stdio 子进程 / 跨进程回放一 import 就抛
 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`。检查后发现**仓库里还有 4 处同类写法**尚未引爆。
 
@@ -17,7 +29,7 @@ Status: implemented
 
 ### 1. 上限设为 400 行 (纯逻辑 .ts; 前端不受约束)
 
-依据要说清楚: **这不是抄来的数字** —— 我查了 DSH, 他们**没有** TS 行数限制
+依据要说清楚: **这不是抄来的数字**  我查了 DSH, 他们**没有** TS 行数限制
 (`.oxlintrc.json` 里没有 max-lines, 手写文件最大到 2441 行), 因此不存在"业界阈值"可参照。
 400 是**决策**: 纯逻辑文件在 400 行内足以表达**一个**职责, 超出通常意味着两个职责被塞进一个文件。
 前端 (`.tsx` / `client/` 目录) 天然更长且难按行数切分, 明确排除。
@@ -27,7 +39,7 @@ Status: implemented
 | 原文件                        | 拆成                                                                                                                                            | 拆分依据                                                            |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `file-store.ts` (1373)        | `entry-normalize` / `markdown-codec` / `markdown-parse` / `index-schema` / `index-reader` / `index-writer` / `truth-scan` + `file-store` (编排) | 写格式 / 读解析 / 建表 / 读索引 / 写索引 / 扫真相目录, 各自独立变化 |
-| `facade.ts` (613)             | `facade-types` (契约) / `neighbors` (候选与裁决) / `format` (呈现) / `stats` (聚合) + `facade` (编排)                                           | 契约的读者是适配层, 实现细节的读者是维护者 —— 两类读者不同          |
+| `facade.ts` (613)             | `facade-types` (契约) / `neighbors` (候选与裁决) / `format` (呈现) / `stats` (聚合) + `facade` (编排)                                           | 契约的读者是适配层, 实现细节的读者是维护者  两类读者不同          |
 | `hybrid.ts` (499)             | `channels` (各通道取数) + `hybrid` (融合/去冗余/预算)                                                                                           | 加通道不该改融合逻辑, 调融合不该碰通道                              |
 | `adapters/dsh/index.ts` (411) | `trigger-cache` (缓存与召回组装) + `index` (接线)                                                                                               | 缓存失效策略自洽, 与插件其余接线无关                                |
 
@@ -41,7 +53,7 @@ Status: implemented
 
 `verify-structure.ts` 增加一条静态检查: 任何 `constructor(private|public|protected|readonly x: T)` 直接失败。
 理由写在脚本注释里: 子进程会 import .ts, 而这个错误 tsc 与普通 vitest **都不会报**,
-只在真的起子进程时才炸 —— 必须静态兜住。同时把仓库里现存的 4 处一并修掉 (未引爆的雷)。
+只在真的起子进程时才炸  必须静态兜住。同时把仓库里现存的 4 处一并修掉 (未引爆的雷)。
 
 ### 4. 修掉拆分的直接收益
 
@@ -51,6 +63,8 @@ Status: implemented
 
 ## Alternatives considered
 
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
 **直接照抄 DSH 的做法 (不设行数限制)。** 他们的 2441 行文件背后是多包拆分 + 生成式目录 + 更强的作用域约束。
 我们单包、无生成物, 没有那层结构性约束; 此时行数是最便宜也最有效的"该拆了"信号。
 
@@ -58,7 +72,7 @@ Status: implemented
 本轮严格只做搬运: 579 个测试全程不改一行 (只在真实 bug 处新增), 这是拆分正确的证据。
 
 **把 `file-store` 拆成两个 (读写各一) 就够了。** 那样每个仍有 600+ 行, 且"读"里混着 SQL 与解析、
-"写"里混着归一化与落盘 —— 变化原因仍然纠缠在一起。
+"写"里混着归一化与落盘  变化原因仍然纠缠在一起。
 
 **阈值设 300 行。** 会迫使把 `policy.ts` (341) / `ports.ts` (331) 这类**内聚的文件**也切开,
 而它们按职责已是一个整体。阈值过严会鼓励"为拆而拆", 反而降低可读性。
@@ -66,11 +80,11 @@ Status: implemented
 ## Consequences
 
 71 个源文件全部 ≤400 行; 每个文件的职责可以用一句话说清 (文件头的"为什么独立"注释)。
-`file-store.ts` 从 1373 降到约 390, 只负责编排与 SQL 写路径 —— 想改"什么合法"不必通读 SQL。
+`file-store.ts` 从 1373 降到约 390, 只负责编排与 SQL 写路径  想改"什么合法"不必通读 SQL。
 代价: ①文件数量从 57 增加到 71, 跨文件跳转变多 (由文件头注释与"职责边界"说明缓解);
 ②拆分引入了新的 import 边界, 若将来有人把逻辑写回编排层, 行数闸门会重新报警 (这正是它的作用);
 ③`facade.ts` 的公有类型必须与 `facade-types.ts` 保持逐字一致 (拆分时踩过一次: 我凭印象重写了类型,
-与实现不符, tsc 立刻报出 12 处错误 —— 已改为从原文件逐字搬移)。
+与实现不符, tsc 立刻报出 12 处错误  已改为从原文件逐字搬移)。
 
 ## Testing
 

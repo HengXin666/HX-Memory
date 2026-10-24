@@ -1,6 +1,6 @@
 // tests/s2/relink.test.ts — 维护动作"重新建边"的契约。
 //
-// 为什么需要这个动作: 建边只在**写入时**发生, 因此判据改进只对新条目生效 —— 存量条目永远
+// 为什么需要这个动作: 建边只在**写入时**发生, 因此判据改进只对新条目生效  存量条目永远
 // 停在旧口径上。实测真实库: active 154 条而 relates 边仅 20 条, 按当前判据重算可得约 400 条。
 //
 // 本文件钉住四条不变量 (改真相文件的动作必须有这些保证):
@@ -23,7 +23,7 @@ afterEach(() => {
 
 const T = { validAt: "2026-09-18T00:00:00.000Z", assertedAt: "2026-09-18T00:00:00.000Z" };
 
-/** 造一条含可抽取专名的记忆 (启发式口径 —— 真相字段无 entities)。 */
+/** 造一条含可抽取专名的记忆 (启发式口径  真相字段无 entities)。 */
 function seed(store: FileBackend, id: string, content: string, extra: Record<string, unknown> = {}) {
   return store.add({
     id, kind: "lesson", content, source: "test", scope: "agent", ts: T, ...extra,

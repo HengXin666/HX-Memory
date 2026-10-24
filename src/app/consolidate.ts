@@ -1,7 +1,7 @@
 // app/consolidate.ts — 后台整合 (S3): 衰减扫描 / 显式 TTL / 报告 (见 docs/architecture-v2.md §4.4)。
 //
 // 设计原则 (为什么这么保守):
-//   1. **永不删除**: "过期"只是 status=expired —— 检索默认不返回, 真相文件里仍在, 面板可查可复活;
+//   1. **永不删除**: "过期"只是 status=expired  检索默认不返回, 真相文件里仍在, 面板可查可复活;
 //   2. **只对短命种类生效**: 默认只让 event/context 过期; lesson/decision/pattern/preference/fact 只降权不消失,
 //      规则 (rule) 永远不动 (人工闸门是产品承诺, 见 ADR-003);
 //   3. **有命中就有生命**: 只要被召回强化过 (reinforcement>0) 或最近命中过 (lastHitAt), 就不判过期;

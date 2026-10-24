@@ -55,7 +55,7 @@ function entry(over: Partial<MemoryEntryInput> = {}): MemoryEntryInput {
 }
 
 /**
- * 断言"抛错或 reject" —— 端口允许同步与异步实现 (Awaitable),
+ * 断言"抛错或 reject"  端口允许同步与异步实现 (Awaitable),
  * 直接写 `await expect(fn()).rejects` 在同步实现上会逃逸成未捕获异常。
  */
 async function expectFailure(fn: () => unknown, pattern?: RegExp): Promise<void> {
@@ -86,6 +86,10 @@ function rule(over: Partial<MemoryEntryInput> = {}): MemoryEntryInput {
   };
 }
 
+/**
+ * 引擎准入 = conformance 契约套件 (存储侧 + 检索侧)
+ * .agents/notes/implemented/testing/2026-09-10-engine-conformance-suites.md
+ */
 export function describeBackend(spec: BackendSpec): void {
   describe(`conformance: ${spec.name}`, () => {
     let harness: BackendHarness;

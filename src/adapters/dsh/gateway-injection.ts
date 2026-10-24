@@ -11,7 +11,7 @@ import type { MemoryEntry } from "../../kernel/types.ts";
 export interface AlwaysOnPreview {
   /** 会进保底通道的条目 (与实际注入同一实现)。 */
   picked: Array<{ id: string; kind: string; scope: string; content: string; tokens: number }>;
-  /** **本是候选但因配额没进来**的条目 (含被挡的规则) —— 这是本出口最要紧的部分。 */
+  /** **本是候选但因配额没进来**的条目 (含被挡的规则)  这是本出口最要紧的部分。 */
   blocked: Array<{ id: string; kind: string; content: string; tokens: number; reason: string }>;
   budgetTokens: number;
   selectedTokens: number;
@@ -20,7 +20,7 @@ export interface AlwaysOnPreview {
 /**
  * 注入预览投影。
  *
- * 为什么必须有这个出口 (2026-09-18): 面板此前有"新沉淀/搜索/待审"三个 tab, 但**没有"注入"** ——
+ * 为什么必须有这个出口 (2026-09-18): 面板此前有"新沉淀/搜索/待审"三个 tab, 但**没有"注入"** 
  * 而注入是**用户唯一能感知的记忆行为** (他最初的抱怨正是"搜索时前面几条都是规则")。
  * 更糟的是: 被配额挡掉的规则是**完全静默**的 (实测真实库 9 条已确认规则里 2 条永远注入不进)。
  *
@@ -29,7 +29,7 @@ export interface AlwaysOnPreview {
 /**
  * 装配注入预览的读取器 (从 index.ts 拆出)。
  *
- * 为什么要走 `selectAlwaysOnDetailed` 而不是重写一份逻辑: **预览与实际注入必须同源** ——
+ * 为什么要走 `selectAlwaysOnDetailed` 而不是重写一份逻辑: **预览与实际注入必须同源** 
  * 否则面板显示的"会注入什么"与真机注入的就可能分叉 (本项目反复强调的坑)。
  */
 /**
@@ -44,7 +44,7 @@ export type AlwaysOnDetailedReader = (opts: { project?: string }) => Promise<{
   blocked: Array<{ id: string; kind: string; content: string; tokens: number; reason: string }>;
 }>;
 
-/** 实现 —— 返回类型**直接用那个别名**, 免得两处定义再次分叉。 */
+/** 实现  返回类型**直接用那个别名**, 免得两处定义再次分叉。 */
 export function makeAlwaysOnDetailedReader(
   loadAll: () => Promise<readonly MemoryEntry[]>,
   budgetTokens = 400,
@@ -79,7 +79,7 @@ export interface AlwaysOnPreviewDeps {
 
 /**
  * 端点实现 (从 gateway.ts 拆出, 让那边的行数回到上限内)。
- * 缺省时返回**空集**而不是抛错: 面板据此显示"未接线" (与 captureReviewQueue 同一取舍) ——
+ * 缺省时返回**空集**而不是抛错: 面板据此显示"未接线" (与 captureReviewQueue 同一取舍) 
  * "这个机制没接线"与"真的没有内容"是两件事, 不能混。
  */
 export async function handleAlwaysOnPreview(

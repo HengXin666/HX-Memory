@@ -18,7 +18,7 @@ import { ProjectedVectorIndex } from "../src/retrieval/vector-projected.ts";
 import { LexicalEmbedder } from "../src/retrieval/embedding-lexical.ts";
 import { openAiEmbedderFromEnv } from "../src/retrieval/embedding-http.ts";
 
-/** 语料: [记忆内容, 同义查询] —— 查询尽量不与原文共享长词 (模拟真实改写)。 */
+/** 语料: [记忆内容, 同义查询]  查询尽量不与原文共享长词 (模拟真实改写)。 */
 const CASES: Array<[string, string]> = [
   ["每次发版之前要跑一遍完整校验", "上线前应该做什么检查"],
   ["容器并发要显式设置上限", "服务并行处理需要限制并发度"],
@@ -86,6 +86,10 @@ const httpEmbedder = openAiEmbedderFromEnv();
 if (!httpEmbedder) {
   console.log("C. 真语义嵌入          (跳过: 未配置 HX_MEMORY_EMBEDDING_BASE_URL/MODEL)");
 } else {
+  /**
+   * 语义检索分三层, 阈值由嵌入器自述, 预步预热有硬时限
+   * .agents/notes/implemented/architecture/2026-09-10-semantic-retrieval-three-layers.md
+   */
   const projected = new ProjectedVectorIndex({ embedder: httpEmbedder, floor: 0.3 });
   const semanticRetriever = new HybridRetriever(store, { vectorIndex: projected });
   await evaluate("C. 真语义嵌入", semanticRetriever, async () => {

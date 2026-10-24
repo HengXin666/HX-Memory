@@ -6,7 +6,7 @@
 // ⇒ **同一份库, 全文检索看不到的 expired 条目, 结构化查询却看得到**。
 //
 // 影响面 (实测确认): `contradictions` (面板列矛盾对) 与 `memoryQuery` 的 **LIKE 降级分支**
-// 都走 `query`; 而 `app/consolidate.ts` 真的会产出 `expired` (TTL 到期) —— 所以不是理论问题。
+// 都走 `query`; 而 `app/consolidate.ts` 真的会产出 `expired` (TTL 到期)  所以不是理论问题。
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +33,7 @@ describe("可见性口径: query / searchText / isLiveEntry 三者一致", () =>
       }
       const returned = new Set(stack.store.query({ limit: 100 }).map((e) => e.id));
 
-      // 判据不是"我记得该排除谁", 而是**权威定义本身** —— 两者必须逐项一致。
+      // 判据不是"我记得该排除谁", 而是**权威定义本身**  两者必须逐项一致。
       for (const st of STATUSES) {
         const shouldBeVisible = isLiveEntry({ status: st });
         expect(

@@ -36,7 +36,7 @@ jobs:
       - run: pnpm run build:client
       - name: Compute version
         id: ver
-        # 必须用 env: 传 BUMP, 不能在 run 里把 "BUMP=minor" 单独写一行 ——
+        # 必须用 env: 传 BUMP, 不能在 run 里把 "BUMP=minor" 单独写一行 
         # 那只是 shell 变量, 不会 export 给子进程; calc-version.cjs 读不到就静默回退成 patch。
         # **真实踩过**: 选了 minor 却发布了 v0.1.3 (见 Agent Note)。
         env:
@@ -96,7 +96,7 @@ jobs:
           3. 或 (GitHub Packages, 需要 token): dsh plugin --profile web add @hengxin666/hx-memory
           4. 重启 DSH, 设置区出现 记忆审阅 / 记忆绑定 / 注入时机 入口
           
-          注意: 不要用仓库的源码 zip/tar.gz 归档安装 —— 源码不含 dist/ 构建产物。
+          注意: 不要用仓库的源码 zip/tar.gz 归档安装  源码不含 dist/ 构建产物。
           各安装通道的实测对照见 docs/plugin-install.md。
           
           由 release 流水线构建+验证后打包并发布到 GitHub Packages (public)。

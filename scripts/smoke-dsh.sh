@@ -7,7 +7,7 @@
 #   3. runtime/client 两个 fiber 都 active (不是"加载失败但进程还活着");
 #   4. /api/hxMemory/* 业务结果 {ok:true} (channel/endpoint/args 约定正确);
 #   5. runGeneralization 触发点存在且能跑, 且返回**漏斗报告** (considered/clusters/proposed/
-#      usedLlm/tookMs) —— 面板状态条据此解释"为什么 0 条"; generalizationStatus 可用;
+#      usedLlm/tookMs)  面板状态条据此解释"为什么 0 条"; generalizationStatus 可用;
 #   6. saveBindings → listBindings 真往返 (bindingStore 真的挂上了);
 #   7. 设置命名空间真的注册到宿主 (installSection/register 双路径 + 双传输形态);
 #   8. 绑定真的落盘到 bindings.json (truth-in-files);
@@ -32,7 +32,7 @@ ok() { echo "[smoke] ok: $*"; }
 
 command -v "$DSH_BIN" >/dev/null 2>&1 || fail "dsh not found ($DSH_BIN)"
 # `dsh plugin` 是 pnpm 的转发器 (它 spawn 一个 pnpm 去管 profile 依赖)。pnpm 不在 PATH 上时
-# 它只会失败, 而失败原因会被下面的重定向吞掉 —— 先自己检查, 把"缺什么"直接说出来。
+# 它只会失败, 而失败原因会被下面的重定向吞掉  先自己检查, 把"缺什么"直接说出来。
 # 实测: 本机 pnpm 只在它自己的安装目录里 (不在 PATH), 于是本脚本静默死在第一步。
 command -v pnpm >/dev/null 2>&1 \
   || fail "pnpm not found on PATH — dsh plugin needs it; e.g. export PATH=\"\$(dirname \"\$(ls -d \"\$HOME\"/.local/share/pnpm/.tools/pnpm/*/bin/pnpm 2>/dev/null | tail -1)\")/:\$PATH\""
@@ -60,11 +60,11 @@ trap cleanup EXIT
 
 # ── 播种: 让"注入预览"的断言真的有事可断言 ──────────────────────────────────
 # 为什么必须播种 (2026-09-18): 隔离 DSH_HOME 是**空库**, 于是 alwaysOnPreview 返回
-# picked=[] / blocked=[] —— 那条断言只验证了信封形状, **自洽性断言 (picked 与 blocked
+# picked=[] / blocked=[]  那条断言只验证了信封形状, **自洽性断言 (picked 与 blocked
 # 不相交) 在空集上恒真**, 属空转。播种一条已确认规则后, 该断言才真的在跑。
 #
 # 为什么用 CLI 的 import (而不是直接写 Markdown 文件): 规则需要 confirmedBy/confirmedAt
-# 才会进保底通道, 而这两个字段的写入路径由领域层管 —— 手写 frontmatter 容易漏掉字段名约定。
+# 才会进保底通道, 而这两个字段的写入路径由领域层管  手写 frontmatter 容易漏掉字段名约定。
 # 走 import 走的是**产品自己的写入路径**, 与真实使用一致。
 MEM_ROOT="$SMOKE_HOME/hx-memory"
 mkdir -p "$MEM_ROOT"
@@ -72,7 +72,7 @@ SEED_RULE_ID="mseed00000000smoke"
 node "$PKG/dist/adapters/codex/cli.js" import --root "$MEM_ROOT" <<SEED_EOF >/dev/null
 {"id":"$SEED_RULE_ID","kind":"rule","content":"冒烟测试规则: 此条由 smoke 播种, 用于让注入预览的自洽性断言不再是空转","source":"smoke:seed","scope":"global","confirmedBy":"smoke","confirmedAt":"2026-01-01T00:00:00.000Z","ts":{"validAt":"2026-01-01T00:00:00.000Z","assertedAt":"2026-01-01T00:00:00.000Z"},"status":"active"}
 SEED_EOF
-# 播种必须**真的成功**才继续 —— 否则下面的断言又会退回空转, 而那是静默的。
+# 播种必须**真的成功**才继续  否则下面的断言又会退回空转, 而那是静默的。
 if ! node "$PKG/dist/adapters/codex/cli.js" rules --root "$MEM_ROOT" 2>/dev/null | grep -q "$SEED_RULE_ID"; then
   fail "seed rule not visible to CLI (播种失败: 注入预览的断言会退回空转)"
 fi
@@ -81,7 +81,7 @@ ok "已播种一条已确认规则 (让注入预览的断言有事可断言)"
 # ── 播种一对**互相矛盾**的条目: 让 contradictions 端点的断言也能验到元素形状 ──────
 #
 # 为什么必须播种 (2026-09-18, §475): contradictions 此前在冒烟环境里**返回空数组**,
-# 于是那条断言只证明"端点挂上了 + 是数组" —— **不证明元素形状正确** (该限界当时写在
+# 于是那条断言只证明"端点挂上了 + 是数组"  **不证明元素形状正确** (该限界当时写在
 # smoke-dsh-http.mjs 的注释里)。而"矛盾可被发现"是 keep-both 那条保守设计的**唯一出口**
 # (gateway.ts:268 的注释: "此前没有任何入口能列出这些矛盾 … 等于永久悬空")。
 #
@@ -119,13 +119,13 @@ if ! ADD_OUT="$("$DSH_BIN" plugin --profile web add "file:$PKG" 2>&1)"; then
 fi
 
 TREE="$("$DSH_BIN" --profile web --dump-config 2>&1 || true)"
-# 组条目 id = hx-memory-group; **runtime 条目 id 必须正好是 `hx-memory`** ——
+# 组条目 id = hx-memory-group; **runtime 条目 id 必须正好是 `hx-memory`** 
 # 0.1.7 起它就是设置命名空间 (见 dsh/cordis.patch.yml 顶部说明), 也是下面
 # settings/describe 断言查的那个 ns。这两条 id 各自唯一, 否则设置条目会被宿主整批丢弃。
 echo "$TREE" | grep -q "id: hx-memory-group$" || fail "plugin group missing from composed profile"
 echo "$TREE" | grep -qE "^ +- id: hx-memory$" || fail "runtime entry id must be exactly 'hx-memory' (it is the settings namespace on 0.1.7+)"
 # 注意: dump 里包名带 YAML 引号 (name: '@scope/pkg'), 且 provenance 注释行 "# == @scope/pkg"
-# 也会被"以包名结尾"的宽松模式命中 —— 必须精确匹配 name 行。
+# 也会被"以包名结尾"的宽松模式命中  必须精确匹配 name 行。
 echo "$TREE" | grep -qF "name: '$PKG_NAME/dsh'" || fail "runtime entry missing from composed profile"
 echo "$TREE" | grep -qF "name: '$PKG_NAME'" || fail "client entry missing from composed profile"
 if echo "$TREE" | grep -A 14 "id: hx-memory-group$" | grep -q "isolate"; then

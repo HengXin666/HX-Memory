@@ -1,7 +1,7 @@
 // retrieval/embedding-lexical.ts — 离线语义近似: 词典归一 + 字级 n-gram 加权。
 //
 // 为什么需要它: 实测本地"词/bigram 哈希袋"对同义改写几乎无用 (真同义改写 cos≈0.19,
-// 无关文本 0.14 —— 区分度极低), 而中文没有空格分词, 改写往往换的是**词**而不是字。
+// 无关文本 0.14  区分度极低), 而中文没有空格分词, 改写往往换的是**词**而不是字。
 // 本实现做两件确定性的事, 不下载模型、不联网、零依赖:
 //   1. **同义词归一**: 内置一张中英混排的口语↔术语映射表 (上线/发版→发布, 兜底→熔断…),
 //      把"换个说法"折叠到同一批规范词上;
@@ -9,7 +9,7 @@
 //      并对英文按词根截断 (retry/retries → retr) 做轻量词形归一。
 //
 // 诚实边界: 这仍然是**词汇/字面**方法 (词典驱动的语义), 覆盖不到词典外的同义表达。
-// 真语义请配置远端嵌入器 (embedding-http.ts) —— 两者共用同一个 Embedder 端口, 可随时切换。
+// 真语义请配置远端嵌入器 (embedding-http.ts)  两者共用同一个 Embedder 端口, 可随时切换。
 import type { SyncEmbedder } from "../kernel/ports.ts";
 import { termStreams } from "../kernel/cjk.ts";
 import { fnv1a32, l2Normalize } from "../kernel/hashing.ts";
@@ -76,7 +76,7 @@ export interface LexicalEmbedderOptions {
 }
 
 /**
- * 离线语义近似嵌入器。同步实现 —— 可在预步注入路径直接使用 (无需投影)。
+ * 离线语义近似嵌入器。同步实现  可在预步注入路径直接使用 (无需投影)。
  */
 export class LexicalEmbedder implements SyncEmbedder {
   readonly id: string;

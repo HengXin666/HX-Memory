@@ -80,17 +80,17 @@ async function check(method, args, label) {
   }
   ok(label);
 }
-// reviewQueue: 本行只验"端点挂上了"; **队列内容的断言在 runGeneralization 之后** ——
+// reviewQueue: 本行只验"端点挂上了"; **队列内容的断言在 runGeneralization 之后** 
 // 见下面那段前的注释 (队列要先被泛化器跑过才有内容, 那是**顺序依赖**, 不是缺陷)。
 await check("hxMemory/reviewQueue", { status: "proposed" }, "reviewQueue 200 + ok");
 await check("hxMemory/generalizationStatus", {}, "generalizationStatus 可用 (批次可观测面)");
 // runGeneralization 现在返回漏斗报告: 面板要读 considered/clusters/proposed/usedLlm,
-// 缺字段会让状态条显示 undefined —— 在这里断言形状而不只是"没报错"。
+// 缺字段会让状态条显示 undefined  在这里断言形状而不只是"没报错"。
 //
-// ⚠ **只能调一次** (2026-09-18, 我第一版调了两次 —— 第一次是 check 那次):
+// ⚠ **只能调一次** (2026-09-18, 我第一版调了两次  第一次是 check 那次):
 // `runRecent` 会把产出的提议写进队列, 而**下一次**调用会用队列算 `covered`,
 // 把刚覆盖的条目全部跳过 ⇒ **第二次必然 clusters=0 / proposed=0** (实测 coveredSkipped=3)。
-// 那是**有意的幂等设计** ("同一批不重复提议"), 不是缺陷 —— 而我的断言把它当成了缺陷。
+// 那是**有意的幂等设计** ("同一批不重复提议"), 不是缺陷  而我的断言把它当成了缺陷。
 // 教训: 断言里**不要重复调用有副作用的 RPC**, 否则测的是"第二次"而不是"这个功能行不行"。
 const runReport = await callApi("hxMemory/runGeneralization", { limit: 100 });
 const report = runReport?.result?.value ?? {};
@@ -108,9 +108,9 @@ ok(
   "runGeneralization 返回漏斗报告且**确实产出** (considered=" + report.considered +
     " clusters=" + report.clusters + " proposed=" + report.proposed + ")",
 );
-// reviewQueue 的**内容**断言必须排在 runGeneralization 之后 —— 那是**顺序依赖**:
+// reviewQueue 的**内容**断言必须排在 runGeneralization 之后  那是**顺序依赖**:
 // 队列由泛化批次产出 (runRecent 写队列), 空库起步时它在第一次跑批之前必然是空的。
-// (2026-09-18 我第一版把它放在前面, 于是断言 FAIL —— 那次失败**指出了一个真实的顺序约束**,
+// (2026-09-18 我第一版把它放在前面, 于是断言 FAIL  那次失败**指出了一个真实的顺序约束**,
 //  而不是产品缺陷。记在这里免得后人再踩。)
 const rq = await callApi("hxMemory/reviewQueue", { status: "proposed" });
 const rqVal = rq?.result?.value;
@@ -119,7 +119,7 @@ if (rqVal.length === 0) {
   fail("跑过泛化后 reviewQueue 仍为空 (播种 lesson 没聚成簇, 或产出没落队列)");
 }
 // 字段清单取自 ReviewQueueView (gateway-review.ts): 面板据此渲染"这条提议概括了哪几条原文"。
-// (我第一版写了 "proposal" —— 那是**内层结构**的名字; 视图层展平了它, 实际字段是 `rule`。)
+// (我第一版写了 "proposal"  那是**内层结构**的名字; 视图层展平了它, 实际字段是 `rule`。)
 for (const k of ["id", "status", "rule", "covers", "confidence", "sourceRun", "generatedAt", "suggestedAction"]) {
   if (!(k in rqVal[0])) fail("reviewQueue 元素缺字段 " + k);
 }
@@ -129,7 +129,7 @@ ok("reviewQueue 在泛化后**确有提议且形状完整** (播种 lesson 聚�
 
 // --- 人工闸门 (ADR-003): confirmProposal 必须真的把提议变成规则 ---
 //
-// 为什么必须在真机验 (2026-09-18, §481): 这条路径此前**零覆盖** —— 而它是
+// 为什么必须在真机验 (2026-09-18, §481): 这条路径此前**零覆盖**  而它是
 // "规则只由人改" (ADR-003) 的**唯一执行点**。它有三个不能只靠单测的性质:
 //   ① 提议 → 规则的**落盘** (不是只改队列里的状态);
 //   ② 新规则要**真的进 always-on 通道** (否则"确认了但没生效");
@@ -157,7 +157,7 @@ if (ruleRow.kind !== "rule") fail("确认后产出的不是 rule: kind=" + ruleR
 if (ruleRow.status !== "active") fail("确认后的规则 status 不是 active: " + ruleRow.status);
 // ⚠ **刻意不断言"它进了 always-on"** (2026-09-18, §481 第一版就错在这里):
 // 我播种的 lesson 是**启发式兜底**产出的, 于是确认后的规则正文是
-// "经验: testing 相关的 N 条实例已沉淀 …" —— 那是一条**占位草稿**,
+// "经验: testing 相关的 N 条实例已沉淀 …"  那是一条**占位草稿**,
 // 而 `selectAlwaysOnDetailed` **按设计挡住它** (isHeuristicRulePlaceholder, 见 trigger/policy.ts 的长注释:
 // 占位草稿不含可执行约束, 会把 400 token 的保底预算吃光)。
 //
@@ -182,19 +182,19 @@ for (const k of ["id", "kind", "content", "scope", "assertedAt"]) {
 }
 ok("recentCaptures 可用且**元素形状完整** (面板最近沉淀出口, " + rcVal.length + " 条)");
 // 主动整理 (无损迁移): 面板必须能拿到**干跑报告**, 且报告里不能有 error 字段
-// (normalizer 未挂载时返回 {error}, check 只会看到"对象"—— 这里显式断言它真挂上了)。
+// (normalizer 未挂载时返回 {error}, check 只会看到"对象" 这里显式断言它真挂上了)。
 const norm = await callApi("hxMemory/normalizeMemory", { dryRun: true });
 const normReport = norm?.result?.value ?? {};
 if (normReport.error) fail("normalizeMemory: " + normReport.error);
 // sweptTemps 也在此列 (2026-09-18 补): 它是"顺手清扫原子写孤儿临时文件"的计数。
-// **新字段必须进这张清单** —— 否则真机门禁不会检查它, 而报告形状是面板的契约。
+// **新字段必须进这张清单**  否则真机门禁不会检查它, 而报告形状是面板的契约。
 for (const field of ["scanned", "changed", "unchanged", "dryRun", "toFormat", "changes", "sweptTemps"]) {
   if (!(field in normReport)) fail("normalizeMemory 报告缺字段 " + field);
 }
 if (typeof normReport.sweptTemps !== "number") fail("normalizeMemory.sweptTemps 必须是数字");
 if (normReport.dryRun !== true) fail("normalizeMemory 默认必须是干跑 (不得默认写盘)");
 ok("normalizeMemory 返回干跑报告 (主动整理入口可用)");
-// 播种的矛盾条目 id —— **必须与 scripts/smoke-dsh.sh 里的字面量一致**。
+// 播种的矛盾条目 id  **必须与 scripts/smoke-dsh.sh 里的字面量一致**。
 // 为什么硬编码而不是传参: 与上面 SEED_RULE_ID 同一做法 (它在 161 行也是硬编码);
 // 两处不一致会让断言报"未同时列出播种的两条", 而那正是它该报的错。
 const SEED_CONTRA_A = "mseed0000000contra";
@@ -202,7 +202,7 @@ const SEED_CONTRA_B = "mseed0000000contbz";
 
 // contradictions: **播种之后**这条断言才真的在跑 (§475)。
 // 此前它在冒烟环境里返回空数组, 只证明"端点挂上了"; 现在播种了一对互相矛盾的条目 ⇒
-// 可以验**元素形状**, 也就是"矛盾真的能被发现" —— 那是 keep-both 保守设计的唯一出口。
+// 可以验**元素形状**, 也就是"矛盾真的能被发现"  那是 keep-both 保守设计的唯一出口。
 const contra = await callApi("hxMemory/contradictions", { limit: 20 });
 if (contra?.result?.ok !== true) fail("contradictions: envelope not ok");
 const contraVal = contra.result.value;
@@ -213,7 +213,7 @@ if (contraVal.length === 0) {
 for (const k of ["id", "kind", "content", "withId"]) {
   if (!(k in contraVal[0])) fail("contradictions 元素缺字段 " + k);
 }
-// 播种的那一对必须**成对出现** (双向边) —— 单向会让面板只显示一半
+// 播种的那一对必须**成对出现** (双向边)  单向会让面板只显示一半
 const contraIds = new Set(contraVal.map((x) => x.id));
 if (!(contraIds.has(SEED_CONTRA_A) && contraIds.has(SEED_CONTRA_B))) {
   fail(
@@ -222,19 +222,19 @@ if (!(contraIds.has(SEED_CONTRA_A) && contraIds.has(SEED_CONTRA_B))) {
   );
 }
 ok("contradictions 可用且**元素形状完整** (播种的矛盾成对出现, " + contraVal.length + " 条)");
-// agent 标注面: 必须是**数组**且元素形状完整 —— 标注会降权排序, 面板据此解释"为什么排到后面了"。
+// agent 标注面: 必须是**数组**且元素形状完整  标注会降权排序, 面板据此解释"为什么排到后面了"。
 //
 // ⚠ **覆盖限界 (2026-09-18 记)**: 空数组在这里是**预期**的 (没有标注才是常态),
-// 因此本断言**不证明"标注能被读出"** —— 标注是**用户/agent 的行为**, 脚本产生不了。
+// 因此本断言**不证明"标注能被读出"**  标注是**用户/agent 的行为**, 脚本产生不了。
 // 换句话说: 它证明的是"这个面存在且形状稳定", 不是"它能工作"。
 // ── 注入预览: "这一轮会注入什么" + "什么因配额没进来" ──────────────────────────
-// 为什么断言它 (2026-09-18): 面板此前有"新沉淀/搜索/待审"三个 tab, 但**没有"注入"** ——
+// 为什么断言它 (2026-09-18): 面板此前有"新沉淀/搜索/待审"三个 tab, 但**没有"注入"** 
 // 而注入是用户唯一能感知的记忆行为; 更糟的是被配额挡掉的规则**完全静默**
 // (实测真实库 9 条已确认规则里 2 条永远注入不进)。
 //
 // 断言分两层:
-//   1. **形状与自洽性** (picked 与 blocked 不相交) —— 这是出口的正确性所在;
-//   2. **播种的规则必须出现在 picked 里** —— 这一条把断言从"空集恒真"变成真的在跑。
+//   1. **形状与自洽性** (picked 与 blocked 不相交)  这是出口的正确性所在;
+//   2. **播种的规则必须出现在 picked 里**  这一条把断言从"空集恒真"变成真的在跑。
 //      (2026-09-18: 此前隔离 DSH_HOME 是空库, 自洽性断言在空集上恒真, 属空转。
 //       现在 smoke-dsh.sh 会先播种一条已确认规则, 于是这条断言有意义。)
 //
@@ -253,7 +253,7 @@ if (conflict.length) fail("alwaysOnPreview: 同一条既被选中又被挡 (" + 
 // blocked 的成因必须是两种已知值之一 (自由字符串会让前端无法分支)
 const badReason = pv.blocked.filter((b) => b.reason !== "over-group-cap" && b.reason !== "over-total-budget");
 if (badReason.length) fail("alwaysOnPreview: 未知的 blocked.reason: " + JSON.stringify(badReason[0]?.reason));
-// 播种的那条已确认规则**必须**在选中里 —— 若它不在, 说明这条断言又退回空转了。
+// 播种的那条已确认规则**必须**在选中里  若它不在, 说明这条断言又退回空转了。
 // (规则是用户确认过的跨项目不变量, 承诺无条件注入; 它没进来就是真问题。)
 if (!pv.picked.some((e) => e.id === SEED_RULE_ID)) {
   fail(
@@ -267,7 +267,7 @@ const flagged = await callApi("hxMemory/flaggedMemories", { limit: 50 });
 if (flagged?.result?.ok !== true) fail("flaggedMemories: envelope not ok");
 if (!Array.isArray(flagged.result.value)) fail("flaggedMemories 必须返回数组 (空数组 = 没有坏评, 是好事)");
 ok("flaggedMemories 可用 (agent 标注面)");
-// 证据链 (面板「追来源」按钮的端点): 断言的是**这个端点真的挂上了**, 而不是"某个 id 能溯源" ——
+// 证据链 (面板「追来源」按钮的端点): 断言的是**这个端点真的挂上了**, 而不是"某个 id 能溯源" 
 // 全新宿主上还没有带血缘的条目, 所以"返回 error 对象"与"返回链路"都算通过;
 // 只有"端点不存在" (静默 404) 才是失败。宿主重启前调用它会 404, 这正是本断言要拦的。
 const evMissing = await callApi("hxMemory/evidenceChain", { id: "mSmokeNonexistent" });
@@ -282,7 +282,7 @@ ok("evidenceChain 可用 (面板追来源入口, 且对不存在的 id 有明确
 // **对存在的 id** 追来源: 上面那条只证明端点挂上了; 这一条才证明"可溯源"真的能跑。
 //
 // 为什么可以断言了 (2026-09-18): smoke 现在会**先播种**一条已确认规则 (见 smoke-dsh.sh),
-// 因此隔离库里确实有条目 —— 此前"全新宿主还没有条目"的限制不再成立。
+// 因此隔离库里确实有条目  此前"全新宿主还没有条目"的限制不再成立。
 // 播种规则由 import 写入, 因此它**带 source**, 追溯必须能返回它。
 const evSeed = await callApi("hxMemory/evidenceChain", { id: SEED_RULE_ID });
 if (evSeed?.result?.ok !== true) fail("evidenceChain(播种 id): envelope not ok");
@@ -300,7 +300,7 @@ ok("evidenceChain 对**存在的条目**能返回溯源 (可溯源承诺真的�
 // 捕获待审队列: 断言 available 字段存在 (它是"机制是否接线"的标志, 与"有没有待审"分开)。
 //
 // ⚠ **覆盖限界 (2026-09-18 记)**: 隔离库是空的, 因此这里只证明了
-// "端点挂上了 + 形状对", **不证明"它能列出真实待审项"** —— 待审需要**可疑候选**,
+// "端点挂上了 + 形状对", **不证明"它能列出真实待审项"**  待审需要**可疑候选**,
 // 而那是捕获管道的产物, 播种一条规则产生不了。
 // 能力侧由单测与 §捕获管道的集成测试覆盖。**改动这块时不要以为本断言已经验过它。**
 const cq = await callApi("hxMemory/captureReviewQueue", { limit: 10 });
@@ -310,11 +310,11 @@ if (typeof cqv !== "object" || cqv === null) fail("captureReviewQueue 必须返�
 if (typeof cqv.available !== "boolean") fail("captureReviewQueue 必须给出 available");
 if (!Array.isArray(cqv.items)) fail("captureReviewQueue.items 必须是数组");
 ok("captureReviewQueue 可用 (待审队列有出口, 不会变成悄悄丢弃)");
-// 注入调度账本: 面板「注入调度」tab 的唯一出口。断言形状而不是内容 ——
+// 注入调度账本: 面板「注入调度」tab 的唯一出口。断言形状而不是内容 
 // 全新宿主上还没有任何预步判定, 所以 sessions/records 为空是**正常**的 (available 才是契约)。
 //
 // ⚠ **覆盖限界 (2026-09-18 记)**: 同上, 这里只证明端点可达 + 形状正确。
-// **不证明它真能记录一次判定** —— 那需要真实会话走完一轮预步, 播种条目做不到。
+// **不证明它真能记录一次判定**  那需要真实会话走完一轮预步, 播种条目做不到。
 const sched = await callApi("hxMemory/scheduleLog", { limit: 20 });
 if (sched?.result?.ok !== true) fail("scheduleLog: envelope not ok");
 const schedValue = sched.result.value;
@@ -324,7 +324,7 @@ if (!Array.isArray(schedValue.sessions) || !Array.isArray(schedValue.records))
   fail("scheduleLog 必须返回 sessions/records 数组");
 if (typeof schedValue.size?.records !== "number") fail("scheduleLog.size.records 必须是数字");
 ok("scheduleLog 可用 (注入调度的'为什么'可查)");
-// 捕获耗时账本: 面板「沉淀耗时」tab 的唯一出口。同样断言形状而不是内容 ——
+// 捕获耗时账本: 面板「沉淀耗时」tab 的唯一出口。同样断言形状而不是内容 
 // 全新宿主上还没跑过任何完成的轮次, 所以 records 为空、各统计为 0 都是**正常**的。
 const capLog = await callApi("hxMemory/captureLog", { limit: 20 });
 if (capLog?.result?.ok !== true) fail("captureLog: envelope not ok");
@@ -391,7 +391,7 @@ if (viaTypert) {
 
 // --- 5b) 注入时机开关必须能从宿主设置面读到并写得动 ---
 // 为什么断言到字段级: 命名空间注册了但 schema 里没有 injectMode (或默认值写错), 用户在
-// 「设置 → 插件」里就看不到这个开关 —— 而"看不到"和"没注册"在面板上长得一样。
+// 「设置 → 插件」里就看不到这个开关  而"看不到"和"没注册"在面板上长得一样。
 // 这条曾经真实发生: 开关只是代码里的常量, 面板上没有任何入口。
 const hxns = ((await callApi("settings/describe", {}))?.result?.value?.namespaces ?? []).find(
   (n) => n && n.ns === "hx-memory",

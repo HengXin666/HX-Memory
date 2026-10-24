@@ -2,7 +2,7 @@
 //
 // 为什么需要它 (2026-09-27, 真实缺陷): `selectAlwaysOn` 的 project 分支此前写的是
 //   `if (opts.lineage?.length) return lineageVisible(e.project, opts.lineage);`
-// —— **提前 return 把后面的 kind 白名单整个绕过了**。kind 判据与 scope 判据本是正交的两件事,
+//  **提前 return 把后面的 kind 白名单整个绕过了**。kind 判据与 scope 判据本是正交的两件事,
 // 却被写成了"scope 命中即放行"。
 //
 // 实测 (真实库 702 条, lineage=["HX-Memory","HXLoLis"]): 候选里混进 lesson 348 条 +
@@ -10,12 +10,12 @@
 //   不传 lineage → 候选为空 (白名单生效); 传了 → 被短路。
 //
 // ⚠ **为什么既有的 "不收 lesson" 测试没抓到它**: 那条测试 (tests/s1/trigger-policy.test.ts)
-// 调用时**不传 lineage** ⇒ 走的是没缺陷的分支。缺陷恰好在"生产路径唯一会走的那条分支"上 ——
+// 调用时**不传 lineage** ⇒ 走的是没缺陷的分支。缺陷恰好在"生产路径唯一会走的那条分支"上 
 // 而生产路径 (adapters/dsh/trigger-cache.ts) **总是**传 lineage。
 // 所以本文件的每一条断言都**必须传 lineage**, 否则等于没测。
 //
 // 平时的掩盖机制: 400 token 的保底预算通常只装得下规则, 于是被短路的 lesson/context
-// 只是"排在候选里但进不来"。一旦预算放宽 (或规则变少) 它们就会**真的进入注入块** ——
+// 只是"排在候选里但进不来"。一旦预算放宽 (或规则变少) 它们就会**真的进入注入块** 
 // 实测把预算放到 20000: 注入块里出现 9 条 lesson、47 条 context。
 import { describe, expect, it } from "vitest";
 import { isAlwaysOnKind, selectAlwaysOnDetailed } from "../../src/trigger/policy.ts";
@@ -68,7 +68,7 @@ describe("always-on kind 白名单: **传 lineage 时也必须生效**", () => {
     expect(sel.entries.map((e) => e.id)).toContain("de1");
   });
 
-  it("### 负例: **被取代 (superseded) 的条目不进常驻** —— 旧版本不该继续当指令", () => {
+  it("### 负例: **被取代 (superseded) 的条目不进常驻**  旧版本不该继续当指令", () => {
     // 这条钉的是"演化链的下游保证": 一旦旧条目被置 superseded (decision 被取代的**写入期**行为,
     // 见 tests/s2/adjudication-wiring.test.ts), 保底通道必须不再注入它。
     // ⚠ 为什么单独钉 (2026-09-27 实测的**真实事故形态**): 真实库里 c82a7b72b20019609
@@ -76,7 +76,7 @@ describe("always-on kind 白名单: **传 lineage 时也必须生效**", () => {
     // kb-index.ts 方案") 在**语义上**推翻, 但两条都是 active、且只有无向 relates 边 ⇒
     // 被推翻的那条**每轮都在注入**。选取层对此无能为力 (它只能看 status), 所以:
     //   · 本条测试守住"选了 status 这条路就有效";
-    //   · 真正的缺口在**写入期** (跨 kind 的推翻关系被判成 add, 实测 coverage 0.079) ——
+    //   · 真正的缺口在**写入期** (跨 kind 的推翻关系被判成 add, 实测 coverage 0.079) 
     //     那里没有判据, 不能靠改选取层弥补。
     const sel = selectAlwaysOnDetailed(
       [
@@ -103,7 +103,7 @@ describe("always-on kind 白名单: **传 lineage 时也必须生效**", () => {
   });
 
   it("白名单函数本身: 只认 rule/fact/preference/decision", () => {
-    // 用 MemoryKind 的**全部合法值**做穷举, 而不是随手列几个 —— 将来加了新 kind,
+    // 用 MemoryKind 的**全部合法值**做穷举, 而不是随手列几个  将来加了新 kind,
     // 这条会立刻提醒"它该不该常驻", 而不是静默漏判。
     const allowed = new Set(["rule", "fact", "preference", "decision"]);
     const allKinds = ["fact", "preference", "event", "decision", "lesson", "rule", "pattern", "context", "doc"] as const;
@@ -117,9 +117,9 @@ describe("always-on 选择必须**确定性**: 结果不得依赖输入数组顺
   //   · store.all()          → 真相文件的块顺序;
   //   · store.entrySummaries() → SQL 行序 (无 ORDER BY)。
   // 实测同 project/lineage/预算下两条路径选出**不同集合** (8 条 vs 9 条, 差 4 条);
-  // 把输入**反转**后又选出另一组。注入内容于是取决于"哪个投影被命中" —— 且**无任何报错**。
+  // 把输入**反转**后又选出另一组。注入内容于是取决于"哪个投影被命中"  且**无任何报错**。
   it("反转输入数组 → 选出同一集合 (id tiebreak 的作用)", () => {
-    // 条目**同分**是关键前提 (同 kind + 同 importance) —— 只有同分时排序才会退化成
+    // 条目**同分**是关键前提 (同 kind + 同 importance)  只有同分时排序才会退化成
     // "看输入顺序"。每条成本 = estimate(content) + 8, 这里 estimate 用字符数, 故内容取等长。
     const many: MemoryEntry[] = [];
     for (let i = 0; i < 12; i++) {
@@ -141,7 +141,7 @@ describe("always-on 选择必须**确定性**: 结果不得依赖输入数组顺
     expect(forward.entries.length, "且确实装了多条, 不是只剩 1 条").toBeGreaterThan(1);
     expect(
       backward.entries.map((e) => e.id),
-      "同一逻辑查询必须给出同一结果 —— 不能取决于输入数组顺序",
+      "同一逻辑查询必须给出同一结果  不能取决于输入数组顺序",
     ).toEqual(forward.entries.map((e) => e.id));
   });
 

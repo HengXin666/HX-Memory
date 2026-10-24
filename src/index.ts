@@ -1,7 +1,57 @@
 // HX-Memory public entry. Kernel + 纯服务 (capture/recall/generalize) 无 harness 依赖可直达。
 // adapters (dsh/codex) 与 storage 具体实现可插拔, 经子路径导入: @hengxin666/hx-memory/dsh, ./storage/file-store.ts
-export type * from "./kernel/types.ts";
-export type * from "./kernel/ports.ts";
+export type {
+  MemoryKind,
+  MemoryStatus,
+  MemoryScope,
+  RelationType,
+  Relation,
+  Timestamps,
+  MemoryEntry,
+  RecallFeedback,
+  Episode,
+  EpisodeInput,
+  MemoryEntryInput,
+  Query,
+  GeneralizationProposal,
+  GeneralizationRunReport,
+  GeneralizationStatus,
+} from "./kernel/types.ts";
+export type {
+  Awaitable,
+  MemoryStore,
+  SyncMemoryStore,
+  MemoryOperations,
+  Capture,
+  Recall,
+  SessionContext,
+  TurnData,
+  HarnessAdapter,
+  Generalizer,
+  Channel,
+  EntityChannelOptions,
+  RetrievalSource,
+  RetrievalCapabilities,
+  RetrievalRequest,
+  RetrievalHit,
+  RetrievalResult,
+  Retriever,
+  SyncRetriever,
+  Clock,
+  RetrievalWarmup,
+  VerifyReport,
+  Rebuildable,
+  Embedder,
+  SyncEmbedder,
+  VectorIndex,
+  IndexDoc,
+  IndexableSource,
+  asSyncEmbedder,
+} from "./kernel/ports.ts";
+/**
+ * 注入调度账本 (把触发层的"为什么"落成可查的证据)
+ * .agents/notes/implemented/feature/2026-09-13-injection-schedule-ledger.md
+ */
 export { expandEvolutionChain, sliceAt } from "./kernel/evolution.ts";
 export {
   captureTurn,

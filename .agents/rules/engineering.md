@@ -47,16 +47,12 @@ HX-Memory 是一个**自维护、可插拔**的记忆层: 内核 (Port) 只定�
 - PostToolUse: 清理 emoji/不可见字符 + prettier (本仓库写盘文件)。
 - Stop: 运行 `verify_ts.sh` 摘要, 完整日志在 `.git/hx-init/logs/`, 不把全量告警灌进上下文。
 - 所有 `.sh` 写盘后 `chmod 755`。
-- 不生成根 `CLAUDE.md` / `AGENTS.md`; 规则按 agent 落到实体目录.
+- 通用 Agent Notes 指令在根 `AGENTS.md`, agent 特有规则放在对应实体目录.
 
-## Agent Note (方案沉淀, 硬约束)
+## Agent Notes v2
 
-**每一次非平凡改动都必须在同一批改动里新增或更新至少一篇 Agent Note** —— 这不是自觉, 是 gate:
+使用 `pnpm run verify-notes` 检查 diff, `verify-notes:all` 检查完整图, `verify-notes:staged` 检查精确暂存区. 三个旧命令名作为兼容入口也委托同一 v2 扫描器
 
-- `pnpm run verify-agent-note-classification` — lifecycle/class 是封闭集合, 路径与文件名必须合规;
-- `pnpm run verify-agent-note-format` — 头部三行 + 按生命周期的章节骨架 + `## Alternatives considered` 必填;
-- `pnpm run verify-agent-note-coverage` — 改到 `src/**`、`.agents/rules/**`、`scripts/**`、`dsh/**`、`.github/workflows/**`、`package.json`、`tsconfig*.json` 就必须带 Note。
+新建用 `pnpm run notes:new -- proposed process <ascii-slug> --code <exact-source-path> --title <标题>`, 填好理由和源码反向引用后再迁到 implemented. 本地严格返回退出码, CI 保留诊断并在代码片段评论
 
-三条都挂在 `scripts/verify.sh`(CI 用) 与 pre-commit hook (`bash scripts/install-commit-hook.sh`) 上。新建用 `pnpm run notes:new -- --lifecycle <...> --class <...> --title "<标题>" --slug <ascii-slug>`。
-
-规则全文与各章节写法: `.agents/notes/README.md`。纯机械改动 (改名/格式化/依赖版本) 用 `--allow-missing` 显式放行, 会打印警告而不是静默通过。
+规则全文见 `.agents/notes/AGENTS.md`. 单边变更请求 review, 不使用跳过开关或豁免文本放行

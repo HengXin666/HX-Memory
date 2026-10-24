@@ -1,9 +1,9 @@
 // scripts/verify-real-library.ts — 对**真实记忆库**做只读一致性验收。
 //
 // 为什么需要它 (2026-09-18, §541): 本仓库的验证有三层, 而**缺了一层**:
-//   · 单元测试 (153 文件) —— 全部用隔离库 (`mkdtemp`);
-//   · 真机 smoke —— 也用隔离 `DSH_HOME` (`mktemp -d`);
-//   · **真实记忆库 (`~/.dsh/hx-memory`, 300+ 条真实数据) —— 零自动化验证。**
+//   · 单元测试 (153 文件)  全部用隔离库 (`mkdtemp`);
+//   · 真机 smoke  也用隔离 `DSH_HOME` (`mktemp -d`);
+//   · **真实记忆库 (`~/.dsh/hx-memory`, 300+ 条真实数据)  零自动化验证。**
 //
 // 而这三层看到的**不是同一件事**: 隔离库是**空的**, 因此看不到
 //   · 索引与真相文件的**历史不一致** (§517 实测 2/327);
@@ -18,10 +18,10 @@ import { join } from "node:path";
 import { openMemoryStack } from "../src/app/stack.ts";
 import { extractTags } from "../src/storage/entry-normalize.ts";
 import { parseTags } from "../src/storage/markdown-parse.ts";
-// ⚠ tags 的"三个来源"判据只有一份实现 (scripts/lib/tag-provenance.ts) —— 
+// ⚠ tags 的"三个来源"判据只有一份实现 (scripts/lib/tag-provenance.ts)  
 // 我曾在本脚本里手写三遍、错三遍 (§544/§547)。
 import { summarizeProvenance } from "./lib/tag-provenance.ts";
-// 索引侧实体的权威实现 (真相字段 + 正文兜底抽取) —— 见下面第 3 组的说明。
+// 索引侧实体的权威实现 (真相字段 + 正文兜底抽取)  见下面第 3 组的说明。
 import { entityKeysOf } from "../src/kernel/entity.ts";
 // 负面反馈链路 (§731): 标注入口 → 质量因子 → 面板视图。
 import { badCount, qualityFactor } from "../src/kernel/feedback.ts";
@@ -38,11 +38,13 @@ let skipped = 0;
  * **前置条件不成立** ⇒ 跳过 (不是失败)。
  *
  * 为什么需要它 (§747 实测): 有两条断言是"**这条链要能被验证, 数据得先存在**"
- * (例: "有负面标注的条目存在") —— 而空库下**那个前提天然不成立**。
+ * (例: "有负面标注的条目存在")  而空库下**那个前提天然不成立**。
  * 此前它们走 `check`, 于是 `--root <空目录>` 会报 2 项 FAIL ⇒
  * **本脚本因此无法进 CI** (CI 的库是空的), 而那件事从没被明说。
  *
- * ⚠ 而"跳过"必须是**可见的** (打出 SKIP 并计数) —— 静默跳过就与"没写这条断言"等价了。
+ * ⚠ 而"跳过"必须是**可见的** (打出 SKIP 并计数)  静默跳过就与"没写这条断言"等价了。
+ 
+ * .agents/notes/implemented/bug-fix/2026-09-18-index-side-predicate-hardening.md
  */
 const skip = (name: string, why: string): void => {
   skipped++;
@@ -64,7 +66,7 @@ console.log("  记忆根: " + root);
 const stack = openMemoryStack(root, { episodeRetentionDays: 0 });
 try {
   // ⚠ **all() 不含 shadow** (§780 实测): 它是 `query({limit: MAX})` 的薄封装 ⇒ **继承 query 的
-  // 默认过滤** (`status != 'shadow'`)。此前这里的注释与输出都写着"含 shadow" —— **那是错的**,
+  // 默认过滤** (`status != 'shadow'`)。此前这里的注释与输出都写着"含 shadow"  **那是错的**,
   // 而它会让读数的人以为 438 是全表 (真值 480: 438 active + **42 shadow**)。
   // 契约在 kernel/ports.ts 的 `all()` 附近 (§683 写对了), 而本脚本没跟上。
   const all = stack.store.all();
@@ -77,7 +79,7 @@ try {
 
   // ---- 0. 计数口径: all() 不含 shadow (§780) ----
   //
-  // 为什么需要它: 这个脚本**自己的输出**曾写着"(含 shadow)" —— 而 all() 是 query 的薄封装,
+  // 为什么需要它: 这个脚本**自己的输出**曾写着"(含 shadow)"  而 all() 是 query 的薄封装,
   // **继承默认过滤**。读数的人会以为那个数就是全表 (真值多了 42 条 shadow)。
   // 判据取**可复算的关系**而不是具体数字: "全表 = 非 shadow + shadow"。
   console.log("--- 计数口径 ---");
@@ -103,13 +105,13 @@ try {
 
   // ---- 1b. **真相字段 vs 索引侧兜底**: 两者的覆盖率可以差一个数量级 ----
   //
-  // 为什么必须并排看 (2026-09-18, §674 —— 而这条教训在 §605 就写过一次):
+  // 为什么必须并排看 (2026-09-18, §674  而这条教训在 §605 就写过一次):
   // 我两次都按 `entry.entities` (真相字段) 下结论, 而**检索实际用的是索引侧的兜底抽取**
   // (`entitiesOf` = 真相字段 **或** 从正文抽)。两次读数的量级完全不同:
   //   · §605: 真相字段 12% vs 索引侧 **82%**
   //   · §674: `memory_save` 的真相 entities **0%** vs 索引侧 **98.9%**
   // """**⇒ 判"某字段有没有被填"时, 只看真相字段会得出相反结论。**"""
-  // 本组把这个对比**固定成每次验收都看的读数** —— 让人不必每次都重新踩。
+  // 本组把这个对比**固定成每次验收都看的读数**  让人不必每次都重新踩。
   console.log("--- 真相字段 vs 索引侧兜底 (entities) ---");
   {
     const bySource = new Map<string, { n: number; truth: number; indexed: number }>();
@@ -140,17 +142,17 @@ try {
   // ---- 2. 索引的 tags 是**派生**的: 字段缺失时由 extractTags 从正文兜底抽取 ----
   //
   // ⚠ **判据修正** (2026-09-18, §544): 我第一版把"索引 tags != 文件 tags"一律算漂移, 于是
-  // §541 建完脚本后第二天就跑出 4/340 失败 —— 而逐条追下去, 那**不是缺陷**:
+  // §541 建完脚本后第二天就跑出 4/340 失败  而逐条追下去, 那**不是缺陷**:
   //
-  //   · `indexEntry` 写 `e.tags?.length ? e.tags : extractTags(e.content)` —— **兜底抽取**;
+  //   · `indexEntry` 写 `e.tags?.length ? e.tags : extractTags(e.content)`  **兜底抽取**;
   //   · 而 `entryToMarkdown` 只在 `e.tags` 非空时写 `tags:` 行 ⇒ **派生 tag 不进文件**;
-  //   · 那违反 ADR-002 的"删除可重建"吗? **不** —— 实测 `rebuildFromTruth()` 后同样的 tag
+  //   · 那违反 ADR-002 的"删除可重建"吗? **不**  实测 `rebuildFromTruth()` 后同样的 tag
   //     又出现了 (抽取是**确定性**的, 输入相同则输出相同)。
   //
   // ⇒ 正确的判据是: **文件 tags ⊆ 索引 tags, 且多出来的部分必须能由 extractTags 从正文重建**。
   //   那既容得下派生 tag, 又能抓到"索引里有文件里没有、且抽不出来的"真漂移。
   console.log("--- 索引 tags 与真相文件的一致性 (含派生抽取) ---");
-  // 判据**只有一份实现** (scripts/lib/tag-provenance.ts) —— 我在这个脚本里手写过三遍、错三遍,
+  // 判据**只有一份实现** (scripts/lib/tag-provenance.ts)  我在这个脚本里手写过三遍、错三遍,
   // 所以现在连循环都不写 (见该模块的头注: 一个 tag 有三个来源, 少认一个就出假读数)。
   const prov = summarizeProvenance(all, root);
   const mismatch = prov.indexMissing;
@@ -158,7 +160,7 @@ try {
   const orphan = prov.orphanEntries;
   const orphans = prov.orphanPairs;
   const samples: string[] = [];
-  // 允许少量历史残留 (它是已知的, 且不影响用户可见行为) —— 但**必须可见**, 不能静默
+  // 允许少量历史残留 (它是已知的, 且不影响用户可见行为)  但**必须可见**, 不能静默
   check(
     "文件 tags 必须都在索引里 (反向不成立: 索引可多出派生 tag)",
     mismatch === 0,
@@ -192,7 +194,7 @@ try {
 
   // ---- 5. 负面反馈链路: 标注 → 质量因子 → 面板视图 ----
   //
-  // 为什么需要它 (§731 实测缺口): 本脚本有 12 项检查, 而**负面反馈 (memory_flag) 那条链**一项都没覆盖 ——
+  // 为什么需要它 (§731 实测缺口): 本脚本有 12 项检查, 而**负面反馈 (memory_flag) 那条链**一项都没覆盖 
   // 而它是"读出来的记忆能被纠正"的入口 (KInfra 的"改得动"在读取侧的那一半)。
   // 判据取**可解释性**而不是某个具体数字: 有标注的条目, 其 q 必须**低于** 1 且**可复算**;
   // 而"没有标注"的必须**恰好为 1** (机制不能在无标注时凭空降权)。
@@ -215,7 +217,7 @@ try {
   }
   console.log();
 
-  // 跳过项必须出现在总结里 —— 否则"13 通过 / 0 失败"会掩盖"2 项根本没跑"。
+  // 跳过项必须出现在总结里  否则"13 通过 / 0 失败"会掩盖"2 项根本没跑"。
   console.log(
     "--- " + pass + " 通过 / " + fail + " 失败" + (skipped ? " / " + skipped + " 跳过" : "") + " ---",
   );

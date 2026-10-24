@@ -1,12 +1,12 @@
 // tests/s3/full-chain.test.ts — 全链路端到端: 真实对话 → 捕获 → 注入 → 溯源 → 跨会话。
 //
 // 为什么需要它 (2026-09-18): 这条链上每一环都**单独**测过 (捕获有 s2、注入有 s3、
-// 溯源有 s2), 但**没有一次走通过完整路径**。本次实测证明了这个必要性 ——
+// 溯源有 s2), 但**没有一次走通过完整路径**。本次实测证明了这个必要性 
 // 我最初用自造的 triggerSource 替身, 因签名与真实实现不一致, 得到"注入为空"的假象,
 // 花了几轮才定位到真正原因 (替身错, 不是产品错)。
 //
 // 因此本测试的原则是: **用真实装配件** (createTriggerCache + Binder + makePreStepHandler),
-// 而不是自制替身 —— 替身不一致会制造假缺陷, 也会掩盖真缺陷。
+// 而不是自制替身  替身不一致会制造假缺陷, 也会掩盖真缺陷。
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +18,7 @@ import { makePreStepHandler } from "../../src/adapters/dsh/prestep.ts";
 import { Binder } from "../../src/kernel/binder.ts";
 import { createTriggerCache } from "../../src/adapters/dsh/trigger-cache.ts";
 
-/** 按真实装配 (index.ts 的形状) 造 binder + triggerCache —— 不用替身。 */
+/** 按真实装配 (index.ts 的形状) 造 binder + triggerCache  不用替身。 */
 function assemble(stack: ReturnType<typeof openMemoryStack>) {
   const triggerCache = createTriggerCache({
     facade: stack.facade,
@@ -37,7 +37,7 @@ function assemble(stack: ReturnType<typeof openMemoryStack>) {
   return { binder, triggerCache };
 }
 
-/** 真实的 pre-step payload 形状 (role 必填 —— 缺它 latestUserText 会返回空)。 */
+/** 真实的 pre-step payload 形状 (role 必填  缺它 latestUserText 会返回空)。 */
 function payload(cwd: string) {
   return {
     agent: { session: { id: "session-full", header: { origin: "root", cwd } } },

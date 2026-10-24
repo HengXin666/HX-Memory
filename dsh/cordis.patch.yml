@@ -1,4 +1,4 @@
-# HX-Memory —— 挂载到 profile 的补丁层 (宿主 0.1.7 适配版)。
+# HX-Memory  挂载到 profile 的补丁层 (宿主 0.1.7 适配版)。
 #
 # ## 为什么 runtime 条目的 id 必须**正好**是 `hx-memory` (2026-09-29 实测)
 #
@@ -8,9 +8,9 @@
 # `settings.update(ns, ...)` 也是拿 ns 去 `.find(row => row.options.id === ns)`。
 #
 # 于是 `src/adapters/dsh/settings.ts` 里的 `MEMORY_SETTINGS_NAMESPACE = "hx-memory"` 不再
-# 决定任何东西 —— 它只是"我们期望的 ns"。真正生效的是这里的 `id`。叫 `hx-memory-runtime`
+# 决定任何东西  它只是"我们期望的 ns"。真正生效的是这里的 `id`。叫 `hx-memory-runtime`
 # 时插件一切正常 (RPC/注入/工具全在), 只有设置面整块消失: 面板上找不到这个命名空间,
-# 客户端那张「记忆注入」卡 (它 bind 的是 `hx-memory`) 也永远等不到数据 —— 静默无报错。
+# 客户端那张「记忆注入」卡 (它 bind 的是 `hx-memory`) 也永远等不到数据  静默无报错。
 #
 # 另外两条硬约束:
 #   - **不能和组条目的 id 重名**: `configEditor.entries()` 会丢掉出现次数 ≠ 1 的 id

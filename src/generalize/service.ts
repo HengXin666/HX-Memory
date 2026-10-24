@@ -17,6 +17,10 @@ import type { Abstractor, Generalizer, MemoryStore } from "../kernel/ports.ts";
 import { clusterByTheme } from "./cluster.ts";
 import { heuristicRuleText } from "../kernel/rule-shape.ts";
 
+/**
+ * 推广批次的可观测性 (状态视图 + 漏斗报告 + 聚类覆盖)
+ * .agents/notes/implemented/feature/2026-09-11-generalization-observability.md
+ */
 export type { ProposalStatus, QueuedProposal, GeneralizationRunReport, GeneralizationStatus };
 export type { Abstractor };
 
@@ -32,6 +36,8 @@ const PROPOSAL_STATUSES: readonly ProposalStatus[] = ["proposed", "confirmed", "
 /**
  * 逐行解析队列; 形状不完整返回 null (调用方决定跳过还是保留原文)。
  * 只校验"能安全使用"的字段: 缺 covers 会让 confirm 抛 TypeError, 缺 status 会让状态机失效。
+ 
+ * .agents/notes/implemented/bug-fix/2026-09-15-placeholder-rules-out-of-alwayson.md
  */
 function parseProposalLine(line: string): QueuedProposal | null {
   try {
@@ -101,7 +107,7 @@ export class GeneralizerService implements Generalizer {
    * **单实例必须返回 null** (2026-09 修): 把唯一那条实例原文抄成"规则"没有任何推广价值,
    * 而且会直接把**用户的一句指令**变成队列里的一条提议 (实测: 一条"帮我修改一下当前项目…"
    * 被当成 decision 聚类后原样进了审阅队列, 用户只能驳回)。推广的定义是"从多条实例抽象",
-   * 单条没有可抽象的共性 —— 宁可不提议。
+   * 单条没有可抽象的共性  宁可不提议。
    */
   private heuristicRule(cluster: { theme: string; contents: string[] }): {
     rule: string;
@@ -118,7 +124,7 @@ export class GeneralizerService implements Generalizer {
 
   /**
    * 抽象一簇: 有 LLM 抽象器时优先用, 失败/超时/无 agents 服务则回退启发式。
-   * 回退必须发生在这里 —— 整批推广不能因为一次 AI 故障而失败。
+   * 回退必须发生在这里  整批推广不能因为一次 AI 故障而失败。
    */
   private async abstractCluster(cluster: {
     theme: string;
@@ -126,7 +132,7 @@ export class GeneralizerService implements Generalizer {
     sources: string[];
   }): Promise<{ rule: string; confidence: number; usedLlm: boolean } | null> {
     // 推广 = 从多条实例提炼共性。去重后不足 2 条的簇**一律不提议** (含 LLM 路径):
-    // 单条实例没有"共性"可抽象, 抄成品就是"把一句话当规则" —— 实测这条路径会把用户的
+    // 单条实例没有"共性"可抽象, 抄成品就是"把一句话当规则"  实测这条路径会把用户的
     // 一句指令 (被 structurer 归成 decision) 原样送进审阅队列。阈值放在两条是这条语义的下限。
     const distinct = new Set(cluster.contents.map((c) => c.trim()).filter(Boolean));
     if (distinct.size < 2) return null;
@@ -171,7 +177,7 @@ export class GeneralizerService implements Generalizer {
           covers: c.entries.map((e) => e.id),
           confidence: abstracted.confidence,
           sourceRun,
-          // 逐条记"这是不是占位草稿": 批次报告的 usedLlm 只描述最近一批, 而队列跨批次 ——
+          // 逐条记"这是不是占位草稿": 批次报告的 usedLlm 只描述最近一批, 而队列跨批次 
           // 人审时要能区分"AI 提炼的规则"与"只有 N 条实例"的兜底提示。
           drafted: !abstracted.usedLlm,
         }),
@@ -190,7 +196,7 @@ export class GeneralizerService implements Generalizer {
   }
 
   /**
-   * 从存储里取最近的候选 (lesson/pattern/decision) 跑一批 —— 面板/工具/CLI 的统一触发点。
+   * 从存储里取最近的候选 (lesson/pattern/decision) 跑一批  面板/工具/CLI 的统一触发点。
    * 已被队列里任意 proposal 覆盖过的实例会跳过, 避免反复点击产生重复提议。
    *
    * 返回报告而不是裸提议数组: 面板要能解释"为什么是 0 条", 漏斗的每一段都要可见。
@@ -314,7 +320,7 @@ export class GeneralizerService implements Generalizer {
 
   /**
    * 人工确认: proposal → rule (带确认记录 + generalizes 关联)。幂等。
-   * async: MemoryStore 允许异步后端, 必须 await get/add —— 否则会"提议标记 confirmed 但 rule 没落盘"。
+   * async: MemoryStore 允许异步后端, 必须 await get/add  否则会"提议标记 confirmed 但 rule 没落盘"。
    */
   async confirm(id: string, by: string): Promise<{ ok: boolean; ruleId?: string; error?: string }> {
     const item = this.listQueue().find((p) => p.id === id);

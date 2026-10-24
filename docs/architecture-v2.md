@@ -1,6 +1,6 @@
 # 架构 v2: 四层切面 (Surface / Application / Ports / Engines)
 
-> 目的: 定义 HX-Memory 的目标架构 —— 让"换宿主""换存储引擎""换检索算法""换 AI 抽取器"这四类变化各自只触碰**一层**, 且每一层都能全量重建。
+> 目的: 定义 HX-Memory 的目标架构  让"换宿主""换存储引擎""换检索算法""换 AI 抽取器"这四类变化各自只触碰**一层**, 且每一层都能全量重建。
 > 边界 (不写什么): 不写逐行实现 (在 src 注释与 ADR); 不写使用教程 (在 README); 不写市面方案调研 (在 `docs/open-source-landscape.md`)。
 > 与代码的关系: 现状分层见 [architecture.md](architecture.md); 本文的端口落在 `src/kernel/`, 应用服务落在 `src/app/`, 引擎落在 `src/engines/`, 宿主接入落在 `src/surfaces/`; 取舍记录见 [adr.md](adr.md) 的 ADR-015 起。
 
@@ -68,7 +68,7 @@ v2 规定: **Surface 只能调用 Facade, 不能 import 任何引擎**。
 > 检索**目的**是这条语义上的一个显式维度 (\`RetrievalRequest.purpose\`): \`"inject"\` (默认) 开规则保底通道, 供"不变量必须永远在场"的注入路径; \`"recall"\` 关规则保底与相应 boost, 供"要最相关的几条"的路径 (面板浏览、\`memory_search\`、按需召回、意图召回、近邻裁决)。此前两者共用默认语义, 导致面板搜索前几条永远是与查询无关的规则 (见 Agent Note "检索目的分层")。
 
 ```ts
-// src/app/facade.ts —— 唯一的对外 API (面向上层用例, 不是面向存储)
+// src/app/facade.ts  唯一的对外 API (面向上层用例, 不是面向存储)
 export interface MemoryFacade {
   remember(input: RememberInput): Promise<RememberResult>; // 显式/隐式落记忆 (含去重裁决)
   recall(input: RecallInput): Promise<RecallResult>; // 混合检索 + 预算裁剪
@@ -211,7 +211,7 @@ export interface RetrieverProjection {
 }
 ```
 
-规则: **投影只能加速, 不能改变语义** —— 每次 `refresh()` 必须与 `Retriever.retrieve()` 在同一请求上给出同一集合 (顺序可不同), 由 conformance 测试钉住。投影过期 (超过 `maxStaleness`) 时, 注入必须携带"可能不完整"标记或退回纯规则注入, 不允许静默给旧结果。
+规则: **投影只能加速, 不能改变语义**  每次 `refresh()` 必须与 `Retriever.retrieve()` 在同一请求上给出同一集合 (顺序可不同), 由 conformance 测试钉住。投影过期 (超过 `maxStaleness`) 时, 注入必须携带"可能不完整"标记或退回纯规则注入, 不允许静默给旧结果。
 
 ### 3.4 能力协商 (换引擎不炸的保险)
 
@@ -267,7 +267,7 @@ score(entry) = RRF(各通道排名)
 6. **降级可观测**: 关闭向量通道后, `degraded` 必须非空且结果不抛错。
 7. **并发**: 两个进程/两个实例同时读写不炸 (对齐现有 `cross-process` 测试)。
 
-**没有过 conformance 的实现不许进 `src/engines/`** —— 这条规则是"轻而易举换引擎"这句话的唯一保障。
+**没有过 conformance 的实现不许进 `src/engines/`**  这条规则是"轻而易举换引擎"这句话的唯一保障。
 
 ## 4. 关联性与实时更新 (记忆的"活")
 
@@ -347,7 +347,7 @@ export interface MemoryEntry {
 
 **规则 (rule) 是唯一不允许自动演化的种类**: 自动裁决只能提议"某规则可能过时", 落到 review 队列; 改/撤规则永远由人确认 (ADR-003 不破)。
 
-> 状态 (2026-09): 三档全部落地 (ADR-024) —— `duplicate` (指纹/覆盖率 ≥0.75/语义余弦 ≥0.95) 自动强化合并; `supersede` 需"显式更新信号 + 同种类 + 时间不倒退 + 覆盖率 ≥0.5"四条同时成立, 旧条目置 `superseded` + `supersededBy` (不删除); `contradict` 只写双向 `contradicts` 边并保持双方 active。需要 LLM 的语义裁决仍是下一步。
+> 状态 (2026-09): 三档全部落地 (ADR-024)  `duplicate` (指纹/覆盖率 ≥0.75/语义余弦 ≥0.95) 自动强化合并; `supersede` 需"显式更新信号 + 同种类 + 时间不倒退 + 覆盖率 ≥0.5"四条同时成立, 旧条目置 `superseded` + `supersededBy` (不删除); `contradict` 只写双向 `contradicts` 边并保持双方 active。需要 LLM 的语义裁决仍是下一步。
 
 ### 4.4 遗忘、衰减与强化
 

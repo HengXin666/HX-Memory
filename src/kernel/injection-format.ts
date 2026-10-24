@@ -3,18 +3,18 @@
 // ## 2026-09-29: id 句柄从正文移出, 改走消息 source (用户实测 "太多无用上下文")
 //
 // 实测代价 (真实首轮注入, 仓库自己的 estimateTokens 口径): 整块 **581 token**, 其中
-// `<!--hx-memory:id=…-->` 9 条共 **88 token (15%)** —— 而模型**从不读它** (它是去重判据,
+// `<!--hx-memory:id=…-->` 9 条共 **88 token (15%)**  而模型**从不读它** (它是去重判据,
 // 不是给模型看的)。用户原话: "太多无用上下文"。
 //
 // 业界依据 (不是我们自己拍的):
 //   · Claude Code 官方文档明载块级 HTML 注释 "are stripped before the content is injected
 //     into Claude's context. Use them to leave notes for human maintainers **without spending
-//     context tokens on them**" —— 即"机器注记不该进上下文"是官方认可的实践;
+//     context tokens on them**"  即"机器注记不该进上下文"是官方认可的实践;
 //   · Anthropic "Writing effective tools for agents" 明确要求 "eschew low-level technical
 //     identifiers (for example: uuid…)", 并指出把 UUID 换成语义化/0-indexed 形态能提升精度。
 //
 // 因此 id 不再出现在正文里, 而是随**消息 source** 同行: `source.entryIds = [...]`。
-// 已实测该扩展字段能通过 v4 真实准入 (`assertV4RowAdmission`) 并经受 JSONL 往返 ——
+// 已实测该扩展字段能通过 v4 真实准入 (`assertV4RowAdmission`) 并经受 JSONL 往返 
 // 正文与元数据分离, 模型看到的只有记忆内容本身。
 //
 // ## 为什么当初是行尾注释 (历史, 保留理由)
@@ -29,10 +29,12 @@
 // (`parseInjectedIds`) 必须**同时**认两种来源: 消息 source 的 `entryIds`, 与正文里的
 // 行尾标记。只认新形态会让旧会话的"已注入"基线瞬间清空 → 已注入过的常驻记忆被整份重发。
 //
-// 位置: kernel 层, 与 format-frame.ts (标题/框架句) 同一职责域 —— 三者共同定义"注入块长什么样"。
+// 位置: kernel 层, 与 format-frame.ts (标题/框架句) 同一职责域  三者共同定义"注入块长什么样"。
 // 放在 adapters 下会违反分层铁律 (kernel/app 不得依赖宿主适配层), 由 tests/s1/architecture.test.ts 强制。
 
-/** 旧的正文行尾 id 标记前缀 (新注入不再产出, 但读取侧仍需解析)。 */
+/** 旧的正文行尾 id 标记前缀 (新注入不再产出, 但读取侧仍需解析)。 
+ * .agents/notes/implemented/bug-fix/2026-09-11-injection-dedupe-and-delta.md
+ */
 export const ENTRY_ID_MARKER = "<!--hx-memory:id=";
 
 /** 行尾标记的解析器 (带 g 标志, 每次 parse 前重置 lastIndex)。 */
@@ -42,7 +44,7 @@ const ENTRY_ID_RE = /<!--hx-memory:id=([A-Za-z0-9_-]+)-->/g;
  * 一条注入行: `- [kind] 内容`。
  *
  * 行首保留 `[kind]` 而**不含** id: `[id]` 是给机器的句柄 (已实测几乎从未被模型使用, 且
- * Anthropic 明确要求正文远离技术标识符), 而 `[kind]` 是**给模型的语义标记** ——
+ * Anthropic 明确要求正文远离技术标识符), 而 `[kind]` 是**给模型的语义标记** 
  * 框架句要说明"标记为规则(rule)的条目是用户确认过的约束", 没有 kind 标记那句话就指代不到
  * 任何对象 (实测症状: 8 条平铺, 模型无法区分"已确认规则"与"某项目的普通决策")。
  *
@@ -51,27 +53,53 @@ const ENTRY_ID_RE = /<!--hx-memory:id=([A-Za-z0-9_-]+)-->/g;
  * ## 为什么签名里还留着 `id` 参数
  *
  * 它**不进正文**, 但调用方本来就持有它 (注入路径要把同一批 id 写进消息 source)。
- * 保留参数让"id 与内容同源"这件事在类型上可见 —— 调用方一眼看到"这条行属于哪个 id",
+ * 保留参数让"id 与内容同源"这件事在类型上可见  调用方一眼看到"这条行属于哪个 id",
  * 而不是拿到一段无主的文本。`void id` 是刻意的: 它声明"参数被有意忽略", 防止
  * 后来者以为忘了用而顺手删掉 (删了会让上游被迫改成位置参数, 反而更容易传错)。
  */
-export function formatEntryLine(id: string, content: string, kind?: string): string {
-  void id; // id 不进正文 —— 由调用方放进消息 source (见本文件头注), 签名保留见上。
+/**
+ * 条目时间的**注入态前缀** `[YYYY-MM-DD]` (2026-10-06 新增)。
+ *
+ * 为什么必须有 (用户实测指控, 见 docs/memory-failure-audit-20261006.md 第五节):
+ * 真库 1187 条 active 里有 **577 条**读起来是"尚未办的祈使句", 而注入块此前
+ * **不带任何时间信息**  一条 2026-09-28 的 bug 陈述与今天刚踩的坑在模型眼里逐字同形。
+ * 模型的自我描述就是证据: "记忆里两条直接冲突我的当前动作"(09-30 22:40)、
+ * "记忆里指向的是 issues/22 而非 PR"(10-04 04:15)  它在照记忆做事, 只是那记忆过期了。
+ *
+ * 代价 (量过): 一条约 10 字符, 实测 1614 条注入合计增加约 4.6% 字符。
+ * 收益: 模型可以自己判断"这是四周前的事, 现在多半已经变了"  而这正是它此前做不到的事。
+ *
+ * 只取 validAt 的日期部分 (前 10 个字符): 时分秒对"这件事多旧"没有增量信息。
+ */
+export function entryDatePrefix(validAt: string | undefined): string {
+  if (!validAt || validAt.length < 10) return "";
+  const head = validAt.slice(0, 10);
+  // 形状判据: 必须是 YYYY-MM-DD, 否则当作没有时间 (宁可漏标, 不可标错)。
+  return head.length === 10 && head[4] === "-" && head[7] === "-" ? "[" + head + "] " : "";
+}
+
+export function formatEntryLine(
+  id: string,
+  content: string,
+  kind?: string,
+  opts?: { date?: string | undefined },
+): string {
+  void id; // id 不进正文  由调用方放进消息 source (见本文件头注), 签名保留见上。
   const tag = kind ? "[" + kind + "] " : "";
-  return "- " + tag + content;
+  return "- " + tag + entryDatePrefix(opts?.date) + content;
 }
 
 /**
- * 检索结果行 (**带 id**) —— 与注入行刻意不同。
+ * 检索结果行 (**带 id**)  与注入行刻意不同。
  *
  * 为什么两个出口要分开 (2026-09-29 实测): 被动注入的块**必须**让模型少看噪声 (省下的
- * id 句柄是 88 token/块), 而**模型主动检索**的结果是要被引用的 —— `memory_flag` /
+ * id 句柄是 88 token/块), 而**模型主动检索**的结果是要被引用的  `memory_flag` /
  * `memory_rule_propose` 都按 id 操作, 删了它模型就没有可操作的句柄。
  *
  * 判据是**出口方向**, 不是"id 有没有用":
  *   · 被动注入 (`formatEntryLine`): 模型没要, 我们主动给 ⇒ 越短越好, id 走 source;
  *   · 主动检索 (本函数): 模型要了, 结果可能立刻被引用 ⇒ 带上 id 才可操作。
- * 这正是旧版笔记里"按 id 操作的能力保留在 memory_search 的结果里"那句话的落实 ——
+ * 这正是旧版笔记里"按 id 操作的能力保留在 memory_search 的结果里"那句话的落实 
  * 当时是把句柄从**行首**挪到行尾标记, 现在进一步: 从注入块里**整个移走**,
  * 只在检索结果出口保留。
  *
@@ -85,10 +113,12 @@ export function formatHitLine(id: string, content: string, kind?: string): strin
 /**
  * 从注入文本里解析出全部已注入条目 id (顺序保留、去重)。
  *
- * ⚠ 新注入的正文里**已经没有** id 了 (它们走消息 source.entryIds) —— 本函数只服务两件事:
+ * ⚠ 新注入的正文里**已经没有** id 了 (它们走消息 source.entryIds)  本函数只服务两件事:
  *   · 读取**历史会话**里的旧格式块 (兼容, 见文件头注);
  *   · 兜底: 万一某条路径仍产出标记, 也能被认出来。
  * 新注入的 id 由 `idsOfMessage` 从 source 取, 两者在 `prior-injections` 处合并。
+ 
+ * .agents/notes/implemented/simplification/2026-09-15-drop-injected-id-handle.md
  */
 export function parseInjectedIds(text: string): string[] {
   const out: string[] = [];
@@ -110,8 +140,10 @@ export const SOURCE_ENTRY_IDS_FIELD = "entryIds";
 /**
  * 从一条消息的 source 上取条目 id (新形态)。
  *
- * 判据只看**形状** (字符串数组), 不校验归属来源 —— 归属由调用方的 `isMemorySource` 把关,
+ * 判据只看**形状** (字符串数组), 不校验归属来源  归属由调用方的 `isMemorySource` 把关,
  * 与 source 字段解析是两件正交的事。非数组/含非字符串一律返回空 (宁可漏认, 不可臆造)。
+ 
+ * .agents/notes/implemented/simplification/2026-09-29-injection-payload-slimming.md
  */
 export function entryIdsOfSource(source: unknown): string[] {
   if (typeof source !== "object" || source === null) return [];

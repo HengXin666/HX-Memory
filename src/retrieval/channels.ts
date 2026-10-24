@@ -1,15 +1,15 @@
 // retrieval/channels.ts — 召回通道的**取数**逻辑 (规则 / 全文 / 向量 / 标签 / 图扩展)。
 //
 // 为什么独立: 每个通道都是"从某个来源取一批候选并记下命中理由", 彼此完全独立;
-// 而 hybrid.ts 关心的是**融合**(RRF)、去冗余(MMR)与预算裁剪。这两件事的变化原因不同 ——
+// 而 hybrid.ts 关心的是**融合**(RRF)、去冗余(MMR)与预算裁剪。这两件事的变化原因不同 
 // 加通道不该改融合逻辑, 调融合不该碰通道。拆开后 hybrid.ts 回到可通读的规模。
 //
 // 各通道的语义差异 (刻意不统一, 每条都有理由):
 //   - rules: 保底通道, 不受覆盖率过滤影响 (规则是人工确认的, 不该被相关性筛掉);
 //   - bm25: 走覆盖率门槛 (字面不重合的命中多半是噪声);
-//   - vector: **不做**字面覆盖率过滤 —— "字面不重合但语义相近"正是它存在的意义;
+//   - vector: **不做**字面覆盖率过滤  "字面不重合但语义相近"正是它存在的意义;
 //   - tag: 显式标签命中, 不做覆盖率过滤;
-//   - graph: **不做**文本过滤 —— "结构相关但字面不相关"正是图通道的意义, 噪声由 perSeedCap 控制。
+//   - graph: **不做**文本过滤  "结构相关但字面不相关"正是图通道的意义, 噪声由 perSeedCap 控制。
 import type {
   Channel,
   RetrievalCapabilities,
@@ -45,7 +45,7 @@ export interface QueryTerms {
    * 用于覆盖率计算的重词 (优先词流; 无词流时用 bigram), **已剔除虚词与单字碎片**。
    *
    * 为什么必须剔除 (2026-09-17 实测, 本机真实库 109 条): 覆盖率的分母是查询词总数,
-   * 而"的/用/写/一个"这类词在任何条目里都出现 —— 它们命中不构成"相关"的证据, 却和
+   * 而"的/用/写/一个"这类词在任何条目里都出现  它们命中不构成"相关"的证据, 却和
    * "rust"/"clash" 一样占满一格。实测一条完全无关的 HX-Sagasu 工作日志在
    * "如何用 Rust 写一个 WebSocket 服务器" 上得到 cov=0.63 (命中 用/写/一个/服务)。
    * 后果是**弃权永不发生**: 任何查询都能找到"高覆盖"条目, 模型拿到 10 条噪声却以为是证据。
@@ -59,7 +59,7 @@ export interface QueryTerms {
  *   默认 false (读路径要精度); 写入期的近邻候选生成传 true (要召回, 见 ports.ts 的 coverageMode)。
  */
 export function queryTerms(text: string, opts: { keepFunctionWords?: boolean } = {}): QueryTerms {
-  // 语音容错: 原形与归一形**都**进检索词 —— 记忆里存的可能是错写, 也可能是规范写法,
+  // 语音容错: 原形与归一形**都**进检索词  记忆里存的可能是错写, 也可能是规范写法,
   // 只取一边就会漏召回 (实测语料里有 "绘话"/"密等" 这类词)。
   const all: string[] = [];
   const seen = new Set<string>();
@@ -79,9 +79,26 @@ export function queryTerms(text: string, opts: { keepFunctionWords?: boolean } =
   const base = words.length ? words : all;
   // 虚词与单字碎片不参与覆盖率 (见 QueryTerms.weighted 的说明)。
   // 过滤后为空时必须**退回原词表**: 单字查询 ("卡") 过滤后为空, 而"没有区分度的词"
-  // 与"没有词"是两件事 —— 前者仍应参与匹配, 后者才该短路。
+  // 与"没有词"是两件事  前者仍应参与匹配, 后者才该短路。
   const discriminative = opts.keepFunctionWords ? base : discriminativeTerms(base);
-  const weighted = discriminative.length ? discriminative : base;
+  // ⚠ **必须去重** (2026-10-05 修, 真实缺陷): `base` 来自 `words` 流, 而 `words` 是按
+  // 语音变体 (原形 + 归一形 + 去口水话) **逐份 push** 的  同一个词会出现两三次。
+  // 后果实测: 查询 "工具调用 测试 哪些工具可用" 的 weighted 是
+  // `["工具","测试","工具","可用"]`  `工具` 重复, 于是
+  //   · 覆盖率分母被虚高 (命中 1 个词算出 2/4 = 0.5, 而非 1/3 = 0.33);
+  //   · 那条零信息量的转录条目因此**表面上有 0.5 覆盖率**而挤进检索前排。
+  // 这一处与 `all` 的 `seen` 去重是同一个纪律  只是当时漏了 words 流。
+  const unique = (list: string[]): string[] => {
+    const out: string[] = [];
+    const s = new Set<string>();
+    for (const t of list) {
+      if (s.has(t)) continue;
+      s.add(t);
+      out.push(t);
+    }
+    return out;
+  };
+  const weighted = unique(discriminative.length ? discriminative : base);
   return { terms: all.slice(0, 64), weighted: weighted.slice(0, 32) };
 }
 
@@ -101,9 +118,9 @@ export interface ChannelDeps {
     get: (id: string) => MemoryEntry | null;
     traverse: (fromId: string, type: string) => MemoryEntry[];
     /**
-     * 反向遍历 (入边) —— 可选能力。见 IndexReader.traverseIncoming 的说明。
+     * 反向遍历 (入边)  可选能力。见 IndexReader.traverseIncoming 的说明。
      *
-     * 为什么是可选: 引擎没有关系索引时该能力自然缺失, 而图的**出边**扩展仍然可用 ——
+     * 为什么是可选: 引擎没有关系索引时该能力自然缺失, 而图的**出边**扩展仍然可用 
      * 两者是独立能力, 不该因为缺一个就全关。
      */
     traverseIncoming?: (toId: string, type: string) => MemoryEntry[];
@@ -189,7 +206,7 @@ export function gatherChannels(
   // ---- 通道 2b: 向量 (语义召回) ----
   if (deps.enabled("vector") && text.trim() && deps.vectorIndex) {
     deps.syncVectorIndex();
-    // 异步嵌入器的投影: 触发后台补齐 (不 await —— 预步注入绝不等 IO);
+    // 异步嵌入器的投影: 触发后台补齐 (不 await  预步注入绝不等 IO);
     // 未就绪时明确记降级, 而不是静默地"这次没有语义召回"。
     if (typeof deps.vectorIndex.refresh === "function") {
       void deps.vectorIndex.refresh().catch(() => undefined);
@@ -202,7 +219,7 @@ export function gatherChannels(
       const entry = deps.source.get(hit.id);
       if (!entry || !deps.keep(entry)) continue;
       deps.remember(entry);
-      // 向量通道**不做**字面覆盖率过滤 —— "字面不重合但语义相近"正是它存在的意义。
+      // 向量通道**不做**字面覆盖率过滤  "字面不重合但语义相近"正是它存在的意义。
       if (!vectorIds.includes(entry.id)) {
         vectorIds.push(entry.id);
         deps.addReason(entry.id, "vector:" + hit.score.toFixed(3));
@@ -229,12 +246,12 @@ export function gatherChannels(
 
   // ---- 通道 4: 图扩展 (种子 = 目前得分最高的若干条) ----
   //
-  // 已知张力 (2026-09 实测, 待后续处理): 实体共现建出来的边是**主题邻居**而非**答案** ——
+  // 已知张力 (2026-09 实测, 待后续处理): 实体共现建出来的边是**主题邻居**而非**答案** 
   // 建边后图候选的 gold 精确率实测只有 8.5% (50/588), 且带 secondary 目标的 6 个 case 上
   // 图扩展的次级召回增益为 +0.000 (那些目标字面本来就能命中)。
   // 但把图通道降为"仅兜底"会删掉设计能力 (conformance 明确要求: 从命中的种子出发,
   // 把字面不相关的邻居召回并给出可审计的 why), 因此本改动**只记录测量**, 不改默认行为。
-  // 要动这条默认需要先有一套"必须靠边才能答对"的 case —— 当前 case 集不满足该前提。
+  // 要动这条默认需要先有一套"必须靠边才能答对"的 case  当前 case 集不满足该前提。
   if (deps.enabled("graph") && deps.graphHops > 0 && ranked.length) {
     const seeds = ranked
       .flatMap((l) => l.ids.slice(0, 5))
@@ -254,7 +271,7 @@ export function gatherChannels(
         // ("这个具体的坑, 对应哪条通用规则?")。离线模拟: 4 条从实例细节提问、gold 是短抽象的
         // 用例上, 只走出边命中 **0/4**; 加入边后 **3/4**。
         //
-        // ⚠ 必须仍走**第二梯队**: 见下方 "图扩展进第二梯队" 的长注释 ——
+        // ⚠ 必须仍走**第二梯队**: 见下方 "图扩展进第二梯队" 的长注释 
         // 图候选按同权重参与主榜竞争时, 全体 R@1 会从 0.684 掉到 0.630 (已有实测)。
         // 反向边同样是"结构相关但字面不相关"的候选, 适用同一分层理由。
         const neighborhood = [
@@ -290,7 +307,7 @@ export function gatherChannels(
   // ---- 通道 5: 实体反查 (种子 = 字面命中的条目) ----
   //
   // 为什么它必须有, 而图扩展不够 (实测依据, docs/benchmark-review.md §二之二):
-  //   entity_only case 的桥是"共享实体", 而 **104 条里只有 4 条把实体写在查询里** ——
+  //   entity_only case 的桥是"共享实体", 而 **104 条里只有 4 条把实体写在查询里** 
   //   其余 100 条必须先从字面命中拿到种子, 再用种子的实体反查。这正是写入期建边做不到的:
   //   建边必须在不知道查询的情况下预先决定"哪几条相关", 而反查知道这一问命中了哪些实体。
   //   实测把共享实体的**全部**配对都建边 (442 条, 现状 3.3 倍) 也只把命中从 19/104 提到 22/104;
@@ -298,7 +315,7 @@ export function gatherChannels(
   //
   // 位置: 在图扩展**之后**、但进**主榜单** (ranked) 而不是第二梯队。
   //   - 在图之后: 图通道的种子口径因此完全不变 (它的种子取自 rules/bm25/vector/tag), 行为可对照;
-  //   - 进主榜单: 尾巴配额够不到的排位 (第 8), 只有参与主排序才拿得到 —— 本轮改动的目的就在这里。
+  //   - 进主榜单: 尾巴配额够不到的排位 (第 8), 只有参与主排序才拿得到  本轮改动的目的就在这里。
   //   代价是它可能挤掉词面命中, 因此权重是**标定出来的** (见 hybrid.ts 的 channelWeights 与 Agent Note)。
   if (deps.enabled("entity") && deps.source.byEntities && terms.terms.length) {
     const seeds = ranked
@@ -322,7 +339,7 @@ export function gatherChannels(
         if (hit > 0) shared.set(candidate.id, hit);
       }
       const { maxIds, minShared, mode } = deps.entityChannel;
-      // 决定性排序: 共享实体多者在前, 同分按 id —— 不得依赖 SQL 返回顺序 (它是实现细节)。
+      // 决定性排序: 共享实体多者在前, 同分按 id  不得依赖 SQL 返回顺序 (它是实现细节)。
       const ordered = [...shared.entries()]
         .filter(([, hit]) => hit >= minShared)
         .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
@@ -332,7 +349,7 @@ export function gatherChannels(
         // **必须截断**: 实测不截断时该通道的 RRF 质量足以把词面命中的金牌挤下去
         // (主 case H@1 0.807 → 0.509), 而它自己的收益只有 +0.09。
         // 两个出口: "main" = 与词面竞争主排序; "tier2" = 独立配额的尾巴 (与图通道同一修法)。
-        // 选哪个是**测出来的**, 不是偏好 —— 见 Agent Note 的对照表。
+        // 选哪个是**测出来的**, 不是偏好  见 Agent Note 的对照表。
         const list = { channel: "entity", ids, weight: deps.weightOf("entity") };
         if (mode === "tier2") tier2.push(list);
         else ranked.push(list);

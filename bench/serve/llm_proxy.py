@@ -7,6 +7,10 @@
 import json, os, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Agent Notes: 融合权重按通道作用标定 + MMR 两项归一到同量纲
+# 
+# Agent Notes: 融合权重按通道作用标定 + MMR 两项归一到同量纲
+# .agents/notes/implemented/bug-fix/2026-09-12-fusion-weights-and-mmr-scale.md
 UPSTREAM = os.environ.get("UPSTREAM", "https://ai.woa.qzz.io/v1").rstrip("/")
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 PORT = int(os.environ.get("PORT", "4398"))
@@ -17,7 +21,7 @@ class H(BaseHTTPRequestHandler):
 
     def _forward(self, body: bytes | None):
         path = self.path
-        # 上游 baseURL 已经带 /v1, 而客户端也会带 /v1 —— 直接拼会变成 /v1/v1/... (实测 404)。
+        # 上游 baseURL 已经带 /v1, 而客户端也会带 /v1  直接拼会变成 /v1/v1/... (实测 404)。
         if UPSTREAM.endswith("/v1") and path.startswith("/v1/"):
             path = path[3:]
         url = UPSTREAM + path

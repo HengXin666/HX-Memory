@@ -13,6 +13,8 @@
 //   3. 本文件: 事件状态机 + 缓冲与冲刷 + 并发/生命周期。
 import type { CapturePipeline } from "../../capture/pipeline.ts";
 import type { CaptureNegativity } from "../../capture/engine.ts";
+import { isRecord, textOf } from "./session-text.js";
+import type { ReceiptPayload } from "./capture-ledger.ts";
 import type { EpisodeStore } from "../../kernel/ports.ts";
 import type { CaptureLog, CaptureSkipReason } from "./capture-log.ts";
 import { projectOfSession, lineageOfSession, type SessionLike } from "./project-key.ts";
@@ -29,7 +31,11 @@ export type { SessionLike } from "./project-key.ts";
 
 export type { SessionEventLike } from "./capture-ledger.ts";
 // 项目键原语在 project-key.ts; 这里**转发**导出, 让调用方不必知道它搬到哪个文件了
-// (搬运实现不该改变依赖图的形状 —— 否则每次拆分都要改一圈调用点)。
+// (搬运实现不该改变依赖图的形状  否则每次拆分都要改一圈调用点)。
+/**
+ * 跨工作区记忆: 仓库级项目键与共享作用域
+ * .agents/notes/implemented/architecture/2026-09-11-repo-stable-project-key-and-shared-scope.md
+ */
 export { projectKeyOfCwd, projectOfSession, lineageOfCwd, lineageOfSession } from "./project-key.ts";
 // 会话 → 工作区上下文同理: 实现搬到 session-scope.ts (§710 行数上限), 这里只转发。
 export { scopeOfSession } from "./session-scope.ts";
@@ -53,41 +59,10 @@ interface TurnState {
   turnBase: number;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (!isRecord(part) || typeof part.text !== "string") return "";
-        // 只认正文块: assistant/message 里 reasoning (思维链) 也是 {type, text},
-        // 全收下来会把"想的过程"当成回答沉淀进记忆。
-        // 缺 type 的块按正文处理 —— 别把未知形状静默丢掉 (user/message 的块常常没有 type)。
-        if (typeof part.type === "string" && part.type !== "text") return "";
-        return part.text;
-      })
-      .join("");
-  }
-  return "";
-}
-
-function textOf(data: unknown): string {
-  if (typeof data === "string") return data;
-  if (!isRecord(data)) return "";
-  // assistant/message 的 data 是**信封** { turn, step, message } —— 文本在 data.message.content,
-  // 不在 data.content 上。只读 data.content 会让助手输出恒为空字符串: 实测 315 条 episode
-  // 全是 user、账本 aChars 恒为 0、结构化器永远读不到"回答", 于是沉淀的全是用户原话。
-  // user/message 则相反, 直接把 message 展开在 data 上 (content/source/role/id)。两种都要认。
-  const direct = contentText(data.content);
-  if (direct) return direct;
-  const message = data.message;
-  if (isRecord(message)) return contentText(message.content);
-  return "";
-}
-
+/**
+ * 设置热更新 + 面板自刷新 + 文档同步门禁与技能库
+ * .agents/notes/implemented/process/2026-09-10-live-settings-and-doc-gates.md
+ */
 export interface RuntimeOptions {
   /** 落盘失败的旁路通知 (记忆写入失败绝不能影响宿主)。 */
   onError?: (error: unknown) => void;
@@ -103,16 +78,21 @@ export interface RuntimeOptions {
    * 捕获耗时账本 (可选)。给了它, 每一轮都会落一条"为什么/花了多久"的记录。
    *
    * 用**提供者**而不是实例: 开关 (captureLog) 在面板里可改, 构造插件时读一次会让改动必须重启
-   * 才生效 —— 与 episodes 同一个理由 (真实踩过)。
+   * 才生效  与 episodes 同一个理由 (真实踩过)。
    */
   captureLog?: () => CaptureLog | null;
   /**
-   * 负面/纠正信号的判定面 (可选; 由装配层按**当前设置**构造 —— 词表可配置)。
+   * 负面/纠正信号的判定面 (可选; 由装配层按**当前设置**构造  词表可配置)。
    *
    * 用提供者而不是实例: 词表与开关都在面板里可改, 构造时读一次会让改动必须重启才生效
    * (与 episodes / captureLog 同一个理由, 那条已实测踩过)。缺省 = 关闭该路径。
    */
   negativity?: () => CaptureNegativity | undefined;
+  /**
+   * 对话内回执的投递器 (可选)。按 session 取: flush 是**异步**的, 拿错 agent 会串台 
+   * 取不到就**不发** (回执宁可少一条)。形态与文案见 receipt.ts 与 capture-ledger.ts。
+   */
+  receipt?: (sessionId: string) => ((r: ReceiptPayload) => void) | undefined;
 }
 
 export class HxMemoryRuntime {
@@ -127,19 +107,19 @@ export class HxMemoryRuntime {
   /**
    * 最近一次会话的**项目祖先链** (最内层在前)。
    *
-   * 为什么不复用 lastProject: 单值键在嵌套仓库场景下不完整 —— HXLoLis 的 components/ 下挂着
+   * 为什么不复用 lastProject: 单值键在嵌套仓库场景下不完整  HXLoLis 的 components/ 下挂着
    * 独立仓库 (HX-Memory/HX-Workflows/…), 在子仓库里工作时"父工程 HXLoLis 的记忆"也应当可见
    * (见 kernel/project-lineage 的偏序定义)。工具检索必须带上链, 否则口径与 trigger-cache 的
-   * recallFor 分叉 —— 那正是本处要消除的缺陷 (两个入口一个带链一个不带)。
+   * recallFor 分叉  那正是本处要消除的缺陷 (两个入口一个带链一个不带)。
    */
   private lastLineage: readonly string[] = [];
   /**
    * 最近一次会话的 id (供**主动写记忆**的路径取真实来源)。
    *
-   * 为什么需要它: memory_save 工具此前硬编码 `source: "session:tool"` —— 一个常量,
+   * 为什么需要它: memory_save 工具此前硬编码 `source: "session:tool"`  一个常量,
    * 实测真库里 98/125 条 (78%) 的来源都是这个值, 于是"这条记忆来自哪次会话"不可回答
    * (产品承诺的"可溯源"在数据层没有承载物)。工具本身拿不到 Session (宿主只给 agent),
-   * 而 runtime 在会话开始时就知道 id —— 在这里记一份, 工具按需取用。
+   * 而 runtime 在会话开始时就知道 id  在这里记一份, 工具按需取用。
    */
   private lastSessionId?: string;
   /**
@@ -175,11 +155,36 @@ export class HxMemoryRuntime {
   }
 
   /**
+   * **记下**一次工作区范围 (2026-10-06 新增)。
+   *
+   * 为什么需要它 (真实故障, 见 docs/memory-failure-audit-20261006.md 第三节):
+   * `lastProject/lastLineage` 此前**只有** `onSessionStart` 一个写入点, 而那个钩子依赖宿主事件
+   * (`agent/created` / `agent/session-start`)  实测 2026-09-29~10-06 的会话流水里
+   * **两个事件名一次都没出现过**, 于是 scope 恒为 undefined, 而 `memory_search` 固定传
+   * `scopeRequired: true` ⇒ 1160/1273 条项目内记忆被整批排除, 13 次检索全部返回
+   * "No relevant memory found." (其中一次发生在 memory_save 成功后 8 秒  那是最刺眼的证据)。
+   *
+   * 修法不是"再赌一个事件名", 而是**从一定会跑的路径上取值**: `agent/pre-step` 每步都触发
+   * (`prestep.ts` 的注入链路本身就依赖它), 且它手里握着完整的 session (含 cwd)。因此
+   * 预步这条路径把同一个 `scopeOfSession(session)` 结果记一份  与注入侧**同源同形**,
+   * 两个入口从此不可能分叉。
+   */
+  rememberScope(scope: { project?: string; lineage?: readonly string[] } | undefined): void {
+    if (!scope) return;
+    if (scope.project) this.lastProject = scope.project;
+    if (scope.lineage?.length) this.lastLineage = scope.lineage;
+  }
+
+  /**
    * 最近一次会话的**工作区范围** (项目键 + 祖先链), 供 memory_search 按项目过滤。
    *
    * 形状与 `scopeOfSession` 的返回一致 (同一个概念只该有一种形状)。
-   * 没有工作区时返回 undefined —— 语义是"不知道是哪个工作区", 调用方据此**只给跨项目规则**,
+   * 没有工作区时返回 undefined  语义是"不知道是哪个工作区", 调用方据此**只给跨项目规则**,
    * 绝不退化成"所有项目都给" (那是 §579 实测过的泄漏)。
+   *
+   * ⚠ 关于它为什么可能仍为空: 本方法的**唯一**遗憾是"在所有链路都还没登记过工作区之前被调用"
+   * (例如宿主在第一步预步之前就调了工具)。那种情况下调用方必须自己兜底  见 tools.ts 的
+   * 空手降级分支 (它现在会给出"候选存在但范围未知"的可诊断信息, 而不是一句空话)。
    */
   scope(): { project?: string; lineage: readonly string[] } | undefined {
     if (!this.lastProject && !this.lastLineage.length) return undefined;
@@ -193,7 +198,7 @@ export class HxMemoryRuntime {
    * 距离最近一次会话活动过了多久 (ms); 从未有过活动时返回 0。
    *
    * 为什么由 runtime 提供而不是让调度器自己看时间: "有没有人在写真相文件"只有捕获路径知道。
-   * 后台维护 (P3 调度器) 用它在**空闲窗**内才动手 —— 与宿主并发改写同一批 Markdown 会丢写。
+   * 后台维护 (P3 调度器) 用它在**空闲窗**内才动手  与宿主并发改写同一批 Markdown 会丢写。
    * 返回 0 的语义是"没有活动"(而不是"刚刚活动过"), 调用方按"已空闲"处理。
    */
   idleMs(): number {
@@ -256,7 +261,7 @@ export class HxMemoryRuntime {
    * 捕获单元是**一轮问答**, 不是一句用户输入:
    *   - 原文用**真实 role** 写进 episode (此前助手侧根本没有入口, 日志里 107 条全是 user);
    *   - 记忆吃 {question, answer} 对, 结论/理由都长在回答里。
-   * 顺序仍是"先原文后记忆" —— 反了会出现"有记忆无原文"的孤儿条目。
+   * 顺序仍是"先原文后记忆"  反了会出现"有记忆无原文"的孤儿条目。
    */
   private async flush(session: SessionLike, state: TurnState): Promise<void> {
     const pending = state.pending.splice(0);
@@ -270,10 +275,15 @@ export class HxMemoryRuntime {
       log: () => this.options.captureLog?.() ?? null,
       ...(this.options.surface ? { surface: this.options.surface } : {}),
       ...(this.options.onError ? { onError: this.options.onError } : {}),
+      // 对话内回执: 每轮抽一次 (session 固定), 取不到就不发 (见 RuntimeOptions.receipt)。
+      ...(() => {
+        const send = this.options.receipt?.(session.id);
+        return send ? { onReceipt: send } : {};
+      })(),
     };
     for (const pair of pending) {
       // 用宿主给的轮次号 (没有则本地递增): 账本要能和 episode/会话日志直接对上,
-      // 而 episode 的 turn 用的是本地计数 —— 两者在"宿主没给 turn"时才可能不同。
+      // 而 episode 的 turn 用的是本地计数  两者在"宿主没给 turn"时才可能不同。
       turn = Math.max(turn + 1, pair.turn);
       await flushTurn(deps, {
         session: session.id,
@@ -296,7 +306,7 @@ export class HxMemoryRuntime {
       this.recordSkip(session, event, "disabled");
       return;
     }
-    // subagent 的任务提示词 source.kind 也是 "user", 只看来源挡不住它 —— 按 origin 过滤。
+    // subagent 的任务提示词 source.kind 也是 "user", 只看来源挡不住它  按 origin 过滤。
     if (settings.rootAgentsOnly !== false && session.header?.origin === "subagent") {
       this.recordSkip(session, event, "subagent");
       return;
@@ -307,9 +317,9 @@ export class HxMemoryRuntime {
         // ⚠ answers 必须与 messages **一起**重置 (2026-09-18 修复)。
         //
         // 实测缺陷 (独立盲审怀疑 + 我方直读状态复现): 此前只清 messages, 于是上一轮的助手回答
-        // 会跨轮累积 —— 实测 turn2 开始时 answers 仍带着 turn1 的 "回答一: 缓存过期设 60 秒"。
+        // 会跨轮累积  实测 turn2 开始时 answers 仍带着 turn1 的 "回答一: 缓存过期设 60 秒"。
         // 后果: 若某轮在两轮之间结束 (用户提前离开 / 只发了问题), 落盘的就是
-        // **(本轮的问题 + 上一轮的回答) 的错误配对** —— 直接污染记忆内容, 且因为两侧都是
+        // **(本轮的问题 + 上一轮的回答) 的错误配对**  直接污染记忆内容, 且因为两侧都是
         // 真实文本, 事后极难察觉。这比"少记一条"严重得多。
         state.messages = [];
         state.answers = [];
@@ -331,6 +341,10 @@ export class HxMemoryRuntime {
         ? (event.data.source as { kind?: string } | undefined)
         : undefined;
       if (source?.kind !== "user") return;
+      /**
+       * 记忆层从"转录"改为"提炼" (捕获单元 = 一轮问答)
+       * .agents/notes/implemented/architecture/2026-09-12-memory-distillation-over-transcript.md
+       */
       const text = textOf(event.data);
       if (text && state) state.messages.push(text);
       return;
@@ -354,7 +368,7 @@ export class HxMemoryRuntime {
       else this.recordSkip(session, event, "no-turn");
     } else {
       // 走到这里说明这一轮没有可沉淀的问答 (未完成/没有用户消息)。账本要能解释
-      // "为什么这个 turn/end 之后什么也没发生" —— 否则这段空白与"没开捕获"长得一样。
+      // "为什么这个 turn/end 之后什么也没发生"  否则这段空白与"没开捕获"长得一样。
       this.recordSkip(session, event, "no-turn");
     }
     state.messages = [];

@@ -2,10 +2,18 @@
 
 Status: implemented
 
+Decision-ID: generalization-observability
+
+## Code
+
+- `src/kernel/types.ts`
+- `src/generalize/service.ts`
+- `src/adapters/dsh/remote-methods.ts`
+
 ## Problem
 
 "运行推广批次"是记忆系统的核心闭环, 但它在面板上只回一个 `proposed` 计数: 用户点一下,
-看到 "0 条提议", 无法区分是哪一段断了 ——
+看到 "0 条提议", 无法区分是哪一段断了 
 
 - 库里根本没有 lesson/pattern/decision 候选?
 - 候选全被队列里已有的提议覆盖了 (去重生效, 属于正常)?
@@ -25,7 +33,7 @@ Status: implemented
    `runRecent` 由"返回裸提议数组"改为**返回这份报告**; `runBatch` 记录 `usedLlm`。
 2. `GeneralizationStatus` + `status()`: `abstractor` (AI 是否接上) + `lastRun` + 队列三段计数。
    新增 Remote `generalizationStatus` 供面板顶部状态条轮询。
-3. `runGeneralization` 的返回值改为 `GeneralizationRunReport & { ok }` —— 失败时也返回
+3. `runGeneralization` 的返回值改为 `GeneralizationRunReport & { ok }`  失败时也返回
    形状完整的报告 (`error` 非空), 面板只读字段即可, 不必判空。
 4. **主题字典扩充** (9 → 18): 增加 api / performance / dependency / docs / process /
    tooling / ui / typescript / error。纯加法, 不改变既有主题的判定。
@@ -33,10 +41,12 @@ Status: implemented
    归入 `tag:<name>` 簇。下限 2 是防止退化成"每条一个簇"。
 6. **单实例簇不产提议** (含 LLM 路径): 推广的定义是"从多条实例提炼共性", 去重后不足 2 条
    没有共性可抽象。真实踩坑: 一条用户指令 ("帮我修改一下当前项目…") 被 structurer 归成
-   `decision`, 单条成簇后被**原样抄成规则**进了审阅队列 —— 用户唯一的选择是驳回。
+   `decision`, 单条成簇后被**原样抄成规则**进了审阅队列  用户唯一的选择是驳回。
    旧启发式对单实例直接返回原文 (`{ rule: texts[0] }`), 这是"把一句话当规则"的直接来源。
 
 ## Alternatives considered
+
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
 
 **只把 proposed 计数换成"更详细的日志"。** 日志不在产品界面里, 用户看不到, 等于没解决
 "不可见"的问题; 而状态视图是可以被 UI 直接消费的结构化数据。
@@ -64,7 +74,7 @@ Status: implemented
   "0 条"不再是无信息的失败。
 - `runRecent` 的返回类型变了 (破坏性): 调用方从 `QueuedProposal[]` 改为读报告字段。
   已同步 gateway、面板与全部相关测试。
-- 扩充字典与标签回退会**提高**提议产量 —— 这是有意为之 (覆盖优先), 人工闸门仍在,
+- 扩充字典与标签回退会**提高**提议产量  这是有意为之 (覆盖优先), 人工闸门仍在,
   机器永不自动确认。
 - 代价: `status()` 在每次调用时读一次队列文件 (`listQueue`), 面板轮询 5s 一次可接受;
   若将来队列规模变大, 可加一层与队列文件 mtime 绑定的缓存。

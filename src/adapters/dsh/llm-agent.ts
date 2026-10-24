@@ -1,6 +1,6 @@
 // src/adapters/dsh/llm-agent.ts — 一次性文本调用 (结构化/提炼用的"最小 LLM 调用")。
 //
-// 为什么不用 ctx.agents.create(): 那会造一个**完整 agent** —— 它拥有工具面、产生自己的
+// 为什么不用 ctx.agents.create(): 那会造一个**完整 agent**  它拥有工具面、产生自己的
 // 会话事件, 而本插件在根级监听 session/event, 于是子会话的 user/message 会被再次捕获 →
 // 递归调用 + 会话文件污染 (第一方做法见 dsh-session-title-llm: 用 ctx.llm.stream 直接发一次
 // 请求, 无 agent、无工具、无会话事件)。这里采用同一形态。
@@ -71,7 +71,7 @@ function textOfChunks(assembler: BlockAssembler): string {
 
 /**
  * 调一次模型并返回文本。失败 (无 llm 服务 / 无默认模型 / 超时 / 空输出) 抛错,
- * 由调用方回退启发式 —— 记忆捕获不能因为一次 AI 故障而失败。
+ * 由调用方回退启发式  记忆捕获不能因为一次 AI 故障而失败。
  */
 export async function agentSummarize(ctx: Context, opts: AgentCallOptions): Promise<string> {
   const started = Date.now();
@@ -108,6 +108,10 @@ export async function agentSummarize(ctx: Context, opts: AgentCallOptions): Prom
     return out;
   };
 
+  /**
+   * 捕获耗时账本 (把"沉淀慢在哪一段"落成可查的证据)
+   * .agents/notes/implemented/architecture/2026-09-13-capture-cost-ledger.md
+   */
   const llm = (ctx as unknown as { get?: (name: string) => unknown }).get?.("llm") as
     LlmServiceLike | undefined;
   if (typeof llm?.stream !== "function") {

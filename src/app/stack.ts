@@ -53,14 +53,14 @@ export interface OpenMemoryOptions {
    * 通道权重覆盖 (与 DEFAULT_CHANNEL_WEIGHTS 合并; 缺省用默认表)。
    *
    * ⚠ 2026-09-18 补 (实测缺口): 此参数此前**只存在于 HybridRetriever 的构造参数里**,
-   * 而所有生产路径都经 openMemoryStack 组装 —— 不透传等于"权重永远无法调整"。
-   * 后果实测: 我扫描 bm25 权重 1→12、以及四种极端配置 (0.01 / 1000), **top1 完全相同** ——
+   * 而所有生产路径都经 openMemoryStack 组装  不透传等于"权重永远无法调整"。
+   * 后果实测: 我扫描 bm25 权重 1→12、以及四种极端配置 (0.01 / 1000), **top1 完全相同** 
    * 整个实验无效, 且差点被误读成"权重对结果无影响"。
    * 与 entityMaxIds/entityMode 是同一类缺口 (那三项此前补过一次, 见下方注释)。
    */
   channelWeights?: Partial<Record<Channel, number>>;
   /**
-   * 以下检索标定项此前**只在 HybridRetriever 构造参数里**, 未经 openMemoryStack 透传 ——
+   * 以下检索标定项此前**只在 HybridRetriever 构造参数里**, 未经 openMemoryStack 透传 
    * 与 channelWeights 是同一类缺口 (2026-09-18 实测: 不透传的参数做实验会得到
    * "所有配置读数完全相同"的假象, 而这极易被误读成"该参数无影响")。
    * 它们全部影响检索指标, 因此必须可配, 否则"评测变体"与"生产默认"无法对照。
@@ -87,7 +87,7 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
       ? {}
       : { retentionDays: opts.episodeRetentionDays }),
   });
-  // 向量通道: 两种嵌入器两条路 ——
+  // 向量通道: 两种嵌入器两条路 
   //   同步 (本地哈希/常驻 ONNX) → LinearVectorIndex, 预步直接可用;
   //   异步 (远端 OpenAI 兼容端点) → ProjectedVectorIndex, 后台补齐、预步读投影 (ADR-025)。
   const embedder =
@@ -102,10 +102,14 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
       : new ProjectedVectorIndex({ embedder });
   // 词面通道权重 2: 实测 (166 case) 词面在精度上稳定强于向量, 而向量在同义改写上补召回;
   // 让词面主导的配比在 R@1/R@10 上同时优于等权。见 docs/memory-benchmark-report.md。
+  /**
+   * 四层切面 (Surface / Application / Ports / Engines)
+   * .agents/notes/implemented/architecture/2026-09-10-four-layer-seams.md
+   */
   const retriever = new HybridRetriever(store, {
     // 权重表来自 retrieval/tuning.ts (单一事实源): 评测变体与线上组装必须是同一份默认值,
     // 否则"评测里生效的配比"与"用户实际拿到的"会悄悄分叉。
-    // 默认表 + 覆盖合并 (而不是直接替换) —— 调用方只想调 bm25 时不该丢掉其余默认值。
+    // 默认表 + 覆盖合并 (而不是直接替换)  调用方只想调 bm25 时不该丢掉其余默认值。
     channelWeights: { ...DEFAULT_CHANNEL_WEIGHTS, ...(opts.channelWeights ?? {}) },
     ...(opts.channelLimit === undefined ? {} : { channelLimit: opts.channelLimit }),
     ...(opts.coverageFloor === undefined ? {} : { coverageFloor: opts.coverageFloor }),
@@ -115,7 +119,7 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
     ...(opts.mmrLambda === undefined ? {} : { mmrLambda: opts.mmrLambda }),
     ...(vectorIndex ? { vectorIndex } : {}),
     // 实体通道的标定项必须**从这里透传**: 它们此前只存在于检索器的构造参数里,
-    // 而所有生产路径都经 openMemoryStack 组装 —— 不透传等于这些设置永远不生效
+    // 而所有生产路径都经 openMemoryStack 组装  不透传等于这些设置永远不生效
     // (实测踩到: 扫描多组配置得到完全相同的读数, 因为每一组都跑的是默认值)。
     ...(opts.entityMaxIds === undefined ? {} : { entityMaxIds: opts.entityMaxIds }),
     ...(opts.entityMinShared === undefined ? {} : { entityMinShared: opts.entityMinShared }),
@@ -130,10 +134,10 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
       ...(opts.autoEvolve === undefined ? {} : { autoEvolve: opts.autoEvolve }),
     },
   );
-  // 让 stats() 带上引擎状态 (索引可用性/降级原因) —— 面板与 CLI 都靠它判断"检索是不是降级了"。
+  // 让 stats() 带上引擎状态 (索引可用性/降级原因)  面板与 CLI 都靠它判断"检索是不是降级了"。
   facade.withIndexStatus(() => store.ftsStatus());
   // 接入 episode 原文源: 使"证据链"可下钻 (条目 → 产生它的那轮对话原文)。
-  // 没有这一跳, derivedFrom 里存的 id 就永远换不回原话 —— 产品承诺的"可溯源"不可执行。
+  // 没有这一跳, derivedFrom 里存的 id 就永远换不回原话  产品承诺的"可溯源"不可执行。
   facade.withEvidence(episodes);
   const rebuild = new RebuildService({ store, episodes });
   const consolidate = new ConsolidationService({ store, ...(opts.now ? { now: opts.now } : {}) });

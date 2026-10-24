@@ -38,6 +38,10 @@ const store = new FileBackend({ root });
 // --semantic 用离线语义嵌入器 (默认哈希袋); 两者的检索路径完全一致, 只有嵌入成本不同。
 const useSemantic = process.argv.includes("--semantic");
 const embedder = useSemantic ? new LexicalEmbedder() : new HashingEmbedder();
+/**
+ * 用 ANN 引擎替换内存线性向量索引
+ * .agents/notes/proposed/architecture/2026-09-10-proposed-ann-vector-engine.md
+ */
 const vectorIndex = new LinearVectorIndex({ embedder });
 const retriever = new HybridRetriever(store, { vectorIndex });
 const facade = new MemoryFacade({ store, retriever }, { embedder });

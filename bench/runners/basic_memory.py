@@ -37,7 +37,7 @@ def main() -> int:
     # 1) 建项目 (目录即知识库)
     #
     # 项目名必须每次唯一: basic-memory 的项目注册表是**全局持久**的 (在 ~/.basic-memory/config.json),
-    # 且项目名是主键 —— 复用同名项目会静默指向旧路径 (实测: 一次运行后所有检索都返回空,
+    # 且项目名是主键  复用同名项目会静默指向旧路径 (实测: 一次运行后所有检索都返回空,
     # 因为 search-notes 查的是旧目录)。
     notes = pathlib.Path(project_dir) / "notes"
     notes.mkdir(parents=True, exist_ok=True)
@@ -65,7 +65,7 @@ def main() -> int:
     slug_of = {e["id"]: re.sub(r"[^A-Za-z0-9_-]", "", e["id"])[:40] for e in corpus}
     id_of_slug = {v: k for k, v in slug_of.items()}
 
-    # search-notes 的 --project 未出现在 --help 里, 但必须显式给 ——
+    # search-notes 的 --project 未出现在 --help 里, 但必须显式给 
     # 否则它查 default_project (用户的 main), 结果恒为空。
     runs, meta = {}, {}
     for c in cases:

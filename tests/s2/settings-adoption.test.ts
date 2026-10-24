@@ -65,6 +65,10 @@ function makeCtx(installed: Installed): FakeCtx {
     get: () => undefined,
     emit: () => {},
     settings: {
+      /**
+       * dsh 0.1.7 宿主适配 — 设置系统的三处硬变更
+       * .agents/notes/implemented/bug-fix/2026-09-29-dsh-017-settings-contract.md
+       */
       installSection(_owner, ns, _schema, entry, hooks) {
         installed.ns = ns;
         installed.entry = entry;
@@ -86,7 +90,7 @@ afterEach(() => {
 /**
  * 走一轮"会话开始 + 首轮 pre-step", 返回两边各自发出的消息。
  *
- * 为什么观察点从 session-start 挪到 pre-step (2026-09): 记忆**只有 pre-step 一个注入点** ——
+ * 为什么观察点从 session-start 挪到 pre-step (2026-09): 记忆**只有 pre-step 一个注入点** 
  * 用户实测"别注入2次, 就只能注入一次", 而此前会话开始发指引、预步发条目, 一次会话里就是两块。
  * 会话开始现在只登记待发指引, 因此"设置是否生效"的唯一可观察信号是首轮 pre-step 发出的那个块。
  * `fromSessionStart` 用来钉住"会话开始不得注入"这条新契约 (它不再调用 agent.inject)。
@@ -193,7 +197,7 @@ describe("DSH settings 接入", () => {
     await sessionEvent!(session, { type: "turn/end", data: { reason: { kind: "completed" } } });
     expect(store.query({}).length).toBe(0);
     disposed!(session);
-    // 关键: 立刻 await 卸载 disposer (不 sleep) —— flushAll 必须等到已触发的冲刷。
+    // 关键: 立刻 await 卸载 disposer (不 sleep)  flushAll 必须等到已触发的冲刷。
     await (ctx.disposers.get("hx-memory.lifecycle()")?.() as Promise<unknown>);
     expect(store.query({}).length).toBe(1);
     store.close();

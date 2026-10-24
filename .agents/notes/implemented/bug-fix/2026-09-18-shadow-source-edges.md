@@ -2,6 +2,13 @@
 
 Status: implemented
 
+Decision-ID: shadow-source-edges
+
+## Code
+
+- `scripts/graph-preview.ts`
+- `src/kernel/rule-shape.ts`
+
 ## Problem
 
 本机真实库实测 (2026-09-18, 163 条真相条目 / 123 条 active):
@@ -14,14 +21,14 @@ Status: implemented
 | 全图**度数最高**的节点 | 一条已撤回的草稿 (`memory` 主题, 10 条边) |
 
 这 10 条草稿在 09-15 就被人工全部撤回, always-on 也早就把它们挡在注入之外
-(见 `kernel/rule-shape.ts`)。但**它们的边一条都没少** —— 图里连接度最高的枢纽仍然是一条
+(见 `kernel/rule-shape.ts`)。但**它们的边一条都没少**  图里连接度最高的枢纽仍然是一条
 被否定的草稿。而图是跨项目关联唯一的结构化来源, 于是这唯一的来源上, 最大的枢纽是个已撤回节点。
 
 根因 (两处叠加):
 
 1. **撤回不清理关系。** `FileBackend.remove()` 默认路径只做两件事: 真相文件写
    `status: shadow` (整块保留, 含 `relations` 字段), 索引侧 `markShadow(id)` 只
-   `UPDATE memories SET status='shadow'` —— `relations` 表一行都没动。
+   `UPDATE memories SET status='shadow'`  `relations` 表一行都没动。
    `clearRelationsAndTags` 只在**重新索引单条**时被调用, 撤回路径不经过它。
 2. **traverse 只判了一半。** 索引查询是
    `... WHERE r.from_id = ? AND r.type = ? AND m.status != 'shadow'`,
@@ -44,7 +51,9 @@ Status: implemented
 
 ## Alternatives considered
 
-**撤回时同步删掉 relations 行 (写路径清理)。** 只解决未来, 不解决存量 —— 已经躺在库里的
+**什么都不做 / 复用现有。** 最强理由是无需新增实现和维护成本. 现有状态仍存在 Problem 中的具体缺口, 因此采用本记录的选择
+
+**撤回时同步删掉 relations 行 (写路径清理)。** 只解决未来, 不解决存量  已经躺在库里的
 41 条边要另写迁移。而且它把"可见性"这件读取期的事, 变成对每个后端的写路径要求 (FileBackend
 的 remove、markShadow、重建、以及将来任何新后端都要各自记得做对)。读取侧一处判据即可覆盖全部。
 
@@ -54,7 +63,7 @@ Status: implemented
 
 **顺手把 41 条边从真相文件里清掉 (改数据)。** 否掉: 真相文件是**可审计的事实记录**, 直接改写
 历史文件的 relations 字段会让"这条规则当初覆盖了哪些实例"不可追溯。而撤回后的边在读取期失效
-已经足够 —— 既然后果只是"不可见", 没有理由动事实。
+已经足够  既然后果只是"不可见", 没有理由动事实。
 
 **把占位草稿从图里直接排除 (按内容形状过滤节点)。** 否掉: 那是**两个**判据 (形状 + 状态),
 而本例的通用不变量只需一个 (源存活)。按形状过滤会把"已重写但仍是草稿形状"以外的合法情况搞乱,
@@ -68,10 +77,10 @@ Status: implemented
   关系类型 (supersedes/appliesTo/contradicts) 同样自动被覆盖, 因为它们走同一个 `traverse`。
 - 面板的 `contradictions` 端点走的是 `store.query` (已按状态过滤), 行为不变;
   `graph-preview.ts` 本来就在真相文件层过滤 shadow (实测: 123 节点 / 29 边, 草稿 0 次出现),
-  因此本改动对预览面是**可观测无变化** —— 危害此前只在端口层潜伏, 未在预览中显现。
+  因此本改动对预览面是**可观测无变化**  危害此前只在端口层潜伏, 未在预览中显现。
 - 代价: `traverse` 多一个 JOIN (走 `relations(from_id,type)` 主键 + `memories` 主键),
   实测本机库上无感; 这是一个"每轮预步路径"之外的读者 (图扩展只在有种子时跑)。
-- **未修 (本轮范围外)**: 残留的 41 条边仍写在真相文件里 (这是刻意的 —— 审计记录)。
+- **未修 (本轮范围外)**: 残留的 41 条边仍写在真相文件里 (这是刻意的  审计记录)。
   若将来要"清理图里的死边", 那应该是重建索引时按可达性剪枝的独立决策, 不是撤回路径的副作用。
 
 ## Testing
@@ -85,4 +94,4 @@ Status: implemented
 - 撤回的邻居仍不可见 (原有不变量不回归)。
 
 真实端到端 (非单测): 对本机 `~/.dsh/hx-memory` 直扫真相文件取 10 条已撤回草稿,
-逐条 `traverse("generalizes")` —— 修复后 41 条全为 0, 真规则 19 条全在。
+逐条 `traverse("generalizes")`  修复后 41 条全为 0, 真规则 19 条全在。

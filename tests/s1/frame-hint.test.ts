@@ -8,8 +8,8 @@
 //
 // 现在: 框架句压成一句 (只留工具描述覆盖不到的两条语义), 入口提示变**首轮一次的可用声明**。
 // 本文件守两件事:
-//   1. **保留的语义不得再被删** —— 它是"这不是新指令"与"rule 是已确认约束"的唯一载体;
-//   2. **入口/框架不得干扰 id 解析** —— 旧的机器标记仍必须能被 `parseInjectedIds` 解析
+//   1. **保留的语义不得再被删**  它是"这不是新指令"与"rule 是已确认约束"的唯一载体;
+//   2. **入口/框架不得干扰 id 解析**  旧的机器标记仍必须能被 `parseInjectedIds` 解析
 //      (历史会话日志里大量存在), 而新注入的 id 走消息 source。
 import { describe, expect, it } from "vitest";
 import { memoryEntryHint, memoryFrameNote, composeMemoryBlock, MEMORY_BLOCK_HEADING } from "../../src/kernel/format-frame.ts";
@@ -27,7 +27,7 @@ describe("框架句: 只留工具描述覆盖不到的两条语义", () => {
   });
 
   it("压到一句: 不再回退成多句免责声明", () => {
-    // 旧版是三句 join。新版必须是一句 —— 这条挡住"以后又堆回去"的退化。
+    // 旧版是三句 join。新版必须是一句  这条挡住"以后又堆回去"的退化。
     for (const lang of ["zh", "en"] as const) {
       const t = memoryFrameNote(lang);
       expect(t.length, lang + " 框架句过长").toBeLessThan(70);
@@ -69,7 +69,7 @@ describe("composeMemoryBlock: 空正文时不写框架句", () => {
 
   it("不再有末尾入口句 (它已变成首轮声明的形态)", () => {
     // 旧形态会把入口提示固定追加在块尾; 新形态里它只是 guidance 参数的一种取值,
-    // 没有 guidance 时块尾就是最后一条正文 —— 这条断言挡住"悄悄加回固定尾句"。
+    // 没有 guidance 时块尾就是最后一条正文  这条断言挡住"悄悄加回固定尾句"。
     const block = composeMemoryBlock({ body: "- [rule] 最后一条", language: "zh" });
     expect(block.trimEnd().endsWith("- [rule] 最后一条")).toBe(true);
   });

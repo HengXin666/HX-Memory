@@ -1,11 +1,11 @@
 // tests/s2/channel-probe.test.ts — S2: 关系图的"按检索通道着色"数据源。
 //
 // 这一维要回答的问题: **图上每条记忆是靠哪条通道被找到的**。它必须来自**真实检索器**,
-// 而不是从字段猜 (例如"有 entity 字段就标 entity 通道") —— 那样标出来的是配置, 不是行为。
+// 而不是从字段猜 (例如"有 entity 字段就标 entity 通道")  那样标出来的是配置, 不是行为。
 //
 // 本文件钉住四件事:
 //   1. 读数确实来自检索 (bm25/entity 等真实通道), 而不是编造的;
-//   2. 未召回的条目**不在**结果里 (前端渲染成灰色 —— 那是结论, 不是缺数据);
+//   2. 未召回的条目**不在**结果里 (前端渲染成灰色  那是结论, 不是缺数据);
 //   3. 探针**不写真实库** (预览承诺只读; 探针走临时库);
 //   4. 给不出问题时返回空表而不是编一组问题。
 import { describe, expect, it } from "vitest";
@@ -37,7 +37,7 @@ describe("通道探测 (真实检索器)", () => {
       entry({ id: "c", content: "完全不相关的另一件事: 今天中午吃了拉面" }),
     ];
     const probe = probeChannels({ entries, queries: ["FTS5 分词函数"], topK: 2 });
-    // a 应该被召回, 且理由应当是字面通道 (bm25) —— 这条查询与它字面重合。
+    // a 应该被召回, 且理由应当是字面通道 (bm25)  这条查询与它字面重合。
     const ch = probe.channels.get("a");
     expect(ch, "a 应被召回").toBeTruthy();
     expect([...(ch ?? [])]).toContain("bm25");
@@ -64,7 +64,7 @@ describe("通道探测 (真实检索器)", () => {
   });
 
   it("不写真实库: 探针只在临时目录里检索 (预览的只读承诺)", () => {
-    // 用一个"真实库"目录, 跑完探针后它必须仍然不存在索引文件 —— 探针不该碰它。
+    // 用一个"真实库"目录, 跑完探针后它必须仍然不存在索引文件  探针不该碰它。
     const realRoot = mkdtempSync(join(tmpdir(), "hxmem-real-"));
     const store = new FileBackend({ root: realRoot });
     store.add(entry({ id: "a", content: "只读承诺验证用的记忆" }));
@@ -103,7 +103,7 @@ describe("通道探测 (真实检索器)", () => {
 });
 
 describe("问题派生 (deriveQueries)", () => {
-  it("只从标签/实体派生 —— 这些是真实检索锚点, 不是拿内容当答案问答案", () => {
+  it("只从标签/实体派生  这些是真实检索锚点, 不是拿内容当答案问答案", () => {
     const entries = [
       entry({ id: "a", content: "很长的一段内容不该被整段当成查询", tags: ["分词"] }),
       entry({ id: "b", content: "另一段", entities: ["FTS5"] }),

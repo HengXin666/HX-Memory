@@ -2,14 +2,14 @@
 //
 // 为什么需要它 (2026-09-18): `concludeCapable` 是**为回答"结构化器的 10 秒时限该不该调"而加的**
 // 观测字段 (见 docs/capture-audit §355/§358)。没有它, 账本只能回答"调了多久", 回答不了
-// "超时回退后沉淀质量是否变差" —— 而那正是决策需要的维度。
+// "超时回退后沉淀质量是否变差"  而那正是决策需要的维度。
 //
 // **它的核心难点是"三态"**, 而这一点很容易被无意改回两态:
-//   · `undefined` —— 本轮**没走过 enrich** (连条目都没产生);
-//   · `false`   —— 走过 enrich, 但**没得到结论能力** (启发式兜底 / LLM 超时或失败);
-//   · `true`    —— 至少一次来自能出结论的实现。
+//   · `undefined`  本轮**没走过 enrich** (连条目都没产生);
+//   · `false`    走过 enrich, 但**没得到结论能力** (启发式兜底 / LLM 超时或失败);
+//   · `true`     至少一次来自能出结论的实现。
 //
-// 我的第一版只实现了两态 (启发式下字段缺席), 于是 "没调 LLM" 与 "调了但失败" 被混为一谈 ——
+// 我的第一版只实现了两态 (启发式下字段缺席), 于是 "没调 LLM" 与 "调了但失败" 被混为一谈 
 // 而**那恰好是统计要分开看的两件事**。本文件把三态钉住。
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
@@ -75,7 +75,7 @@ describe("捕获账本的结构化路径 (三态)", () => {
     const log = new CaptureLog({ root });
     expect(log).toBeTruthy();
     // 旧格式 (无 concludeCapable) 的解析由 readFile 路径覆盖; 这里断言"字段是可选的"这一点
-    // 通过类型与行为共同保证 —— 关键是不许把它**默认成 false**。
+    // 通过类型与行为共同保证  关键是不许把它**默认成 false**。
     const parsed = (log as unknown as { recent?: (n: number) => unknown[] }).recent?.(5) ?? [];
     expect(Array.isArray(parsed)).toBe(true);
   });
