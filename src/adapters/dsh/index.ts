@@ -431,6 +431,7 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     negativity: gate.negativity,
     sendReceipt,
     checkRegistration: makeRegistrationCheck(runtime, (m) => logWarn(m, "")),
+    root,
   });
 }
 

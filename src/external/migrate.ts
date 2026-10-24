@@ -9,11 +9,16 @@ export async function reindexMemory(
   bankId: string,
 ): Promise<number> {
   await engine.reset(bankId);
-  const live = store.listMemories(bankId).filter((row) => row.status === "active");
+  const bundle = store.exportBank(bankId);
+  const live = bundle.records.filter((row) => row.status === "active");
   if (live.length) await engine.upsert(bankId, live);
-  for (const row of store.listMemories(bankId)) {
-    store.saveMemory({ ...row, indexState: row.status === "active" ? "indexed" : row.indexState });
-  }
+  store.importBank({
+    ...bundle,
+    records: bundle.records.map((row) => ({
+      ...row,
+      indexState: row.status === "active" ? "indexed" : row.indexState,
+    })),
+  });
   return live.length;
 }
 
@@ -24,10 +29,13 @@ export async function reindexKnowledge(
   corpusId: string,
 ): Promise<number> {
   await engine.reset(corpusId);
-  const docs = store.listDocs(corpusId);
-  if (docs.length) await engine.upsert(corpusId, docs);
-  for (const doc of docs) store.saveDoc({ ...doc, indexState: "indexed" });
-  return docs.length;
+  const bundle = store.exportCorpus(corpusId);
+  if (bundle.docs.length) await engine.upsert(corpusId, bundle.docs);
+  store.importCorpus({
+    ...bundle,
+    docs: bundle.docs.map((doc) => ({ ...doc, indexState: "indexed" })),
+  });
+  return bundle.docs.length;
 }
 
 /**

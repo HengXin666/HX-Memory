@@ -155,6 +155,11 @@ export function makePreStepHandler(
      * 而既有调用方与测试按 `[0]` 取注入处理器  那个顺序依赖会被静默破坏 (实测 5 个测试红)。
      */
     onStep?: () => void;
+    /**
+     * 外置记忆宿主这一轮要并进同一块的正文 (可选)。空串 = 没有。
+     * 挫折纠正也从这里进来, 这样 first 模式不会把当轮责骂丢掉。
+     */
+    externalPreface?: (input: { sessionId: string; project: string; text: string }) => Promise<string>;
   },
 ) {
   // scopeOf 优先 (带祖先链); 只有 projectOf / 都没有时退化为单值语义。
@@ -240,17 +245,19 @@ export function makePreStepHandler(
     const putBack = (): void => {
       if (pending) options.pendingGuidance?.set(agent.session.id, pending);
     };
+    const extra = (
+      (await options.externalPreface?.({ sessionId: agent.session.id, project, text })) ?? ""
+    ).trim();
     // first 模式: 本会话已经有过**记忆条目块** → 不再进入注入通道 (连检索都不做)。
-    // 判据在 warm 之后取 (warm 会跨 await), 否则并发的首步会各注入一份。
-    if (injectMode() === "first" && prior.ids.size > 0) {
+    // 外置宿主有当轮内容时例外 (挫折纠正不能等到下一次会话)。
+    if (injectMode() === "first" && prior.ids.size > 0 && !extra) {
       putBack();
       record("skipped");
       return decision;
     }
     // 差量注入: 把"本会话已注入过的条目 id"交给 Binder 排除。
-    // 于是常驻记忆 (规则/关键事实) 只会在会话首轮进一次, 之后的轮次只补真正的新条目。
     const bound = binder.injectFor(scope, text, [...prior.ids]);
-    if (!bound && !pending) {
+    if (!bound && !pending && !extra) {
       // 三种"没内容"必须分开记, 否则账本给出误导性读数:
       //   skipped      触发策略主动不注入 (同话题重复 / 无信号);
       //   nothing-new  选中了条目但全被判重挡掉 (差量注入的正常结果);
@@ -282,7 +289,7 @@ export function makePreStepHandler(
           "), 本轮会按「禁止X。改为Y。」沉淀并在下次照做",
       );
     }
-    if (!bound && !pending && !negativeHint) {
+    if (!bound && !pending && !negativeHint && !extra) {
       // 三者皆空: 与上面那次"没内容"同一种处置 (但分开判定  上面那次是为了放回指引,
       // 这里是因为提示可能**单独**构成一个值得发的块)。
       putBack();
@@ -291,7 +298,7 @@ export function makePreStepHandler(
       return decision;
     }
     const injectedText = composeMemoryBlock({
-      body: bound,
+      body: [bound, extra].filter(Boolean).join("\n"),
       guidance: pending,
       ...(negativeHint ? { negativeHint } : {}),
       language: language(),
