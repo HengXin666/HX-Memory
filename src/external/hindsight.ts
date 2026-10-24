@@ -5,7 +5,7 @@ import type { EngineHit, MemoryEngine, MemoryQuery, Reflection } from "./ports.t
 
 /**
  * 默认记忆引擎。bank = workspace。
- * 文档: POST /v1/default/banks/{bank}/memories|recall|reflect
+ * 文档: POST /v1/default/banks/{bank}/memories|memories/recall|reflect
  */
 export function hindsightMemoryEngine(opts: HttpOptions): MemoryEngine {
   return {
@@ -30,7 +30,7 @@ export function hindsightMemoryEngine(opts: HttpOptions): MemoryEngine {
     },
 
     async recall(bankId, query) {
-      const json = await requestJson(opts, "POST", bankPath(bankId, "/recall"), {
+      const json = await requestJson(opts, "POST", bankPath(bankId, "/memories/recall"), {
         query: query.text,
         max_tokens: 1200,
         ...(query.kinds ? { tags: [...query.kinds], tags_match: "any" } : {}),

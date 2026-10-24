@@ -29,7 +29,7 @@ describe("engine adapters", () => {
           for (const item of body.items) bucket.set(item.document_id, { text: item.content, kind: item.metadata.hx_kind });
           return json({ success: true });
         }
-        if (url.endsWith("/recall")) {
+        if (url.endsWith("/memories/recall")) {
           return json({
             results: [...bucket.entries()].map(([id, row]) => ({
               text: "改写后的事实 " + id,
