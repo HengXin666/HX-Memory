@@ -7,6 +7,7 @@ Decision-ID: external-engine-ports
 ## Code
 
 - `src/external/host.ts`
+- `src/adapters/dsh/external-bridge.ts`
 
 ## Problem
 
@@ -32,4 +33,6 @@ canonical bundle (`hx-canonical/1`) 是唯一迁移单位。`MemoryEngine` 和 `
 
 ## Consequences
 
-换引擎调用 `swapMemory` / `swapKnowledge`, 它们只重放 bundle。引擎宕机时记录留在 `indexState=pending`, 不丢。DSH 旧链路未切到这个宿主, 避免一边改词表一边改注入。
+换引擎调用 `swapMemory` / `swapKnowledge`, 它们只重放 bundle。引擎宕机时记录留在 `indexState=pending`, 不丢。
+
+DSH 的 `apply` 会 `attachExternalHost`。会话首轮注入开场卡片, 之后每轮按信号召回, 轮末按结论沉淀, 辱骂当轮走 `onUserMessage`。工具 `workspace_memory` 和 `knowledge_search` 走同一宿主。没配 `HX_HINDSIGHT_BASE_URL` / `HX_RAGFLOW_BASE_URL` 时用进程内词面投影, 调用形状不变; 配了地址就用 bakeoff 的默认引擎。旧的 FileBackend 注入还在, 它服务既有记忆, 不代替这份 canonical。

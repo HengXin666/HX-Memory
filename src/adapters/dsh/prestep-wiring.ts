@@ -23,6 +23,7 @@ import type { PendingGuidance } from "./session-start.ts";
 import type { ScheduleLog } from "./schedule-log.ts";
 import type { NegativityWiring } from "./negativity-wiring.js";
 import { makePreStepHandler } from "./prestep.js";
+import { attachExternalHost } from "./external-bridge.ts";
 
 export interface PrestepWiringDeps {
   ctx: Context;
@@ -34,6 +35,8 @@ export interface PrestepWiringDeps {
   /** 会话 → 工作区上下文 (项目键 + 祖先链)。 */
   scopeOf: (session: SessionLike) => ProjectScopeArg | undefined;
   logWarn: (message: string, error: unknown) => void;
+  /** 记忆根。外置宿主的 canonical 落在 <root>/external。 */
+  root: string;
   /** 负面/纠正信号面 (可选; 命中即注入"当下提示")。 */
   negativity?: NegativityWiring;
   /** 会话登记的运行时自检 (每步调用, 内部只执行一次)。 */
@@ -49,6 +52,11 @@ export interface PrestepWiringDeps {
 
 export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
   const { ctx, binder, runtime, settings } = deps;
+  const external = attachExternalHost({
+    ctx,
+    root: deps.root,
+    projectKey: () => runtime.scope()?.project || runtime.project() || "",
+  });
 
   ctx.on(
     "agent/pre-step",
@@ -104,11 +112,13 @@ export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
       // 会话登记的运行时自检 (只报一次; 见 session-wiring.ts 的 makeRegistrationCheck)。
       // 并进既有 handler 而不是另注册一个监听器  另注册会抢 handlers[0], 破坏既有调用方。
       ...(deps.checkRegistration ? { onStep: deps.checkRegistration } : {}),
+      externalPreface: (input) => external.preface(input),
     }) as never,
   );
 
   // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
   ctx.on("session/event", (session: unknown, event: unknown) => {
+    void external.onSessionEvent(session, event).catch((error: unknown) => deps.logWarn("external retain failed: %s", error));
     void runtime
       .capture(session as SessionLike, event as SessionEventLike)
       .catch((error: unknown) => deps.logWarn("capture failed: %s", error));
