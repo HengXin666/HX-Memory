@@ -16,4 +16,5 @@
 - 端口与宿主: `src/external/ports.ts`, `src/external/host.ts`
 - 迁移单位: `src/external/canonical.ts`, `src/external/store.ts`, `src/external/migrate.ts`
 - 调用时机: `src/external/policy.ts`
-- 默认选择: `src/external/bakeoff.ts`。具体引擎适配在后续提交接上, 端口不跟着改。
+- 引擎适配: `src/external/hindsight.ts`, `src/external/mem0.ts`, `src/external/ragflow.ts`, `src/external/lightrag.ts`
+- 默认选择: `src/external/bakeoff.ts`
