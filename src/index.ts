@@ -103,3 +103,27 @@ export {
  *  根入口必须是一个合法的 cordis plugin (有 apply)。真实功能在 ./dsh; 真实 Web UI 在 ./client
  *  (由宿主按 dsh.client 元数据加载)。 */
 export function apply(): void {}
+export {
+  createExternalHost,
+  type ExternalHost,
+  type FrustrationOutcome,
+  type HostOptions,
+  type MemoryView,
+} from "./external/host.ts";
+export { CanonicalStore } from "./external/store.ts";
+export {
+  CANONICAL_FORMAT,
+  workspaceBankId,
+  type CanonicalBundle,
+  type CanonicalDoc,
+  type CanonicalMemory,
+  type CorpusBundle,
+} from "./external/canonical.ts";
+export type { KnowledgeEngine, MemoryEngine, Reflection } from "./external/ports.ts";
+export {
+  DEFAULT_KNOWLEDGE_ENGINE,
+  DEFAULT_MEMORY_ENGINE,
+  ENGINE_PROFILES,
+  recommend,
+} from "./external/bakeoff.ts";
+export { reindexKnowledge, reindexMemory } from "./external/migrate.ts";
