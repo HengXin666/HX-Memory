@@ -15,6 +15,7 @@ import { qualifiesByMode, shouldAbstain, ABSTAIN_REASON } from "./gate.ts";
 import { isLiveEntry, resolveCurrentEntry } from "./lifecycle.ts";
 import { negotiateCapabilities } from "./capabilities.ts";
 import { compositeScore, rrfFuse } from "../kernel/ranking.ts";
+import { demoteSuperseded } from "../kernel/temporal.ts"; // 同话题新压旧 (2026-11-01)
 import { projectEntryVisible } from "../kernel/project-lineage.ts"; // 项目可见性偏序 (与 selectAlwaysOn 同源)
 import { assembleHits } from "./assemble.ts";
 import { syncVectorIndex, type VectorSyncState } from "./vector-sync.ts";
@@ -38,56 +39,8 @@ import type {
   VectorIndex,
 } from "../kernel/ports.ts";
 
-/**
- * 图候选降为第二梯队 (补位不抢占)
- * .agents/notes/implemented/architecture/2026-09-12-graph-as-second-tier.md
- * 检索返回顺序必须按综合分降序 (修 MMR 顺序被当排名的缺陷)
- * .agents/notes/implemented/bug-fix/2026-09-12-retrieval-order-not-mmr-order.md
- * 实体抽取接入写入路径 (entities 从 0% 到可用)
- * .agents/notes/implemented/feature/2026-09-12-entity-extraction-and-linking.md
- * 实体反查 (把 actions/02 的行动项 1 落到检索期)
- * .agents/notes/implemented/feature/2026-09-13-entity-reverse-lookup.md
- */
-export interface HybridRetrieverOptions {
-  /** 每个通道的候选数 (再融合)。 */
-  channelLimit?: number;
-  /**
-   * 各通道的 RRF 权重默认值 (缺省 1)。
-   *
-   * 为什么需要: RRF 只吃排名, 通道之间"谁更该说了算"只能靠权重表达。
-   * 实测 (166 个 case, 见 docs/memory-benchmark-report.md): bm25 权重 2 时词面精度最好,
-   * 而向量通道的候选没有覆盖率门槛、又常常在同义改写上补召回 
-   * 让词面占主导、向量做补充的配比明显优于等权。
-   */
-  channelWeights?: Partial<Record<Channel, number>>;
-  /** 覆盖率下限 (0..1): 低于它且命中词数不足的候选被丢弃 (压 bigram 噪声)。 */
-  coverageFloor?: number;
-  /** 图扩展的默认跳数。 */
-  graphHops?: 0 | 1 | 2;
-  /**
-   * 图候选的独立配额 (第二梯队条数; 默认 3, 0 = 不追加)。
-   *
-   * 为什么是配额而不是权重: 图候选是"主题邻居"不是"答案" (实测 gold 精确率 8.5%),
-   * 按权重参与 RRF 会挤掉词面命中; 但它在字面不可达时确实有用。配额让它"只能补位,
-   * 不能抢占"  实测同时保住 R@1 (0.684) 与图专属召回 (0.25 -> 0.75)。
-   */
-  graphTierQuota?: number;
-  rrfK?: number;
-  mmrLambda?: number;
-  /** 时钟 (测试可注入)。 */
-  now?: () => string;
-  capabilities?: RetrievalCapabilities;
-  /** 向量索引 (有则启用语义召回通道; 实现可换 sqlite-vec/LanceDB/Qdrant)。 */
-  vectorIndex?: VectorIndex;
-  /** 实体通道进榜上限 (默认 DEFAULT_ENTITY_MAX_IDS)。 */
-  entityMaxIds?: number;
-  /** 实体通道的共享实体门槛 (默认 DEFAULT_ENTITY_MIN_SHARED)。 */
-  entityMinShared?: number;
-  /** 实体候选的出口: "tier2" (独立配额的尾巴, 默认) 或 "main" (与词面竞争主排序)。 */
-  entityMode?: "main" | "tier2";
-  /** 走 tier2 时给实体候选的配额 (默认 DEFAULT_ENTITY_QUOTA)。 */
-  entityQuota?: number;
-}
+export type { HybridRetrieverOptions } from "./hybrid-options.ts";
+import type { HybridRetrieverOptions } from "./hybrid-options.ts";
 
 /** 关系类型的默认图扩展权重 (越"强关联"的边权重越高)。 */
 /**
@@ -198,6 +151,10 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
     return this.retrieveSync(req);
   }
 
+  /**
+   * 同话题新压旧在融合打分之后、收尾之前 (demoteSuperseded)
+   * .agents/notes/implemented/feature/2026-11-01-temporal-confidence-decay.md
+   */
   retrieveSync(req: RetrievalRequest): RetrievalResult {
     const limit = Math.max(1, req.limit ?? 8);
     const tokenBudget = req.tokenBudget ?? 1200;
@@ -359,6 +316,7 @@ export class HybridRetriever implements Retriever, SyncRetriever, RetrievalWarmu
       const why = (reasons.get(id) ?? ["fused"]).join(", ");
       resolved.push({ entry: current, score, channels: hit.channels as Channel[], why });
     }
+    demoteSuperseded(resolved);
     // 收尾 (去冗余 / 预算 / 图候选补位 / 返回顺序) 抽到 retrieval/assemble.ts 
     // 它与"取数与融合"的变化原因不同, 混在一个文件里会把两者都撑破。
     const result = assembleHits(resolved, {

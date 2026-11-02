@@ -56,6 +56,7 @@ export async function queryAlwaysOn(
     ruleBudgetRatio?: number;
     /** 条数上限 (见 AlwaysOnOptions.maxEntries)。 */
     maxEntries?: number;
+    now?: string;
   } = {},
 ): Promise<MemoryEntry[]> {
   return (await queryAlwaysOnDetailed(store, opts)).entries;
@@ -67,6 +68,7 @@ export async function queryAlwaysOn(
  * 为什么需要它 (2026-09-18 实测): 真实库有 **9 条已确认规则, 而配额 240 token 只够 7 条** 
  * 另 2 条**永远进不了保底通道**且**完全静默**。规则是用户确认过的不变量, 而 `always-on`
  * 的承诺是无条件注入 ⇒ "哪些被挡了"必须可查, 否则这个承诺无法被验证。
+ * .agents/notes/implemented/feature/2026-11-01-temporal-confidence-decay.md
  */
 export async function queryAlwaysOnDetailed(
   store: QueryStore,
@@ -77,6 +79,8 @@ export async function queryAlwaysOnDetailed(
     ruleBudgetRatio?: number;
     /** 条数上限 (见 AlwaysOnOptions.maxEntries: token 闸管长度, 条数闸管注意力)。 */
     maxEntries?: number;
+    /** 给了就启用时间 × 置信度 (同话题新压旧 + 老的往后排), 见 kernel/temporal.ts。 */
+    now?: string;
   } = {},
 ): Promise<AlwaysOnSelection> {
   // 优先用廉价投影 (10k 条实测: 6ms vs 137ms)。投影字段对 selectAlwaysOn 足够。
@@ -87,6 +91,7 @@ export async function queryAlwaysOnDetailed(
     budgetTokens: opts.budgetTokens ?? 400,
     ...(opts.ruleBudgetRatio === undefined ? {} : { ruleBudgetRatio: opts.ruleBudgetRatio }),
     ...(opts.maxEntries === undefined ? {} : { maxEntries: opts.maxEntries }),
+    ...(opts.now ? { now: opts.now } : {}),
     estimate: estimateTokens,
   });
 }

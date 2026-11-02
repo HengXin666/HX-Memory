@@ -44,7 +44,8 @@ export type AlwaysOnDetailedReader = (opts: { project?: string }) => Promise<{
   blocked: Array<{ id: string; kind: string; content: string; tokens: number; reason: string }>;
 }>;
 
-/** 实现  返回类型**直接用那个别名**, 免得两处定义再次分叉。 */
+/** 实现  返回类型**直接用那个别名**, 免得两处定义再次分叉。 * .agents/notes/implemented/feature/2026-11-01-temporal-confidence-decay.md
+ */
 export function makeAlwaysOnDetailedReader(
   loadAll: () => Promise<readonly MemoryEntry[]>,
   budgetTokens = 400,
@@ -53,6 +54,7 @@ export function makeAlwaysOnDetailedReader(
     const sel = selectAlwaysOnDetailed(await loadAll(), {
       ...(opts.project ? { project: opts.project } : {}),
       budgetTokens,
+      now: new Date().toISOString(),
       estimate: estimateTokens,
     });
     return {

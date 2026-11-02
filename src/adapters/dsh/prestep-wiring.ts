@@ -23,7 +23,8 @@ import type { PendingGuidance } from "./session-start.ts";
 import type { ScheduleLog } from "./schedule-log.ts";
 import type { NegativityWiring } from "./negativity-wiring.js";
 import { makePreStepHandler } from "./prestep.js";
-import { attachExternalHost } from "./external-bridge.ts";
+import { attachExternalHost, externalHostEnabled } from "./external-bridge.ts";
+import { createFrustrationPipeline, frustrationPipelineEnabled } from "./frustration-wiring.ts";
 
 export interface PrestepWiringDeps {
   ctx: Context;
@@ -52,11 +53,21 @@ export interface PrestepWiringDeps {
 
 export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
   const { ctx, binder, runtime, settings } = deps;
-  const external = attachExternalHost({
-    ctx,
-    root: deps.root,
-    projectKey: () => runtime.scope()?.project || runtime.project() || "",
-  });
+  // 外置宿主默认不挂 (P0 / PLAN J1.1): 它与原生链路各自检索、各自写入、各自检测挫折,
+  // 且有 REVIEW D1-D4 的缺陷。显式设置 HX_EXTERNAL_HOST=1 才启用。
+  const external = externalHostEnabled()
+    ? attachExternalHost({
+        ctx,
+        root: deps.root,
+        projectKey: () => runtime.scope()?.project || runtime.project() || "",
+      })
+    : null;
+  // 挫折链路 (P1): 默认启用, 取代下面旧的 negativeHint / onNegative 两条分支。
+  // HX_FRUSTRATION_PIPELINE=0 时退回旧行为 (只为回滚保留)。
+  const frustration = frustrationPipelineEnabled() && deps.negativity
+    ? createFrustrationPipeline({ ctx, root: deps.root, negativity: deps.negativity, sendReceipt: deps.sendReceipt, logWarn: deps.logWarn })
+    : null;
+  const legacyNegativity = frustration ? undefined : deps.negativity;
 
   ctx.on(
     "agent/pre-step",
@@ -84,13 +95,13 @@ export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
       },
       // 命中即提示 (用户诉求: "别人都骂你了, 你为什么不记住这次的教训")。
       // 只注入**当下提示 + 以往同类纠正**, 不注入本轮的沉淀物 (那条还没落盘)。
-      ...(deps.negativity ? { negativeHint: (text: string) => deps.negativity!.hint(text) } : {}),
+      ...(legacyNegativity ? { negativeHint: (text: string) => legacyNegativity.hint(text) } : {}),
       // **骂了就发回执** (用户实测: "我骂了以后下属没有任何悔改, 你不把他炒鱿鱼吗?")。
       // 与上面的 negativeHint 分工不同:
       //   · negativeHint 是给**模型**的即时行为指令 (并进注入块, 不改变对话流);
       //   · 这条是给**人**的可见回执 (对话里出现一条消息, 说明"它收到了并在改")。
       // 两者都要: 只有前者, 用户看不到任何反应; 只有后者, 模型不知道该改什么。
-      ...(deps.negativity && deps.sendReceipt
+      ...(legacyNegativity && deps.sendReceipt
         ? {
             // sessionId 由 handler 从 payload 取 (它手里有 agent), 不在这里猜。
             onNegative: (sessionId: string, _text: string, summary: string) => {
@@ -101,7 +112,7 @@ export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
                   "\n本轮已按「用户纠正」沉淀 (见 capture 账本); 回复前先复述理解到的方向。",
               });
             },
-            detectNegative: (text: string) => deps.negativity!.capture.detect(text),
+            detectNegative: (text: string) => legacyNegativity.capture.detect(text),
           }
         : {}),
       // 判定落账: 写入永远 best-effort (append 不抛), 账本关掉时直接丢弃。
@@ -112,13 +123,14 @@ export function wirePrestepAndCapture(deps: PrestepWiringDeps): void {
       // 会话登记的运行时自检 (只报一次; 见 session-wiring.ts 的 makeRegistrationCheck)。
       // 并进既有 handler 而不是另注册一个监听器  另注册会抢 handlers[0], 破坏既有调用方。
       ...(deps.checkRegistration ? { onStep: deps.checkRegistration } : {}),
-      externalPreface: (input) => external.preface(input),
+      ...(frustration ? { frustration: (input: { sessionId: string; step: number; messages: readonly unknown[]; cwd: string }) => frustration.onStep(input) } : {}),
+      ...(external ? { externalPreface: (input: { sessionId: string; project: string; text: string }) => external.preface(input) } : {}),
     }) as never,
   );
 
   // 捕获: DSH 的真实 SessionEvent 是内部联合类型, 这里用宽松结构接收 (仿 ReMe)。
   ctx.on("session/event", (session: unknown, event: unknown) => {
-    void external.onSessionEvent(session, event).catch((error: unknown) => deps.logWarn("external retain failed: %s", error));
+    if (external) void external.onSessionEvent(session, event).catch((error: unknown) => deps.logWarn("external retain failed: %s", error));
     void runtime
       .capture(session as SessionLike, event as SessionEventLike)
       .catch((error: unknown) => deps.logWarn("capture failed: %s", error));

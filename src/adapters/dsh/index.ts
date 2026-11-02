@@ -5,6 +5,7 @@
 //   session/event       → 聚合 turn → 批量捕获入记忆 (见 runtime.ts)
 //   ctx.tools.register  → memory_search / memory_save / memory_rule_propose
 //   ctx.settings        → 可配置开关 (经 installSection 接住宿主权威配置源)
+import { frustrationPipelineEnabled } from "./frustration-wiring.ts";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-settings";
@@ -30,7 +31,8 @@ import { MemoryNormalizer } from "../../app/normalize.ts";
 import { LexicalEmbedder } from "../../retrieval/embedding-lexical.js";
 import { LinearVectorIndex } from "../../retrieval/vector.js";
 import { ProjectedVectorIndex } from "../../retrieval/vector-projected.js";
-import { openAiEmbedderFromEnv } from "../../retrieval/embedding-http.js";
+import { wireRetrieval } from "./retrieval-wiring.js";
+import { makeLedgers } from "./ledgers-wiring.js";
 import { Binder } from "../../kernel/binder.ts";
 import { BindingStore } from "../../bindings/store.ts";
 import { mountGateway } from "./gateway-mount.ts";
@@ -84,58 +86,13 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
   const settings = liveSettings.read;
 
   const bindingStore = new BindingStore(root);
-  // v2 检索器: 绑定注入 / 会话召回 / memory_search 三条路共用同一个检索语义
-  // (能力自述来自存储引擎, 降级会写进 RetrievalResult.degraded)。
-  // 向量通道: 配了 HX_MEMORY_EMBEDDING_BASE_URL/MODEL 就用真语义 (异步 + 投影),
-  // 否则用本地零依赖哈希嵌入器 (同步, 零配置也能跑)。
-  const httpEmbedder = openAiEmbedderFromEnv();
-  const localEmbedder = new LexicalEmbedder();
-  /**
-   * 四层切面 (Surface / Application / Ports / Engines)
-   * .agents/notes/implemented/architecture/2026-09-10-four-layer-seams.md
-   */
-  const retriever = new HybridRetriever(store, {
-    vectorIndex: httpEmbedder
-      ? new ProjectedVectorIndex({ embedder: httpEmbedder })
-      : new LinearVectorIndex({ embedder: localEmbedder }),
-  });
-  // 推广服务实例在下方构造 (依赖 reviewDir 与模型); Facade 需要它的"人审提议"出口，
-  // 但不需要在构造时就有  用一个持有器打破"组装顺序"这个隐式契约 (const, 只填空一次)。
-  const generalizerHolder: { current?: GeneralizerService } = {};
-  // 使用层唯一 API: DSH 的工具/召回都经由它, 与 MCP/CLI 共用同一套语义 (ADR-021)。
-  const facade = new MemoryFacade(
-    { store, retriever },
-    // 语义兜底去重默认开启 (本地零依赖哈希袋); 自动演化 (取代/冲突) 由设置控制。
-    // 传函数: 面板里改 autoEvolve 当轮生效 (不再需要重启)。
-    { embedder: localEmbedder, autoEvolve: () => settings().autoEvolve },
-  );
-  facade.withIndexStatus(() => store.ftsStatus());
+  // 检索器 + Facade 组装在 retrieval-wiring.ts (向量通道: 环境变量 > 面板 embedding 段 > 词法近似)。
+  const { retriever, facade, localEmbedder, generalizerHolder } = wireRetrieval(store, root, settings);
   // 证据链: 条目 → 原文 (与 app/stack.ts 同一接线, 保证各宿主行为一致)。
   facade.withEvidence(new EpisodeStore({ root, retentionDays: settings().episodeRetentionDays }));
-  // 治理出口延后接线 (generalizer 建在下方, 依赖 reviewDir 与模型) 
-  // 坏评超标的记忆据此产出人审提议; 不接线则标注照常落盘, 只是不产生提议。
-  facade.withGeneralizer({
-    enqueueProposal: (input) => {
-      const g = generalizerHolder.current;
-      if (!g) throw new Error("hx-memory: generalizer not mounted yet");
-      return g.enqueueProposal(input);
-    },
-  });
 
-  // 注入调度账本 (可观测性真相文件): 每一步的判定都落一条, 含"没注入"的那几种。
-  // 保留期按函数传入  面板改设置当轮生效 (与 episode 同一套理由)。
-  // 关掉时置 null: 写入路径与面板出口都跟着消失, 但**代码路径不变** (少一个分支就少一处漏判)。
-  const scheduleLog = new ScheduleLog({
-    root,
-    retentionDays: () => (settings().scheduleLog ? settings().scheduleLogRetentionDays : 0),
-  });
-  // 捕获耗时账本 (与注入调度账本同构): 回答"沉淀有没有把这一轮拖慢、拖在哪一段"。
-  // 它与 scheduleLog 是**两条不同的轴** (一个记判定, 一个记耗时), 因此各有各的开关:
-  // 只想要其中一个的宿主不该被迫接受另一个的写入成本。
-  const captureLog = new CaptureLog({
-    root,
-    retentionDays: () => (settings().captureLog ? settings().captureRetentionDays : 0),
-  });
+  // 注入调度账本 + 捕获耗时账本 (两条轴各自开关, 构造见 ledgers-wiring.ts)。
+  const { scheduleLog, captureLog } = makeLedgers(root, settings);
 
   // 触发通道缓存 (always-on 保底 + 意图召回叠加); 失效策略见 trigger-cache.ts。
   const triggerCache = createTriggerCache({
@@ -266,7 +223,8 @@ export function apply(ctx: Context, options: HxMemoryPluginOptions = {}): void {
     // 提供者 (不是实例): 面板里关掉账本当轮生效, 不需要重启。
     captureLog: () => (settings().captureLog ? captureLog : null),
     // 负面/纠正信号判定面 (词表可配置 ⇒ 必须每次求值, 不能构造期固化)。
-    negativity: () => gate.negativity.capture,
+    // 挫折链路 (src/frustration) 启用时, capture 不再走负面分支产出模板教训 (合并成一条, PLAN 第 1 节第 3 条)。
+    negativity: () => (frustrationPipelineEnabled() ? undefined : gate.negativity.capture),
     // 对话内回执 (用户实测: "看不到它真的在沉淀")  装配在 receipt.ts。
     receipt: (sessionId) => (r) => sendReceipt(sessionId, r),
   });

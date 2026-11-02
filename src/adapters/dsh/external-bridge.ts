@@ -27,7 +27,15 @@ export interface DshExternal {
 }
 
 /**
- * DSH 默认调用外置宿主。没配远端地址时用词面投影，调用形状不变。
+ * 外置宿主是否挂到 DSH 上 (P0, 2026-11-01: 默认**不**挂, 见 PLAN.md J1.1 / REVIEW.md D1-D4)。
+ * 只有显式设置 HX_EXTERNAL_HOST=1 才启用; 其它任何值 (含未设置) 都视为关闭。
+ */
+export function externalHostEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.HX_EXTERNAL_HOST?.trim() === "1";
+}
+
+/**
+ * 挂载外置宿主 (调用方须先用 externalHostEnabled 判定)。没配远端地址时用词面投影，调用形状不变。
  * .agents/notes/implemented/architecture/2026-10-24-external-engine-ports.md
  */
 export function attachExternalHost(deps: {

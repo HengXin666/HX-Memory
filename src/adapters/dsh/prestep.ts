@@ -160,6 +160,12 @@ export function makePreStepHandler(
      * 挫折纠正也从这里进来, 这样 first 模式不会把当轮责骂丢掉。
      */
     externalPreface?: (input: { sessionId: string; project: string; text: string }) => Promise<string>;
+    /**
+     * 挫折链路 (src/frustration, PLAN J1.4 / J3.1-J3.5)。每个 step 调一次; 它自己按消息去重,
+     * 返回本 step 要并进注入块的文本 (命中提示 / 同轮评审结论 / 会话首轮的同范围规则)。
+     * 与 externalPreface 一样不受 first 模式限制: 纠正不能等到下一次会话。
+     */
+    frustration?: (input: { sessionId: string; step: number; messages: readonly unknown[]; cwd: string }) => Promise<string>;
   },
 ) {
   // scopeOf 优先 (带祖先链); 只有 projectOf / 都没有时退化为单值语义。
@@ -245,9 +251,19 @@ export function makePreStepHandler(
     const putBack = (): void => {
       if (pending) options.pendingGuidance?.set(agent.session.id, pending);
     };
-    const extra = (
+    const external = (
       (await options.externalPreface?.({ sessionId: agent.session.id, project, text })) ?? ""
     ).trim();
+    // 挫折链路看的是**本步完整消息** (claimed 批次 + 决策后的消息), 评审材料要用到助手与工具消息。
+    const frustration = (
+      (await options.frustration?.({
+        sessionId: agent.session.id,
+        step: payload.step,
+        messages: msgs,
+        cwd: agent.session.header?.cwd ?? "",
+      })) ?? ""
+    ).trim();
+    const extra = [external, frustration].filter(Boolean).join("\n\n");
     // first 模式: 本会话已经有过**记忆条目块** → 不再进入注入通道 (连检索都不做)。
     // 外置宿主有当轮内容时例外 (挫折纠正不能等到下一次会话)。
     if (injectMode() === "first" && prior.ids.size > 0 && !extra) {

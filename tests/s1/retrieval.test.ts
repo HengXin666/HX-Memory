@@ -28,7 +28,10 @@ function make(over: Partial<MemoryEntry> & { id: string; content: string }): Mem
 
 /** 假 source: 用"查询 bigram 命中数"模拟全文索引, 用 relations 模拟图。 */
 class FakeSource implements RetrievalSource {
-  constructor(private readonly entries: MemoryEntry[]) {}
+  private readonly entries: MemoryEntry[];
+  constructor(entries: MemoryEntry[]) {
+    this.entries = entries;
+  }
   searchText(text: string, limit = 20): MemoryEntry[] {
     const streams = termStreams(text);
     const probe = [...streams.words, ...streams.bigrams];

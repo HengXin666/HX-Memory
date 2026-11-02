@@ -10,7 +10,7 @@ import type { Channel } from "../kernel/ports.ts";
 import { LexicalEmbedder } from "../retrieval/embedding-lexical.ts";
 import { LinearVectorIndex } from "../retrieval/vector.ts";
 import { ProjectedVectorIndex } from "../retrieval/vector-projected.ts";
-import { openAiEmbedderFromEnv } from "../retrieval/embedding-http.ts";
+import { embedderFromConfig } from "./embedding-config.ts";
 import { asSyncEmbedder, type Embedder } from "../kernel/ports.ts";
 import { MemoryFacade } from "./facade.ts";
 import { RebuildService } from "./rebuild.ts";
@@ -93,7 +93,7 @@ export function openMemoryStack(root: string, opts: OpenMemoryOptions = {}): Mem
   const embedder =
     opts.embedder === null
       ? undefined
-      : (opts.embedder ?? openAiEmbedderFromEnv() ?? new LexicalEmbedder());
+      : (opts.embedder ?? embedderFromConfig() ?? new LexicalEmbedder()); // 环境变量 > 面板 embedding 段 > 词法近似 (见 app/embedding-config.ts)
   const syncEmbedder = embedder ? asSyncEmbedder(embedder) : null;
   const vectorIndex = !embedder
     ? undefined

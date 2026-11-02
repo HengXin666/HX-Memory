@@ -110,7 +110,10 @@ describe("OpenAiCompatibleEmbedder", () => {
 
 describe("真语义检索端到端 (远端嵌入器 + 投影索引 + 混合检索)", () => {
   class TinySource implements RetrievalSource {
-    constructor(private readonly entries: MemoryEntry[]) {}
+    private readonly entries: MemoryEntry[];
+    constructor(entries: MemoryEntry[]) {
+      this.entries = entries;
+    }
     searchText(text: string, limit = 20): MemoryEntry[] {
       // 故意只做整串包含: 与真语义无关的查询在这里必然搜不到 (逼着向量通道兜住)。
       return this.entries.filter((e) => e.content.includes(text)).slice(0, limit);

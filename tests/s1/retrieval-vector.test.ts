@@ -20,7 +20,10 @@ const e = (id: string, content: string): MemoryEntry => ({
 });
 
 class TinySource implements RetrievalSource {
-  constructor(private readonly entries: MemoryEntry[]) {}
+  private readonly entries: MemoryEntry[];
+  constructor(entries: MemoryEntry[]) {
+    this.entries = entries;
+  }
   searchText(text: string, limit = 20): MemoryEntry[] {
     return this.entries.filter((x) => x.content.includes(text)).slice(0, limit);
   }

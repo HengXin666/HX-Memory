@@ -157,10 +157,12 @@ export class MemoryFacade {
       ruleBudgetRatio?: number;
       /** 条数上限 (2026-09-29): token 闸管长度, 条数闸管注意力成本。见 AlwaysOnOptions.maxEntries。 */
       maxEntries?: number;
+      /** 时间维度 (kernel/temporal.ts); 缺省取 facade 的时钟。 */
+      now?: string;
     } = {},
   ): Promise<MemoryEntry[]> {
     // 实现抽到 facade-queries.ts (纯查询: 读-算-返回, 无编排无副作用)。
-    return await queryAlwaysOn(this.store, opts);
+    return await queryAlwaysOn(this.store, { now: this.now(), ...opts });
   }
 
   /** 检索 + 格式化成注入块 (预步/会话开始/工具都走这里, 保证语义一致)。 */
