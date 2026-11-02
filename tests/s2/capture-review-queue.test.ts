@@ -103,13 +103,45 @@ describe("reviewReasons: 三条可信度判据", () => {
       const pipe = new CapturePipeline(store, { reviewRoot: dir, structurer: lenient });
       const res = await pipe.run({
         session: "s", turn: 1, project: "p",
-        text: "next all",
+        // 2026-11-02: 原用 "next all" (用户原话)。原话闸上线后, 无结论的原话 context 不再入库
+        // (见下一条用例与 pipeline.ts「原话闸」); 「落盘 + 进队列」这条契约改用一句自带提炼结构的陈述验证。
+        text: "根因是 cache.ts:42 的过期判断写反了, 改为按写入时间计算 60 秒过期, 结论: 缓存不再返回旧数据",
         answer: "x".repeat(400) + " 根因是 cache.ts:42 的过期判断, 已改为 60 秒。",
       } as never);
       expect(res.entries.length).toBe(1); // ★ 落盘 (旧契约在这里断言 0)
       expect((await store.all()).length).toBe(1); // 真的写进了库
       expect(readCaptureReview(dir).length).toBe(1); // 同时进队列 (可被剔除)
       expect(readCaptureReview(dir)[0]!.reasons.some((r) => r.startsWith("no-conclusion"))).toBe(true);
+      stack.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("**原话闸** (2026-11-02): 无结论的用户原话 context 不入库, 计入 noConclusion", async () => {
+    // 用户原话: 「记忆应当是经过上下文推导之后存储下来的总结, 而不是用户说的每一句话」。
+    // 「next all」「对的，更详细的」这类附和/指令, 即使本轮助手有大段产出, 结构化器给不出结论时
+    // content 仍是原话 ⇒ 不该入库。判据与面板分池同一个函数 (memory-quality.ts qualityOf)。
+    const dir = mkdtempSync(join(tmpdir(), "raw-"));
+    try {
+      const stack = openMemoryStack(dir, { episodeRetentionDays: 0, embedder: null });
+      const store = stack.store;
+      const lenient: TurnStructurer = {
+        canConclude: true,
+        async structure() {
+          return { summary: "s", tags: [], points: [] }; // 无 conclusion
+        },
+      };
+      const pipe = new CapturePipeline(store, { reviewRoot: dir, structurer: lenient });
+      for (const [i, text] of ["next all", "对的，更详细的"].entries()) {
+        const res = await pipe.run({
+          session: "s", turn: i + 1, project: "p",
+          text,
+          answer: "x".repeat(400) + " 根因是 cache.ts:42 的过期判断, 已改为 60 秒。",
+        } as never);
+        expect(res.entries.length).toBe(0);
+      }
+      expect((await store.all()).length).toBe(0);
       stack.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

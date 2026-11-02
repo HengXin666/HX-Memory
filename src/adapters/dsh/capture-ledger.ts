@@ -60,6 +60,12 @@ export interface TurnContext {
   turn: number;
   question: string;
   answer: string;
+  /**
+   * 这一轮实际发生的时间 (ISO)。缺省 = 现在 (在线捕获)。
+   * 回填 (scripts/backfill-sessions.ts) 用会话日志里 turn/end 的时间: 否则 21 天前的对话会以「今天」入库,
+   * 衰减起点被整体后移, 旧结论冒充新结论。
+   */
+  occurredAt?: string;
 }
 
 /** 落盘一轮的全部输入 (依赖全由调用方注入, 因此这段可单测)。 */
@@ -117,7 +123,7 @@ export async function flushTurn(deps: FlushTurnDeps, ctx: TurnContext): Promise<
         turn: ctx.turn,
         role,
         text,
-        at: new Date().toISOString(),
+        at: ctx.occurredAt ?? new Date().toISOString(),
         ...(ctx.project ? { project: ctx.project } : {}),
         ...(deps.surface ? { surface: deps.surface } : {}),
       });
@@ -156,6 +162,7 @@ export async function flushTurn(deps: FlushTurnDeps, ctx: TurnContext): Promise<
         session: ctx.session,
         ...(ctx.project ? { project: ctx.project } : {}),
         ...(episodeIds.length ? { episodeIds } : {}),
+        ...(ctx.occurredAt ? { occurredAt: ctx.occurredAt } : {}),
       },
       {
         ...(episodeMs ? { episodeMs } : {}),

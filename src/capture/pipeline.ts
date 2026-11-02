@@ -24,6 +24,7 @@ import { planStructuralLinks } from "../evolution/link.ts";
 import { entitiesOf } from "../kernel/entity.ts";
 import { extractTags } from "../storage/entry-normalize.ts";
 import { enqueueCaptureReview, reviewReasons } from "./review-queue.ts";
+import { qualityOf } from "../app/memory-quality.ts";
 import type { Relation } from "../kernel/types.ts";
 
 export interface PipelineOptions {
@@ -140,6 +141,24 @@ export class CapturePipeline {
         skipped++;
         noConclusion++;
         continue; // 能力缺失: 本就没有结论可言 → 不落盘 (原行为)
+      }
+      // ---- 原话闸 (2026-11-02, 用户: 「记忆应当是经过上下文推导之后的总结, 而不是用户说的每一句话」) ----
+      //
+      // 根因 (三处叠加, 缺一不可): ① engine.ts bypassContext 的「本轮有实质产出」放行只看助手输出,
+      // 于是「对的，更详细的」「是的，修复一下。」这类附和/指令也越过了 context 过滤;
+      // ② 上面的 enrich 在结构化器给不出 conclusion 时**保留原文** (content 仍是用户原话);
+      // ③ 上面那道结论闸只拦疑问句 (needsConclusion), 陈述句/指令句没有结论也照常落盘。
+      // 结果: context 里约一半是用户原话 (面板「记忆质量」实测 327/663)。
+      //
+      // 判据与面板分池**同一个函数** (src/app/memory-quality.ts qualityOf), 不另写一套:
+      // context 只有在 (A) content 就是结构化器给出的结论, 或 (B) ≥40 字、带提炼结构词、
+      // 「你/我」≤1 次 时才算推导沉淀; 其余 (短句 / 附和 / 命令 / 对助手说话 / 无结构原文) 不入库,
+      // 计入 noConclusion (原文仍在 DSH 会话文件与 episode 里, 不丢)。
+      // 负面信号轮次不过这道闸: 它落的是教训草稿 (lesson), 不是原话。
+      if (!negativeHit && enhanced.kind === "context" && qualityOf(enhanced).origin === "raw") {
+        skipped++;
+        noConclusion++;
+        continue;
       }
       // ---- 审核闸门 (语义已反转: **先落盘, 事后剔除**) ----
       //
