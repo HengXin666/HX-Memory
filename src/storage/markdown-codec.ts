@@ -32,6 +32,8 @@ import {
 import { dirname } from "node:path";
 import type { MemoryEntry } from "../kernel/types.ts";
 import { FORMAT_VERSION } from "./entry-normalize.ts";
+import { withFileLock } from "./file-lock.ts";
+import { randomBytes } from "node:crypto";
 import { frontmatterHeadOf, unknownFrontmatterLines } from "./frontmatter.ts";
 
 /** 一个真相文件的解析结果: 块序列 + 第一个块之前的手写前言。 */
@@ -144,11 +146,12 @@ export function readFileParts(file: string, skipped?: string[]): FileParts {
  * 顺带解决跨进程丢更新 (盲审遗留第 2 条): 两个进程各自读-改-写时,
  * 此前是"后写者覆盖先写者的中间态"; 现在是"最后完成 rename 的胜出",
  * **不会产生半文件**, 但**仍会丢一方的更新**  那是读-改-写的固有问题,
- * 需要跨进程锁才能根治 (不在本次范围)。
+ * 需要跨进程锁才能根治  (2026-11-01, P0) 已加: upsert/remove/append 三个读-改-写入口
+ * 整段持 `<file>.lock` (见 file-lock.ts)。临时名同时加了随机后缀: 同一 pid 同一毫秒两次写不再撞名。
  */
 function writeFileAtomic(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true });
-  const tmp = file + ".tmp-" + process.pid + "-" + Date.now().toString(36);
+  const tmp = file + ".tmp-" + process.pid + "-" + Date.now().toString(36) + "-" + randomBytes(4).toString("hex");
   const fd = openSync(tmp, "w");
   try {
     writeSync(fd, content);
@@ -164,6 +167,13 @@ function writeFileAtomic(file: string, content: string): void {
     rmSync(tmp, { force: true });
     throw error;
   }
+}
+
+/**
+ * 读-改-写入口共用的锁文件。放在真相文件旁边, 以 ".lock" 结尾: 读取方只认 .md, 不会把它当真相。
+ */
+function lockOf(file: string): string {
+  return file + ".lock";
 }
 
 /** 写回文件结构 (没有块也没有前言 → 删除文件)。 */
@@ -185,6 +195,10 @@ export function writeFileParts(file: string, parts: FileParts): void {
  * 这是"无损"的落点: 升级/整理/普通更新都走这条路径, 必须先保证不丢字段。
  */
 export function upsertBlockInFile(file: string, e: MemoryEntry): void {
+  withFileLock(lockOf(file), () => upsertBlockUnlocked(file, e));
+}
+
+function upsertBlockUnlocked(file: string, e: MemoryEntry): void {
   const parts = readFileParts(file);
   const header = blockHeader(e.id);
   const index = parts.blocks.findIndex((b) => b.startsWith(header));
@@ -200,11 +214,35 @@ export function upsertBlockInFile(file: string, e: MemoryEntry): void {
 
 /** 摘掉某 id 的块 (文件不存在或无该块时是 no-op)。 */
 export function removeBlockFromFile(file: string, id: string): void {
+  withFileLock(lockOf(file), () => removeBlockUnlocked(file, id));
+}
+
+function removeBlockUnlocked(file: string, id: string): void {
   const parts = readFileParts(file);
   const header = blockHeader(id);
   const next = parts.blocks.filter((b) => !b.startsWith(header));
   if (next.length === parts.blocks.length) return;
   writeFileParts(file, { ...parts, blocks: next });
+}
+
+/**
+ * 一次摘掉多个 id 的块 (与 removeBlockFromFile 同一判据: 块以 blockHeader(id) 开头)。
+ *
+ * 为什么需要批量版 (2026-11-01, 清知识库): 4058 条 doc 在同一个 7.7MB 的 daily 文件里,
+ * 逐条 remove 会把该文件整读整写 4058 遍 (约 15GB IO)。判据与单条版完全相同, 只是一次读写。
+ * 返回实际摘掉的块数 (不在文件里的 id 不计)。
+ */
+export function removeBlocksFromFile(file: string, ids: ReadonlySet<string>): number {
+  return withFileLock(lockOf(file), () => {
+    const parts = readFileParts(file);
+    const next = parts.blocks.filter((b) => {
+      const m = /^---\nid: ([^\n]*)\n/.exec(b);
+      return !(m && ids.has(m[1]!));
+    });
+    const removed = parts.blocks.length - next.length;
+    if (removed > 0) writeFileParts(file, { ...parts, blocks: next });
+    return removed;
+  });
 }
 
 /** 读文件末尾 N 字节 (用于 O(1) 判断结尾换行形态)。 */
@@ -228,6 +266,10 @@ function readTail(file: string, count: number): string {
  * 与 writeFileParts 的产物逐字节等价 (含"上一条正文自带尾部空行"的歧义情况)  有回归测试钉住。
  */
 export function appendBlockToFile(file: string, e: MemoryEntry): void {
+  withFileLock(lockOf(file), () => appendBlockUnlocked(file, e));
+}
+
+function appendBlockUnlocked(file: string, e: MemoryEntry): void {
   const block = entryToMarkdown(e);
   mkdirSync(dirname(file), { recursive: true });
   if (!existsSync(file)) {

@@ -335,9 +335,10 @@ export class IndexReader {
   > {
     // 必须带上 confirmed_by/confirmed_at: always-on 的治理闸门要求"已确认的规则才注入",
     // 缺了这两列会让所有规则被静默过滤掉 (写这个投影时真实踩过  测试立刻抓到)。
+    // valid_at (扁平 validAt): always-on 的时间维度要它 (kernel/temporal.ts assertedAtMs 认扁平字段)。
     return this.db
       .prepare(
-        `SELECT id, kind, content, scope, project, importance, status, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt
+        `SELECT id, kind, content, scope, project, importance, status, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt, valid_at AS validAt
          FROM memories WHERE status = 'active'`,
       )
       .all() as unknown as Array<

@@ -35,13 +35,11 @@ import { IndexReader } from "./index-reader.ts";
 import { initSchema } from "./index-schema.ts";
 import { countTruthEntries, hasTruthFiles, scanTruth } from "./truth-scan.ts";
 import { IndexWriter } from "./index-writer.ts";
+import { bulkRemove, detachIncoming, type BulkRemoveReport } from "./bulk-remove.ts";
 
 export interface FileBackendConfig {
   root: string;
-  /**
-   * true = remove() 从真相文件里摘掉该块 (文件空了才删文件);
-   * false (默认) = 在真相文件里写 status: shadow, 保留可审计的撤回记录。
-   */
+  /** true = remove() 从真相文件里摘掉该块 (文件空了才删文件); false (默认) = 写 status: shadow, 保留可审计记录。 */
   allowTruthDelete?: boolean;
 }
 
@@ -54,10 +52,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
   private readonly skipped: string[] = [];
   /** 写版本号 (索引同步用; 稳态查询不触发重新扫描)。 */
   private writeRevision = 0;
-  /**
-   * 本进程内已经"由自己规范化写过"的真相文件。
-   * 只有这些文件才允许走 O(1) 追加快路径  外部手写文件里有前言, 必须先经通用路径归一化。
-   */
+  /** 本进程"自己规范化写过"的真相文件: 只有它们走 O(1) 追加快路径 (外部手写文件有前言, 须先归一化)。 */
   private readonly touchedFiles = new Set<string>();
   /** 派生索引的读取侧 (查询/投影/hydrate 都在那里; 本类只管写与编排)。 */
   private readonly reader: IndexReader;
@@ -361,8 +356,7 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     this.writeEntry(merged);
   }
 
-  /**
-   * 移除条目。
+  /** 移除条目。
    * - allowTruthDelete=true: 从真相文件里摘掉该块 (同日其他条目不受影响), 索引行删除;
    * - 默认: 真相文件写 status: shadow (可审计), 索引置 shadow  重建不会复活。
    * 两种情况都保留关系/标签行: 对方的真相文件里仍声明着指向它的关系, 删行会让索引与真相互不一致。
@@ -372,6 +366,8 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     if (!existing) return;
     const file = join(this.root, fileFor(existing));
     if (this.allowTruthDelete) {
+      // 入边一起摘 (与 removeMany 同一判据, 见 bulk-remove.ts detachIncoming)。
+      detachIncoming(this.db, new Set([id]), (x) => this.reader.get(x), (x, relations) => this.update(x, { relations }));
       if (existsSync(file)) removeBlockFromFile(file, id);
       this.writer.deleteEntry(id);
       return;
@@ -382,8 +378,15 @@ export class FileBackend implements MemoryStore, Rebuildable, IndexableSource {
     }
     this.writer.markShadow(id);
     this.writeRevision++;
-    // 注意: shadow 条目的全文行**保留**  FTS 行与 memories 行必须一一对应 (计数一致),
-    // 可见性由 searchText 的 status 过滤决定。在这里删掉会让"计数一致性"自检每次打开都触发重建。
+    // 注意: shadow 的全文行**保留** (FTS 与 memories 必须一一对应, 可见性由 status 过滤; 删了会让计数自检每次都重建)。
+  }
+
+  /** 批量 remove (同一判据, 每个真相文件只读写一次, 索引一个事务); 见 bulk-remove.ts。 */
+  removeMany(ids: readonly string[]): BulkRemoveReport {
+    const get = (id: string) => this.reader.get(id), drop = (id: string) => this.writer.deleteEntry(id);
+    const r = bulkRemove({ root: this.root, db: this.db, ids, hard: this.allowTruthDelete, get, drop, soft: (id) => this.remove(id), rewriteRelations: (id, relations) => this.update(id, { relations }) });
+    this.writeRevision++;
+    return r;
   }
 
   close(): void {
