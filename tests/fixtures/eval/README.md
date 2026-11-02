@@ -1,0 +1,52 @@
+# Evaluation sets (tests/fixtures/eval)
+
+Each set's version, source, build date, and annotators. Layout follows EVAL.md section 2.
+
+## frustration/samples.jsonl (frustration detection set, EVAL.md 2.3)
+
+**Seed set of 196 samples, below the 600-sample floor in EVAL.md 2.3.** `scripts/eval/frustration-detect.ts` returns exit code 2 on this set (evaluation invalid), never 0.
+
+| Item | Value |
+|---|---|
+| Version | seed-1 |
+| Built | 2026-11-01 |
+| Sessions | 40 |
+| Buckets | 6 (HX-Jungle 136, HX-BCP 27, HX-CF-Tunnel 16, home 12, HX-Email 4, .sec-test 1) |
+| Session format | v3 146, v4 50 |
+| Labels | none 144 / correction 43 / both 7 / insult 2 (positives 52, ratio about 1:2.8) |
+| none samples with tech terms | 5 (EVAL requires at least 100) |
+| Annotators | 1 (no second annotator; `agreement.json` does not exist, kappa not measured) |
+
+### How the sample was drawn
+
+1. Session pool: the 108 sessions cached locally (pulled read-only from `~/.dsh/sessions` earlier; 1 file was truncated and could not be read, leaving 107; nothing new downloaded). 97 of them contain user messages (`source.kind = user`).
+2. Took only messages from the user themselves; plugin injections (`source.kind = plugin`, such as 【相关记忆】 blocks) were skipped. After deduplicating identical text there are 210 unique messages from 54 sessions.
+3. Picked 40 sessions: **ranked by unique user-message count, most recent first among ties**. Why not purely most recent: the 40 newest sessions are mostly automated probes (`回一个字 ok`, `Reply with exactly: PONG`), about 40 messages total, far short of 200. The rule chosen still covers 6 buckets, satisfying "at least 5 different buckets".
+4. Loose word list for recalling positive candidates (a superset of the default word list in `src/kernel/negativity.ts`, adding words like 为什么 / 怎么 / 不是 / 还是 / 根本 / 太慢 / question marks): it hit 94 messages, 42 of which turned out positive. The 40 sessions only hold 196 messages in total, so **all of them went into the set** (candidates plus the remaining 102 as negatives), with no subsampling. 10 of the 52 positives were missed by the loose word list and still made it in, which is exactly the design point of 2.3: "avoid a set that only contains what the existing word list can catch."
+5. Each record keeps the previous assistant message (`prev_assistant`, last 600 characters) and is labeled from that context.
+
+### Fields
+
+`{sid, text, label, tech_terms[], prev_assistant, source:{bucket, session, msg_id, format, loose_hit}}`. The first five fields are the EVAL 2.3 format; `prev_assistant` is used by the judge and annotators; `source` makes each record traceable.
+
+### Labeling rules (EVAL 2.3)
+
+- insult: an emotional put-down. Example: f121 「傻逼放到虚拟桌面」.
+- correction: says something was done wrong and points a direction. That includes follow-ups after the assistant ignored an earlier request (f162 「协议化了吗？我不要浏览器的」) and questions that state the right answer outright (f048 「你是不是启动的新的 hx-proxy 啊」).
+- both: both of the above.
+- none: everything else, including new requirements, "continue", and follow-up questions with no criticism.
+- Only one annotator. Borderline samples (a follow-up that stops short of an explicit "you're wrong") will move most when a second annotator reviews them; kappa should be computed before the set goes into CI.
+
+### Redaction (EVAL 2.1 / 2.3)
+
+Regex replacements: `/home/hx` → `/home/<user>`, `hx` in bucket names → `<user>`; `hxk_…`, `ghp_…`, `github_pat_…`, `sk-…`, `P=…`, `U=…`, `token=…` → `<secret>` / `<user>`; emails → `<email>`; mobile numbers → `<phone>`. Abusive words are kept. `_private/` holds nothing: no unredacted originals are kept.
+
+### Not done
+
+- Size 196 < 600; none with tech terms 5 < 100.
+- Second annotator and `agreement.json`.
+- Only 6 of the 29 buckets covered (2.3 asks to draw from all buckets).
+
+## frustration/lessons.jsonl (C1 input)
+
+Does not exist. It must hold lessons that the same-turn review (`src/frustration/review.ts`) actually persisted for the positive samples. Generating them needs a live review model (`agentSummarize`), which is not available in the environment that built this set. `scripts/eval/lesson-quality.ts` returns 2 when the file is missing.

@@ -1,0 +1,120 @@
+{"qid":"k001","kind":"title","dir":"blog","expect_paths":["blog/2025/05/07/001-小灶分享.md"],"question":"","author":""}
+{"qid":"k002","kind":"title","dir":"blog","expect_paths":["blog/2025/06/30/01-调教VSCode.md"],"question":"","author":""}
+{"qid":"k003","kind":"title","dir":"ai-docs","expect_paths":["ai-docs/003-AI/010-HX-AI-Review通用AI-CR方案/index.md"],"question":"","author":""}
+{"qid":"k004","kind":"title","dir":"ai-docs","expect_paths":["ai-docs/003-AI/002-Agent架构/001-AI-Agent设计原理与工程实践/index.md"],"question":"","author":""}
+{"qid":"k005","kind":"title","dir":"docs","expect_paths":["docs/006-数据库/001-MySQL数据库/002-基础篇/006-多表查询/index.md"],"question":"","author":""}
+{"qid":"k006","kind":"title","dir":"docs","expect_paths":["docs/003-游戏引擎/001-虚幻引擎/002-蓝图/002-第二章/026-丶枚举、怪物分类、龙旋风技能、掉落概率/index.md"],"question":"","author":""}
+{"qid":"k007","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/001-灵神の題単/001-位运算丶/003-与或【AND、OR】的性质/002-最长优雅子数组/index.md"],"question":"","author":""}
+{"qid":"k008","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/003-组与权限/001-Linux组介绍/index.md"],"question":"","author":""}
+{"qid":"k009","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/006-NAT网络配置/001-LinuxNAT网络原理/index.md"],"question":"","author":""}
+{"qid":"k010","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/007-现代C++QT/005-QML/004-Component与Loader/index.md"],"question":"","author":""}
+{"qid":"k011","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/014-网络编程/003-数据报Datagram/index.md"],"question":"","author":""}
+{"qid":"k012","kind":"title","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/014-【板子】算法模版/005-常用数据结构/006-并查集丶/index.md"],"question":"","author":""}
+{"qid":"k013","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/008-Docker中常见软件的常规安装/001-安装tomcat/index.md"],"question":"","author":""}
+{"qid":"k014","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/007-向0x3f大佬学习/008-单调栈/index.md"],"question":"","author":""}
+{"qid":"k015","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/004-Linux环境配置/002-gccg++/index.md"],"question":"","author":""}
+{"qid":"k016","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/004-蓝桥杯/002-【蓝桥杯】刷刷刷/index.md"],"question":"","author":""}
+{"qid":"k017","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/002-Docker下载与安装/index.md"],"question":"","author":""}
+{"qid":"k018","kind":"title","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/012-【算法】贪心/001-【中位数贪心】货仓寻址问题/index.md"],"question":"","author":""}
+{"qid":"k019","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/004-JavaWeb/001-JSP/001-JSP入门/index.md"],"question":"","author":""}
+{"qid":"k020","kind":"title","dir":"docs","expect_paths":["docs/001-计佬常識/002-设计模式/005-面向对象设计原则/002-设计原则/005-【SOLID】依赖倒置原则/index.md"],"question":"","author":""}
+{"qid":"k021","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/003-洛谷/007-Pkkksc考前临时抱佛脚/index.md"],"question":"","author":""}
+{"qid":"k022","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/003-Docker的常用命令/index.md"],"question":"","author":""}
+{"qid":"k023","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/005-C++多进程与多线程/001-C语言版/003-线程同步序言/index.md"],"question":"","author":""}
+{"qid":"k024","kind":"title","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/003-Linux进阶篇/001-Shell编程/008-shell函数/index.md"],"question":"","author":""}
+{"qid":"k025","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/012-Stream流及常用API/003-日期时间/index.md"],"question":"","author":""}
+{"qid":"k026","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/006-C++八嘎日志/002-类型转换/001-w丶char与char/index.md"],"question":"","author":""}
+{"qid":"k027","kind":"title","dir":"docs","expect_paths":["docs/011-嵌入式/003-ROS/002-发布订阅模式及其实现/index.md"],"question":"","author":""}
+{"qid":"k028","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/004-CMake/008-自定义宏/index.md"],"question":"","author":""}
+{"qid":"k029","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/003-C++新特性/002-C++17常用新特性/018-as丶const/index.md"],"question":"","author":""}
+{"qid":"k030","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/003-洛谷/003-P【NOIP普及组】摆花/index.md"],"question":"","author":""}
+{"qid":"k031","kind":"title","dir":"docs","expect_paths":["docs/011-嵌入式/001-杂项/005-安装ROS/index.md"],"question":"","author":""}
+{"qid":"k032","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/002-Qt中的基础数据类型/001-一、基础类型/index.md"],"question":"","author":""}
+{"qid":"k033","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/004-现代C++元模版/002-类型萃取/index.md"],"question":"","author":""}
+{"qid":"k034","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/002-STL库/001-STL常用数据结构/index.md"],"question":"","author":""}
+{"qid":"k035","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/003-C++新特性/002-C++17常用新特性/017-string丶view/index.md"],"question":"","author":""}
+{"qid":"k036","kind":"title","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/014-【板子】算法模版/005-常用数据结构/004-堆の技巧/index.md"],"question":"","author":""}
+{"qid":"k037","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/003-现代C++项目实战/009-伪随机数生成/index.md"],"question":"","author":""}
+{"qid":"k038","kind":"title","dir":"docs","expect_paths":["docs/007-刷题日志/003-洛谷/001-P【NOIP提高组】方格取数/index.md"],"question":"","author":""}
+{"qid":"k039","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/004-CMake/005-C++静态库与动态库/001-什么是库/001-静态库/001-动态库/index.md"],"question":"","author":""}
+{"qid":"k040","kind":"title","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/005-面向对象丶/005-继承/index.md"],"question":"","author":""}
+{"qid":"k041","kind":"detail","dir":"blog","expect_paths":["blog/2025/05/09/01-项目演示小灶.md"],"question":"","author":"","section":"3. 项目流程"}
+{"qid":"k042","kind":"detail","dir":"blog","expect_paths":["blog/2025/04/22/02-vscode博客模版.md"],"question":"","author":"","section":"VsCode 代码片段 模版"}
+{"qid":"k043","kind":"detail","dir":"ai-docs","expect_paths":["ai-docs/003-AI/002-Agent架构/003-AICR规则事故记忆与业务上下文/index.md"],"question":"","author":"","section":"0x0E AI CR 的模块边界"}
+{"qid":"k044","kind":"detail","dir":"ai-docs","expect_paths":["ai-docs/003-AI/009-AI视觉验证/index.md"],"question":"","author":"","section":"0x06 阈值具体取多少: 先标定, 再分层"}
+{"qid":"k045","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/004-操作系统/003-进程与线程/006-管程、消息通信、屏障等/index.md"],"question":"","author":"","section":"一、管程"}
+{"qid":"k046","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/008-QT连接数据库/001-环境配置/index.md"],"question":"","author":"","section":"测试"}
+{"qid":"k047","kind":"detail","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/006-将本地镜像推送到私有库/index.md"],"question":"","author":"","section":"6.2 将镜像推送到私服库"}
+{"qid":"k048","kind":"detail","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/003-未分类题解/007-最长回文子序列/index.md"],"question":"","author":"","section":"思路2 [选或不选]"}
+{"qid":"k049","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/002-初识java/001-第一个java程序和三种注释/index.md"],"question":"","author":"","section":"代码"}
+{"qid":"k050","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/003-【数据结构】线性表/001-线性表/index.md"],"question":"","author":"","section":"顺序存储结构"}
+{"qid":"k051","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/010-集合与泛型/002-Collection接口/index.md"],"question":"","author":"","section":"AbstractCollection"}
+{"qid":"k052","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/005-计算机组成原理/007-第六章IO设备/001-外部设备及总线/index.md"],"question":"","author":"","section":"外部设备"}
+{"qid":"k053","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/005-C++多进程与多线程/002-C++版/007-多线程异步操作/index.md"],"question":"","author":"","section":"最终总结"}
+{"qid":"k054","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/800-源码阅读/001-雅兰亭库/001-C++无宏反射研究/细节研究.md"],"question":"","author":"","section":"一、判断成员个数"}
+{"qid":"k055","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/003-【数据结构】线性表/007-链式存储结构丶双向循环链表/index.md"],"question":"","author":"","section":"代码实现"}
+{"qid":"k056","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/004-Web前端/006-Vue/001-基础知识/005-丶事件处理/index.md"],"question":"","author":"","section":"6.3 方法事件处理器"}
+{"qid":"k057","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/006-C++八嘎日志/003-编码问题/002-VS编译编码问题/index.md"],"question":"","author":"","section":"utf-8 编译"}
+{"qid":"k058","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/002-设计模式/009-行为型模式/011-访问者模式/index.md"],"question":"","author":"","section":"概念"}
+{"qid":"k059","kind":"detail","dir":"docs","expect_paths":["docs/003-游戏引擎/001-虚幻引擎/002-蓝图/003-第三章/002-丶变量详解数组、集、映射/index.md"],"question":"","author":"","section":"3.2.3 存储变量的数据结构"}
+{"qid":"k060","kind":"detail","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/003-未分类题解/022-基于陈述统计最多好人数/index.md"],"question":"","author":"","section":"示例 1："}
+{"qid":"k061","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/004-CMake/001-认识并编写第一个CMake/index.md"],"question":"","author":"","section":"Windows"}
+{"qid":"k062","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/007-【算法】动态规划/005-状态机dp买卖股票的最佳时机/index.md"],"question":"","author":"","section":"恰好交易k次"}
+{"qid":"k063","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/003-JavaのMysql数据库/002-反射/index.md"],"question":"","author":"","section":"Class类"}
+{"qid":"k064","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/005-计算机组成原理/004-第三章计算机算术运算/003-定点数除法/index.md"],"question":"","author":"","section":"回顾: 十进制除法"}
+{"qid":"k065","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/014-【板子】算法模版/005-常用数据结构/003-栈の技巧/index.md"],"question":"","author":"","section":"3. 分层栈"}
+{"qid":"k066","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/005-Maven/005-依赖管理/index.md"],"question":"","author":"","section":"依赖配置与依赖传递"}
+{"qid":"k067","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/005-Maven/003-手动创建maven工程/index.md"],"question":"","author":"","section":"创建目录结构"}
+{"qid":"k068","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/003-C++新特性/003-C++20常用新特性/008-并发/index.md"],"question":"","author":"","section":"概述"}
+{"qid":"k069","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/002-设计模式/007-创建型模式/004-单例模式/index.md"],"question":"","author":"","section":"单例模式的结构"}
+{"qid":"k070","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/004-Web前端/002-HTML/005-新增元素与属性/index.md"],"question":"","author":"","section":"全局属性"}
+{"qid":"k071","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/002-设计模式/003-初识设计模式/index.md"],"question":"","author":"","section":"小结"}
+{"qid":"k072","kind":"detail","dir":"docs","expect_paths":["docs/003-游戏引擎/001-虚幻引擎/002-蓝图/002-第二章/018-丶拉怪机制，怪物攻击玩家、伤害源、黑板/index.md"],"question":"","author":"","section":"2.18.2 伤害源"}
+{"qid":"k073","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/014-【板子】算法模版/007-数学/003-【解析几何】直线/index.md"],"question":"","author":"","section":"一、计算直线解析式"}
+{"qid":"k074","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/004-操作系统/004-内存管理/004-多级页表和页面置换算法/index.md"],"question":"","author":"","section":"一、针对大内存的页表"}
+{"qid":"k075","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/001-C++基础/001-面向对象/001-基本语法/index.md"],"question":"","author":"","section":"1.3 继承"}
+{"qid":"k076","kind":"detail","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/004-第397场周赛/004-Q4丶3149找出分数最低的排列/index.md"],"question":"","author":"","section":"暴力"}
+{"qid":"k077","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/004-操作系统/002-操作系统总览/003-操作系统发展史/index.md"],"question":"","author":"","section":"0. 总览"}
+{"qid":"k078","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/007-【算法】动态规划/002-【题型】背包问题/index.md"],"question":"","author":"","section":"01背包 问题"}
+{"qid":"k079","kind":"detail","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/007-现代C++QT/005-QML/015-信号与槽/index.md"],"question":"","author":"","section":"2. Connections 优雅绑定槽"}
+{"qid":"k080","kind":"detail","dir":"docs","expect_paths":["docs/001-计佬常識/002-设计模式/008-结构型模式/004-装饰模式/index.md"],"question":"","author":"","section":"装饰模式的实现"}
+{"qid":"k081","kind":"cross","dir":"blog","expect_paths":["blog/2025/11/08/01_速记之前遇到的msvc和gcc八嘎.md","blog/2025/11/01/01_MSVC屎山代码发力了.md"],"question":"","author":""}
+{"qid":"k082","kind":"cross","dir":"blog","expect_paths":["blog/2025/12/13/01_MSVC_ICE.md","blog/2025/12/28/01_博客更新日志和计划.md"],"question":"","author":""}
+{"qid":"k083","kind":"cross","dir":"ai-docs","expect_paths":["ai-docs/003-AI/003-Agent-Harness/002-oh-my-pi原生调试与代码审查/index.md","ai-docs/003-AI/003-Agent-Harness/003-DSH/002-DSH-Runtime设计思想插件树与事件日志/index.md"],"question":"","author":""}
+{"qid":"k084","kind":"cross","dir":"ai-docs","expect_paths":["ai-docs/007-音视频特效/002-特效风格设计/004-设计规律/index.md","ai-docs/007-音视频特效/002-特效风格设计/003-字体的选择/index.md"],"question":"","author":""}
+{"qid":"k085","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/004-现代C++元模版/004-范围视图/index.md","docs/002-程序语言/001-C++/003-现代C++/004-现代C++元模版/003-auto/index.md"],"question":"","author":""}
+{"qid":"k086","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/001-QT入门/002-二、Qt中的窗口类/index.md","docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/001-QT入门/004-四、Qt中的内存回收机制/index.md"],"question":"","author":""}
+{"qid":"k087","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/002-第395场周赛/003-Q3丶3133数组最后一个元素的最小值/index.md","docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/002-第395场周赛/004-Q4丶3134找出唯一性数组的中位数/index.md"],"question":"","author":""}
+{"qid":"k088","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/004-Web前端/004-JavaScript/003-BOM和DOM/003-周期函数和延迟函数/index.md","docs/002-程序语言/004-Web前端/004-JavaScript/003-BOM和DOM/004-DOM操作/index.md"],"question":"","author":""}
+{"qid":"k089","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/007-第400场周赛/002-Q2丶3169无需开会的工作日/index.md","docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/007-第400场周赛/004-Q4丶3171找到按位或最接近K的子数组/index.md"],"question":"","author":""}
+{"qid":"k090","kind":"cross","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/011-【算法】数学/007-进制转换/index.md","docs/001-计佬常識/001-数据结构与算法/011-【算法】数学/005-曼哈顿距离转切比雪夫距离/index.md"],"question":"","author":""}
+{"qid":"k091","kind":"cross","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/011-【算法】数学/002-质数/001-判断质数/index.md","docs/001-计佬常識/001-数据结构与算法/011-【算法】数学/002-质数/002-质因数分解/index.md"],"question":"","author":""}
+{"qid":"k092","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/008-服务管理/002-chkconfig指令/index.md","docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/008-服务管理/004-firewall防火墙指令/index.md"],"question":"","author":""}
+{"qid":"k093","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/002-STL库/005-声明时初始化二维向量/index.md","docs/002-程序语言/001-C++/002-tmp丶C++丶memo/002-STL库/002-array/index.md"],"question":"","author":""}
+{"qid":"k094","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/002-Java基础/010-集合与泛型/009-Map接口/index.md","docs/002-程序语言/002-Java/002-Java基础/010-集合与泛型/008-比较器接口/index.md"],"question":"","author":""}
+{"qid":"k095","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/001-第394场周赛/004-Q4丶3123最短路径中的边/index.md","docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/001-第394场周赛/002-Q2丶3121统计特殊字母的数量II/index.md"],"question":"","author":""}
+{"qid":"k096","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/003-Linux进阶篇/001-Shell编程/002-shell的注释/index.md","docs/004-DevOps与版本控制/001-Linux/003-Linux进阶篇/001-Shell编程/006-shell中的循环/index.md"],"question":"","author":""}
+{"qid":"k097","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/008-第401场周赛/003-Q3丶3180执行操作可获得的最大总奖励I/index.md","docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/008-第401场周赛/002-Q2丶3179K秒后第N个元素的值/index.md"],"question":"","author":""}
+{"qid":"k098","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/001-基本常识/011-Linux帮助指令/index.md","docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/001-基本常识/005-Linux关机重启/index.md"],"question":"","author":""}
+{"qid":"k099","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/005-Qt中的基础窗口类/001-一、QWidget/index.md","docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/005-Qt中的基础窗口类/002-二、QDialog/index.md"],"question":"","author":""}
+{"qid":"k100","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/007-进程管理/003-Linux查看进程树/index.md","docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/007-进程管理/002-Linux进程相关指令/index.md"],"question":"","author":""}
+{"qid":"k101","kind":"cross","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/003-【数据结构】线性表/006-链式存储结构丶循环链表【改】/index.md","docs/001-计佬常識/001-数据结构与算法/003-【数据结构】线性表/011-顺序存储结构丶动态长度的数组栈/index.md"],"question":"","author":""}
+{"qid":"k102","kind":"cross","dir":"docs","expect_paths":["docs/003-游戏引擎/001-虚幻引擎/002-蓝图/001-第一章/009-丶地图触发器，摄像机控制，后期盒子，关卡蓝图/index.md","docs/003-游戏引擎/001-虚幻引擎/002-蓝图/001-第一章/001-丶虚幻引擎的安装与文件命名规范与版本管理/index.md"],"question":"","author":""}
+{"qid":"k103","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/002-tmp丶C++丶memo/003-C++新特性/003-C++20常用新特性/005-chrono/index.md","docs/002-程序语言/001-C++/002-tmp丶C++丶memo/003-C++新特性/003-C++20常用新特性/003-三向比较运算符/index.md"],"question":"","author":""}
+{"qid":"k104","kind":"cross","dir":"docs","expect_paths":["docs/006-数据库/001-MySQL数据库/002-基础篇/002-MySQL安装/index.md","docs/006-数据库/001-MySQL数据库/002-基础篇/001-初识数据库/index.md"],"question":"","author":""}
+{"qid":"k105","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/006-第399场周赛/004-Q4丶3165不包含相邻元素的子序列的最大和/index.md","docs/007-刷题日志/002-力扣/002-力扣周赛霊解/001-周赛/006-第399场周赛/001-Q1丶3162优质数对的总数I/index.md"],"question":"","author":""}
+{"qid":"k106","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/002-Java/006-Spring/001-第一章Spring框架的概述以及Spring基于XMl的IOC配置/004-Spring对bean的管理方式/index.md","docs/002-程序语言/002-Java/006-Spring/001-第一章Spring框架的概述以及Spring基于XMl的IOC配置/003-IOC的概念和作用/index.md"],"question":"","author":""}
+{"qid":"k107","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/008-QT连接数据库/002-Qt数据库操作/index.md","docs/002-程序语言/001-C++/005-C++第三方库/003-QT【学习自大丙】/002-QT基础/005-Qt中的基础窗口类/003-三、QDialog的子类/index.md"],"question":"","author":""}
+{"qid":"k108","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/001-灵神の題単/004-动态规划丶/003-网格图DP/001-地下城游戏/index.md","docs/007-刷题日志/002-力扣/001-灵神の題単/004-动态规划丶/002-最大子数组和/003-拼接数组的最大分数/index.md"],"question":"","author":""}
+{"qid":"k109","kind":"cross","dir":"docs","expect_paths":["docs/010-面试/操作系统面试知识点图解.md","docs/010-面试/数据库面试知识点图解.md"],"question":"","author":""}
+{"qid":"k110","kind":"cross","dir":"docs","expect_paths":["docs/007-刷题日志/002-力扣/001-灵神の題単/001-位运算丶/005-拆位、贡献法/001-汉明距离总和/index.md","docs/007-刷题日志/002-力扣/001-灵神の題単/001-位运算丶/005-拆位、贡献法/003-所有数对的异或和/index.md"],"question":"","author":""}
+{"qid":"k111","kind":"cross","dir":"docs","expect_paths":["docs/003-游戏引擎/001-虚幻引擎/002-蓝图/001-第一章/003-丶修改派生缓存路径/index.md","docs/003-游戏引擎/001-虚幻引擎/002-蓝图/001-第一章/007-丶蓝图调试，两种延迟，用类型转换判断角色/index.md"],"question":"","author":""}
+{"qid":"k112","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/002-高性能并行编程与优化/004-四、从汇编角度看编译器优化/index.md","docs/002-程序语言/001-C++/003-现代C++/002-高性能并行编程与优化/003-三、模版元编程与函数式/index.md"],"question":"","author":""}
+{"qid":"k113","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/008-Docker中常见软件的常规安装/003-安装redis/index.md","docs/004-DevOps与版本控制/002-Docker容器/003-Docker基础篇/008-Docker中常见软件的常规安装/002-安装mysql/index.md"],"question":"","author":""}
+{"qid":"k114","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/004-CMake/006-日志/index.md","docs/002-程序语言/001-C++/004-CMake/005-C++静态库与动态库/003-在程序中链接静态库/index.md"],"question":"","author":""}
+{"qid":"k115","kind":"cross","dir":"docs","expect_paths":["docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/002-常用命令/001-Linux文件【目录】相关的指令/index.md","docs/004-DevOps与版本控制/001-Linux/002-Linux基础篇/002-常用命令/004-Linux解压与压缩指令/index.md"],"question":"","author":""}
+{"qid":"k116","kind":"cross","dir":"docs","expect_paths":["docs/005-中间件/001-Redis/002-入门使用篇/004-Redis的发布和订阅/index.md","docs/005-中间件/001-Redis/002-入门使用篇/001-Redis简介与安装/index.md"],"question":"","author":""}
+{"qid":"k117","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/003-现代C++/007-现代C++QT/005-QML/012-ListView基础/index.md","docs/002-程序语言/001-C++/003-现代C++/007-现代C++QT/005-QML/016-QML与C++交互/index.md"],"question":"","author":""}
+{"qid":"k118","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/001-C++/004-CMake/011-在静态库中链接动态库/index.md","docs/002-程序语言/001-C++/004-CMake/005-C++静态库与动态库/002-CMake制作静态/001-动态库/index.md"],"question":"","author":""}
+{"qid":"k119","kind":"cross","dir":"docs","expect_paths":["docs/001-计佬常識/001-数据结构与算法/005-【数据结构】图/002-图的存储/index.md","docs/001-计佬常識/001-数据结构与算法/005-【数据结构】图/005-最小生成树/002-Kruskal算法/index.md"],"question":"","author":""}
+{"qid":"k120","kind":"cross","dir":"docs","expect_paths":["docs/002-程序语言/004-Web前端/005-jQuery/003-jQuery操作元素/index.md","docs/002-程序语言/004-Web前端/005-jQuery/002-jQuery选择器/index.md"],"question":"","author":""}
