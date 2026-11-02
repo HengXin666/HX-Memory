@@ -12,6 +12,8 @@ import { isHeuristicRulePlaceholder } from "../kernel/rule-shape.ts";
 import { looksUnfinished } from "../kernel/completion-shape.ts";
 // 项目可见性的偏序判定 (祖先链)  与捕获/召回/绑定共用同一口径, 不在这里另写一份。
 import { lineageVisible, type ProjectLineage } from "../kernel/project-lineage.ts";
+// 时间 × 置信度 (2026-11-01): 同话题新压旧 + 老条目往后排, 见 kernel/temporal.ts。
+import { retentionOf, supersedeByRecency } from "../kernel/temporal.ts";
 
 /**
  * always-on 选择的入参。
@@ -48,6 +50,11 @@ export interface AlwaysOnOptions {
    * 缺省不设上限 (undefined)  老调用点行为一字不变。
    */
   maxEntries?: number;
+  /**
+   * 当前时间 (ISO)。给了就启用时间维度: 同话题被更新的条目不注入 (进 blocked, 成因 superseded),
+   * 其余按 kind 分档分 × 保持率 R(age) 排序。缺省 = 不看时间 (老调用点与测试行为一字不变)。
+   */
+  now?: string;
 }
 
 /**
@@ -88,6 +95,7 @@ export function selectAlwaysOn(
  * 为什么拆成两个出口而不是改 `selectAlwaysOn` 的返回类型:
  * 后者会波及 10+ 个调用点 (含大量测试), 而其中只有**面板/账本**需要"为什么没全注入"。
  * 两者共用同一实现, 因此**不存在口径分叉** (本项目反复强调的坑)。
+ * .agents/notes/implemented/feature/2026-11-01-temporal-confidence-decay.md
  */
 export function selectAlwaysOnDetailed(
   entries: readonly MemoryEntry[],
@@ -95,7 +103,8 @@ export function selectAlwaysOnDetailed(
 ): AlwaysOnSelection {
   const budget = opts.budgetTokens ?? 400;
   const ratio = Math.min(1, Math.max(0, opts.ruleBudgetRatio ?? 0.6));
-  const scored = entries
+  const supersededBlocked: BudgetBlocked[] = [];
+  const candidates = entries
     .filter((e) => {
       if ((e.status ?? "active") !== "active") return false;
       // ⚠ 2026-10-06 新增 (用户实测指控): **形状上是"还没办的祈使句"的条目不进常驻通道**。
@@ -154,13 +163,25 @@ export function selectAlwaysOnDetailed(
       // 我第一版在这里写成 `return false` (想收紧"只认 global 规则"), 结果把 global fact
       // 一起误杀、把那条对照测试打红  收紧 scope 与收紧 kind 是两件事, 不能顺手合并。
       return true;
+    });
+  // 同话题新压旧只在给了 now 时启用 (与排序的时间维度同一开关), 且只在**可见候选**之间比较:
+  // 未确认的规则 / 别的项目的决策不是候选, 不能反过来压住一条已确认的。
+  const superseded = opts.now ? supersedeByRecency(candidates) : new Map<string, { by: string }>();
+  const scored = candidates
+    .filter((e) => {
+      const by = superseded.get(e.id);
+      if (!by) return true;
+      supersededBlocked.push({ id: e.id, kind: e.kind, content: e.content, tokens: opts.estimate(e.content) + 8, reason: "superseded", supersededBy: by.by });
+      return false;
     })
     .map((e) => ({
       entry: e,
       // 规则优先级最高 (跨项目不变量), 其次偏好/决策, 最后事实; importance 作为微调。
+      // 给了 now 时整体乘保持率: 同 kind 内, 昨天定的 (R≈0.97) 稳定排在去年定的 (R≈floor) 前面。
       score:
-        (e.kind === "rule" ? 100 : e.kind === "preference" ? 30 : e.kind === "decision" ? 20 : 10) +
-        (e.importance ?? 5),
+        ((e.kind === "rule" ? 100 : e.kind === "preference" ? 30 : e.kind === "decision" ? 20 : 10) +
+          (e.importance ?? 5)) *
+        (opts.now ? retentionOf(e, opts.now) : 1),
     }))
     // ⚠ **2026-09-27 修 (真实缺陷): 排序必须带确定性 tiebreak, 不能只比 score**。
     //
@@ -249,7 +270,7 @@ export function selectAlwaysOnDetailed(
   //
   // 只在"规则还有候选被卡住"时才做这步 (否则纯属多算一遍)。
   fill(others, budget);
-  return { entries: out, blocked: budgetBlocked };
+  return { entries: out, blocked: [...budgetBlocked, ...supersededBlocked] };
 }
 
 /** 一条"本是候选但因配额没进来"的条目。 */
@@ -277,7 +298,9 @@ export interface BudgetBlocked {
    *   · `over-entry-cap`   预算还有, 但**条数上限**已满 (maxEntries)。
    *     处置与前两者不同: 想让它进来只能调高上限或删掉更靠前的条目, 而不是放预算。
    */
-  reason: "over-total-budget" | "over-group-cap" | "over-entry-cap";
+  reason: "over-total-budget" | "over-group-cap" | "over-entry-cap" | "superseded";
+  /** reason 为 superseded 时: 压住它的同话题更新条目。 */
+  supersededBy?: string;
 }
 
 /**

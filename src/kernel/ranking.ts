@@ -9,6 +9,7 @@
 import type { MemoryEntry, MemoryKind } from "./types.ts";
 import { qualityFactor } from "./feedback.ts";
 import { tokenSet } from "./cjk.ts";
+import { NORMATIVE_KINDS, retentionOf } from "./temporal.ts";
 
 /** 一路召回结果 (已按该通道自己的分数降序)。 */
 export interface RankedList {
@@ -124,6 +125,10 @@ export interface ScoreInput {
  */
 export function compositeScore(input: ScoreInput): number {
   const { entry, now } = input;
+  // ⚠ 2026-11-01 (kernel/temporal.ts): 规范性条目 (rule/decision/preference) 改用"时间 × 置信度"保持率,
+  // 基线是用户最后一次断言它的时间 (不看 lastHitAt), 且不吃 reinforcement  它们的命中几乎全来自
+  // 每轮的常驻注入, 让"被注入"算作"变年轻"会使越老的规则越难忘 (真库规则平均 reinforcement 122)。
+  const normative = NORMATIVE_KINDS.has(entry.kind);
   const halfLife = HALF_LIFE_DAYS[entry.kind] ?? 180;
   const baseline = entry.lastHitAt ?? entry.ts.validAt;
   /**
@@ -131,7 +136,7 @@ export function compositeScore(input: ScoreInput): number {
    * .agents/notes/implemented/simplification/2026-09-12-split-hybrid-assembly.md
    */
   const ageDays = Math.max(0, (Date.parse(now) - Date.parse(baseline)) / 86_400_000);
-  const decay = timeDecayFactor(Number.isFinite(ageDays) ? ageDays : 0, halfLife);
+  const decay = normative ? retentionOf(entry, now) : timeDecayFactor(Number.isFinite(ageDays) ? ageDays : 0, halfLife);
   const importance = clamp01(((entry.importance ?? 5) - 1) / 9);
   const importanceFactor = 0.6 + 0.4 * importance;
   const confidenceFactor = 0.7 + 0.3 * clamp01(entry.confidence ?? 0.7);
@@ -163,7 +168,7 @@ export function compositeScore(input: ScoreInput): number {
       kindFactor(entry.kind) *
       importanceFactor *
       confidenceFactor *
-      reinforcementFactor(entry.reinforcement) *
+      (normative ? 1 : reinforcementFactor(entry.reinforcement)) *
       quality +
     (input.boost ?? 0)
   );
