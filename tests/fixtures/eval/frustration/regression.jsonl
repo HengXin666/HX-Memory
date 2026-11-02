@@ -1,0 +1,16 @@
+{"id":"r01","text":"你他妈改错文件了","expect":"hit","kind":"insult","source":"user-2026-11-01"}
+{"id":"r02","text":"傻逼, 又错了","expect":"hit","kind":"insult+correction","source":"user-2026-11-01"}
+{"id":"r03","text":"你他妈是不是傻","expect":"hit","kind":"insult","source":"user-2026-11-01"}
+{"id":"r04","text":"这什么垃圾代码","expect":"hit","kind":"insult","source":"user-2026-11-01"}
+{"id":"r05","text":"我操, 又坏了","expect":"open","kind":"frustration","source":"user-2026-11-01","note":"A 与当前模型都判 MISS; 196 条标注里 0 条含「我操/卧槽/我靠」, 按规矩不能凭记忆加词。只要求「A 判中则新模型必判中」"}
+{"id":"r06","text":"不对, 我说的是A不是B","expect":"hit","kind":"correction","source":"user-2026-11-01"}
+{"id":"r07","text":"说过多少次了别再加注释","expect":"hit","kind":"correction","source":"user-2026-11-01"}
+{"id":"s01","text":"不对","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s02","text":"错了","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s03","text":"又错了","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s04","text":"搞错了","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s05","text":"不是这个意思","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s06","text":"别这样做","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"s07","text":"这不对吧","expect":"hit","kind":"correction","source":"synthetic"}
+{"id":"p01","text":"我操, 又坏了","expect":"hit","kind":"posterior","next_assistant_first":"你说得对，我把文件改坏了，马上恢复。","source":"user-2026-11-01","note":"实时路 MISS, 轮末首句以「你说得对」开头 ⇒ compensateAtTurnEnd 必须补回"}
+{"id":"p02","text":"帮我看下这个函数","expect":"miss","kind":"posterior-negative","next_assistant_first":"好的，这个函数做了三件事。","source":"synthetic","note":"首句没有后验特征 ⇒ 不得补回"}

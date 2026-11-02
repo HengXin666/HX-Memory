@@ -66,6 +66,8 @@ export interface NegativityWiring {
   };
   /** 判官兜底 (async; 词表未命中时才值得调)。返回 null = 没判定 (未启用/不可用/熔断)。 */
   judge(text: string): Promise<NegativeSignal | null>;
+  /** 当前编译好的词表 (设置面板改动当轮生效)。挫折链路 (src/frustration) 用同一份词表。 */
+  compiled(): CompiledNegativity;
   /**
    * **命中即注入同类铁律** (用户实测诉求: "是不是别人都骂你了, 你为什么不记住这次的教训")。
    *
@@ -117,6 +119,7 @@ export function wireNegativity(deps: NegativityWiringDeps): NegativityWiring {
 
   return {
     capture,
+    compiled,
     status: () => ({
       words: compiled().entries.length,
       invalid: compiled().invalid,
