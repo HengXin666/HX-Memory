@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
+    // 文件写入通道覆盖文件时会在同目录留 .hark-bak/ 备份 (通道行为, 不是仓库内容); 备份里的旧 *.test.ts 不许当用例跑。
+    exclude: ["**/node_modules/**", "**/.hark-bak/**"],
     environment: "node",
   },
 });

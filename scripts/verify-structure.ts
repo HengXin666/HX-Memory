@@ -285,6 +285,11 @@ const ALLOWED_DANGLING_DIRS: readonly string[] = [
   // 另一个悬空文件引用, 它就从闭包里"可达"了  于是豁免**链式传染**, 把一条漏登记的
   // 模块也一起放过去。按目录豁免没有这个问题 (整个子树的内部引用不构成"从入口可达")。
   "src/wiki/",
+  // 知识库同步器 (2026-11-02 从 src/app/ 移来): 只由面板 (scripts/panel-server.ts) 与评测脚本 (scripts/eval/kb-*.ts) 使用,
+  // 刻意不接进 DSH 产品入口 (知识库不参与每轮注入, 见 trigger/always-on.ts「doc 显式排除」)。
+  "src/kb/",
+  // 代码沉淀 (coding/precipitate.ts): 只有单测引用, 尚未接线; 登记 = 声明「我知道它没接线」。
+  "src/coding/",
 ];
 
 /** 模块间的 import 图 (只解析相对 specifier; 本仓库 TS 里常写 ".js" 后缀, 需剥掉再试)。 */

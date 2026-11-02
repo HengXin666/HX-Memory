@@ -1,7 +1,7 @@
 <!-- agent-notes:start -->
 ## Agent Notes 红线
 
-改声明前先读其顶部多行注释引用的 `.agents/notes/...md`. 每条决策只保留一篇 note, `## Code` 逐行列仓库相对精确文件路径, 每个直接父目录只选一个代表文件, 在该文件的声明顶部反向引用该 note. 禁止 glob, 花括号和文件头占位引用
+改声明前先读其顶部多行注释引用的 `.agents/notes/...md`. 每条决策只保留一篇 note, `## Code` 逐行列仓库相对精确文件路径, 每个直接父目录只选一个代表文件, 在该文件的声明顶部反向引用该 note. 禁止 glob, 花括号和文件头占位引用 <!-- verify-docs:allow (`.agents/notes/...md` 是写法示意, 不是具体文件) -->
 
 代码或 note 改动必须在同一 diff 配对, 同目录兄弟代码也算该决策的代码端. 单边改动必须 review, 不可用无关 note 或豁免文本放行. 过时事实就地改写, 废弃 note 直接删除并修复所有引用. `## Alternatives considered` 必须包含什么都不做 / 复用现有, 每项先给最强理由再否决
 

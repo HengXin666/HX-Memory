@@ -16,7 +16,7 @@
 | **dsh-memory** (npm 官方命名) | 0.1.0 | `npm pack dsh-memory@0.1.0` 解包全文通读 | 单文件 lib/index.js, 420 行 |
 | **@jacklika/dsh-memory** (bundle) | 0.1.7-rc.11 | `npm pack` 三个成员包解包通读 | bundle 声明 8 行 + curator 239 行 + filesystem 646 行 |
 | **dsh-longmemory-plugin** (本机已装) | 0.2.0 | 本机 `~/.dsh/plugins/` 全文通读 + 既有对比文档 | 单文件 431 行 |
-| 上游 (mem0 / Graphiti / Letta / MIRIX / LlamaIndex…) | — | 独立调研报告 `/tmp/up/upstream-memory-playbook.md` (92 URL) | — |
+| 上游 (mem0 / Graphiti / Letta / MIRIX / LlamaIndex…) | — | 独立调研报告 (92 URL; 原文件在临时目录 /tmp/up/ 下, 未入仓库, 已不可得) | — |
 
 > ⚠ **两个不同的包都叫 `dsh-memory`**: npm 上 `dsh-memory@0.1.0` (作者 bbnopromo) 是**单文件 SQLite 实现**;
 > `@jacklika/dsh-memory` 是**Obsidian vault + 写阶梯**的 bundle。两者形态完全不同, 下面分别列。

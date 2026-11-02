@@ -151,6 +151,15 @@ if ! pnpm run verify-bench-snapshot; then
   exit 1
 fi
 
+# 评测页随门禁刷新 (2026-11-01): 每次 verify 跑完, docs/eval-report.html 都按当前 eval-out/*.json 重渲染,
+# 并核对页面真的被重写 (修改时间与页内「生成于」都不早于本步开始)。
+# 只重画已有的评测结果, 不重跑评测 (评测要读博客/会话, 不适合放进每次门禁)。
+step "eval report: 评测页随 verify 刷新 (report-refresh-check)"
+if ! bash scripts/eval/report-refresh-check.sh; then
+  echo "[verify] FAILED: report-refresh-check (评测页没有刷新; 跑 bash scripts/eval/report-refresh-check.sh 看原因)" >&2
+  exit 1
+fi
+
 # ---- 覆盖总结: 显式列出**跑过什么** (而不只是"没失败") ----
 printf "%s\n" "[verify] ---- 覆盖总结:  ${#COVERED[@]} 项检查 ----"
 for c in "${COVERED[@]}"; do

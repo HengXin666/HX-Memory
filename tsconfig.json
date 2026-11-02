@@ -25,5 +25,5 @@
     "scripts/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/adapters/dsh/client"]
+  "exclude": ["node_modules", "dist", "src/adapters/dsh/client", "**/.hark-bak/**", "scripts/panel-ui.ts", "scripts/panel-vite.config.ts"]
 }

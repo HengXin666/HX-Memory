@@ -25965,3 +25965,12 @@ A 纯词面 [词面可解] R@1:  0.6639 → 0.6545   (-0.0094)
 | verify-structure | **129 源文件 + 21 脚本** |
 | RPC 覆盖 | **25/25** |
 | 新增 | `kind:"doc"` / `scripts/kb-index.ts` / `truth-files.ts` / `files-page.tsx` / `gateway-mount.ts` + 2 测试文件 |
+## report-refresh-check: 评测页随 verify 刷新 (2026-11-01)
+
+`scripts/verify.sh` 新增一步 `eval report`, 调 `scripts/eval/report-refresh-check.sh`: 跑 `scripts/eval/report.ts`, 再核对 `docs/eval-report.html` 的修改时间和页内「生成于」都不早于本步开始。它能失败的证据 (两种坏法都退出 1):
+
+| 坏法 | 输出 | 退出码 |
+| --- | --- | --- |
+| 把 `docs/eval-report.html` 占成目录 (写不进) | `评测页生成失败 (不影响评测结果): Error: EISDIR …` / `[report-refresh-check] FAILED: report.ts 退出码 3` | 1 |
+| 把 report.ts 换成只写旧时间的桩 | `[report-refresh-check] FAILED: 页内生成时间 '2020-01-01T00:00:00.000' 早于开始 …` | 1 |
+| 正常 | `[report-refresh-check] OK: docs/eval-report.html 已刷新 (生成于 …)` | 0 |

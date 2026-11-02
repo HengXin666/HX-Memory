@@ -48,6 +48,8 @@ const GATE_EVIDENCE: ReadonlyArray<{ step: string; mustMention: readonly string[
   { step: "field-coverage", mustMention: ["verify-field-coverage"], why: "§771 理由里写不存在的机制名 ⇒ 报过期" },
   // ⚠ **它自己**也在门禁里 (第 17 步) ⇒ 必须同样有证据 (§759: 加同步断言时这条才被发现缺失)。
   { step: "gate-evidence", mustMention: ["verify-gate-evidence"], why: "§759 加一条假步 ⇒ 报缺证据 + 退出 1" },
+  // 2026-11-01: 评测页刷新。证据 = 页面路径被占成目录 ⇒ report.ts 退出 3 ⇒ 本步退出 1; 页内生成时间早于开始 ⇒ 退出 1。
+  { step: "eval-report", mustMention: ["report-refresh-check"], why: "页面写不进 / 页内时间是旧的 ⇒ 退出 1 (docs/capture-audit.md)" },
   // `notes: coverage` 是**条件步** (CI 里工作区干净时也跑, 现在由单一 v2 图步骤取代):
   // 它同样用 `step` 登记, 故计入总数。
 ];
