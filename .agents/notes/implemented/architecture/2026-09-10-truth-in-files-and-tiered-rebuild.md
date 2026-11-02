@@ -8,7 +8,7 @@ Decision-ID: truth-in-files-and-tiered-rebuild
 
 - `src/storage/file-store.ts`
 - `src/app/rebuild.ts`
-- `src/kernel/ports.ts`
+- `src/kernel/ports-storage.ts`
 
 ## Problem
 

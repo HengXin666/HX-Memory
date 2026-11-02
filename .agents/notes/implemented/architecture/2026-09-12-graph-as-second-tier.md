@@ -6,7 +6,7 @@ Decision-ID: graph-as-second-tier
 
 ## Code
 
-- `src/retrieval/hybrid.ts`
+- `src/retrieval/hybrid-options.ts`
 
 ## Problem
 

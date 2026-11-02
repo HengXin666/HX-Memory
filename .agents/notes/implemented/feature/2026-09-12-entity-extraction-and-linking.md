@@ -9,7 +9,7 @@ Decision-ID: entity-extraction-and-linking
 - `bench/lib/graph-cases.ts`
 - `src/evolution/link.ts`
 - `src/kernel/entity.ts`
-- `src/retrieval/hybrid.ts`
+- `src/retrieval/hybrid-options.ts`
 
 ## Problem
 

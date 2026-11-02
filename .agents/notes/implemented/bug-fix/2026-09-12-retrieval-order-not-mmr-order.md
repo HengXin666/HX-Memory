@@ -6,7 +6,7 @@ Decision-ID: retrieval-order-not-mmr-order
 
 ## Code
 
-- `src/retrieval/hybrid.ts`
+- `src/retrieval/hybrid-options.ts`
 
 ## Problem
 

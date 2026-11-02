@@ -10,7 +10,7 @@ Decision-ID: entity-reverse-lookup
 ## Code
 
 - `src/kernel/cjk.ts`
-- `src/retrieval/hybrid.ts`
+- `src/retrieval/hybrid-options.ts`
 - `src/storage/file-store.ts`
 
 ## Problem

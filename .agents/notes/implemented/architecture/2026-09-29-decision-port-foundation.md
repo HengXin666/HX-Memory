@@ -8,7 +8,7 @@ Decision-ID: decision-port-foundation
 
 - `src/adapters/decision/fallback.ts`
 - `src/adapters/dsh/decision-wiring.ts`
-- `src/kernel/ports.ts`
+- `src/kernel/ports-storage.ts`
 - `src/wiki/page.ts`
 
 ## Problem

@@ -6,7 +6,7 @@ Decision-ID: four-layer-seams
 
 ## Code
 
-- `src/adapters/dsh/index.ts`
+- `src/adapters/dsh/retrieval-wiring.ts`
 - `src/adapters/dsh/client/rpc.ts`
 - `src/app/stack.ts`
 - `src/kernel/ports.ts`

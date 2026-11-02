@@ -7,7 +7,7 @@ Decision-ID: live-settings-and-doc-gates
 ## Code
 
 - `scripts/verify-docs.ts`
-- `src/adapters/dsh/runtime.ts`
+- `src/adapters/dsh/runtime-types.ts`
 - `src/app/facade.ts`
 
 ## Problem

@@ -7,7 +7,6 @@ Decision-ID: external-engine-ports
 ## Code
 
 - `src/external/host.ts`
-- `src/external/hindsight.ts`
 - `src/adapters/dsh/external-bridge.ts`
 
 ## Problem
