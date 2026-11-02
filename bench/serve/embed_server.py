@@ -7,8 +7,13 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from fastembed import TextEmbedding
 
-print("loading bge-small-zh-v1.5 ...", flush=True)
-MODEL = TextEmbedding(model_name="BAAI/bge-small-zh-v1.5")
+# 模型与端口可由环境变量覆盖 (2026-11-02 FIX-ROUND-2: 朴素基线用 Qwen/Qwen3-Embedding-0.6B):
+#   HX_EMBED_MODEL=Qwen/Qwen3-Embedding-0.6B HX_EMBED_PORT=4399 uv run --no-project --with fastembed python bench/serve/embed_server.py
+MODEL_NAME = os.environ.get("HX_EMBED_MODEL", "BAAI/bge-small-zh-v1.5")
+PORT = int(os.environ.get("HX_EMBED_PORT", "4399"))
+SHORT = MODEL_NAME.split("/")[-1]
+print(f"loading {MODEL_NAME} ...", flush=True)
+MODEL = TextEmbedding(model_name=MODEL_NAME)
 DIM = len(next(iter(MODEL.embed(["warmup"]))))
 print(f"ready, dim={DIM}", flush=True)
 
@@ -16,7 +21,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
         if self.path.rstrip("/").endswith("/models"):
-            body = json.dumps({"object": "list", "data": [{"id": "bge-small-zh-v1.5", "object": "model"}]}).encode()
+            body = json.dumps({"object": "list", "data": [{"id": SHORT, "object": "model"}]}).encode()
             self.send_response(200); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
         else:
@@ -27,10 +32,10 @@ class H(BaseHTTPRequestHandler):
         texts = req.get("input")
         if isinstance(texts, str): texts = [texts]
         vecs = [v.tolist() for v in MODEL.embed(texts or [])]
-        body = json.dumps({"object": "list", "model": req.get("model", "bge-small-zh-v1.5"),
+        body = json.dumps({"object": "list", "model": req.get("model", SHORT),
                            "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vecs)],
                            "usage": {"prompt_tokens": 0, "total_tokens": 0}}).encode()
         self.send_response(200); self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
-HTTPServer(("127.0.0.1", 4399), H).serve_forever()
+HTTPServer(("127.0.0.1", PORT), H).serve_forever()

@@ -1,0 +1,99 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HX-Memory 评测</title><style>
+body{font:14px/1.55 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f6f7f9;color:#1d2330}
+main{max-width:1080px;margin:0 auto;padding:0 20px 60px}
+header{padding:22px 20px;color:#fff;margin-bottom:8px}header.green{background:#1f8a4c}header.red{background:#b42318}header.yellow{background:#b7791f}
+header h1{margin:0 0 6px;font-size:22px}.verdict{font-size:18px;font-weight:600}.sum,.gen{opacity:.92;font-size:13px}
+h2{margin:28px 0 10px;font-size:18px}h3{margin:20px 0 8px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card{background:#fff;border-radius:10px;padding:12px 14px;border-left:6px solid #999;box-shadow:0 1px 2px #0001}
+.card.pass{border-color:#1f8a4c}.card.fail{border-color:#b42318}.card.invalid{border-color:#b7791f}
+.card.untested{border-color:#9aa1ad;background:repeating-linear-gradient(45deg,#fff,#fff 8px,#eef0f3 8px,#eef0f3 16px)}
+.cid{font-weight:700;color:#556}.blk{font-size:11px;background:#1d2330;color:#fff;border-radius:4px;padding:0 5px;margin-left:4px}
+.cname{font-size:13px;color:#445}.cval{font-size:26px;font-weight:700;margin:4px 0}.cthr{font-size:12px;color:#556}
+.cx{font-size:12px;color:#334;margin-top:4px;word-break:break-all}.cscript{font-size:11px;color:#889;margin-top:6px}
+.chart{width:100%;background:#fff;border-radius:10px;padding:6px 0}.grid line{stroke:#e3e6ea}
+line.grid{stroke:#e3e6ea}line.thr{stroke:#1f6feb;stroke-dasharray:4 3}line.thr2{stroke:#d97706;stroke-dasharray:4 3}
+.ax{font-size:11px;fill:#778;text-anchor:middle}.lab{font-size:12px;fill:#223}.lab.chosen{font-weight:700}.val{font-size:11px;fill:#334}
+.bar-r{fill:#3b82f6}.bar-f{fill:#f59e0b}.bar-f.over{fill:#dc2626}line.ci{stroke:#1e3a8a;stroke-width:2}.w-pos{fill:#3b82f6}.w-neg{fill:#9ca3af}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;overflow:hidden;font-size:13px}
+th,td{padding:6px 10px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:top}th{background:#f0f2f5}
+.pick{background:#fff;border-radius:8px;padding:8px 12px}code{background:#eef0f3;padding:0 4px;border-radius:3px}
+</style></head><body><header class="yellow"><h1>HX-Memory 评测</h1><div class="verdict">阻塞项里还有未测 / 无效的: 现在还不能下结论</div>
+<div class="sum">阻塞项: M3 未测 · M5 达标 · K3 达标 · A3 未测</div>
+<div class="sum">全部 15 项: 达标 2 · 未达标 0 · 无效 5 · 未测 8</div>
+<div class="gen">生成于 2026-11-02T15:14:11.052Z · 数据来自 eval-out/*.json · 每个评测脚本跑完自动重生成</div></header><main><h2>记忆</h2><div class="grid"><div class="card untested"><div class="cid">M1</div>
+<div class="cname">记忆命中率 Recall@5</div><div class="cval">未测</div>
+<div class="cthr">阈值 &gt;= 0.80 · <b>未测</b></div>
+
+<div class="cscript">memory-recall.ts</div></div><div class="card invalid"><div class="cid">M2</div>
+<div class="cname">记忆注入有用率</div><div class="cval">—</div>
+<div class="cthr">阈值 &gt;= 0.40 · <b>无效</b></div>
+<div class="cx">口径: citation check on real pre-step ledger + real next answer; strict excludes terms already in the user's message; no judge model</div>
+<div class="cscript">injection-utility.ts</div></div><div class="card untested"><div class="cid">M3 <span class="blk">阻塞项</span></div>
+<div class="cname">失效记忆泄漏率</div><div class="cval">未测</div>
+<div class="cthr">阈值 = 0 · <b>未测</b></div>
+
+<div class="cscript">memory-recall.ts</div></div><div class="card untested"><div class="cid">M4</div>
+<div class="cname">召回延迟 p95</div><div class="cval">未测</div>
+<div class="cthr">阈值 &lt;= 15 ms (N=4000) · <b>未测</b></div>
+
+<div class="cscript">latency.ts</div></div><div class="card pass"><div class="cid">M5 <span class="blk">阻塞项</span></div>
+<div class="cname">并发写完整率</div><div class="cval">1</div>
+<div class="cthr">阈值 = 1.00 · <b>达标</b></div>
+<div class="cx">n = 6</div>
+<div class="cscript">concurrency.ts · 2026-11-02T14:43:06.714Z</div></div></div><h2>知识库</h2><div class="grid"><div class="card untested"><div class="cid">K1</div>
+<div class="cname">博客命中率 Hit@5</div><div class="cval">未测</div>
+<div class="cthr">阈值 &gt;= 0.80 · <b>未测</b></div>
+
+<div class="cscript">kb-retrieval.ts</div></div><div class="card untested"><div class="cid">K2</div>
+<div class="cname">博客排序质量 MRR@10</div><div class="cval">未测</div>
+<div class="cthr">阈值 &gt;= 0.60 · <b>未测</b></div>
+
+<div class="cscript">kb-retrieval.ts</div></div><div class="card pass"><div class="cid">K3 <span class="blk">阻塞项</span></div>
+<div class="cname">博客入库覆盖率</div><div class="cval">1</div>
+<div class="cthr">阈值 = 1.00 · <b>达标</b></div>
+<div class="cx">n = 1022</div>
+<div class="cscript">kb-coverage.ts · 2026-11-02T14:32:44.048Z</div></div><div class="card untested"><div class="cid">K4</div>
+<div class="cname">博客同步延迟</div><div class="cval">未测</div>
+<div class="cthr">阈值 &lt;= 60 s, 删除 0 残留 · <b>未测</b></div>
+
+<div class="cscript">kb-sync.ts</div></div></div><h2>挫折</h2><div class="grid"><div class="card invalid"><div class="cid">A1</div>
+<div class="cname">骂人检测召回率</div><div class="cval">0.269</div>
+<div class="cthr">阈值 &gt;= 0.90 · <b>无效</b></div>
+<div class="cx">n = 52</div><div class="cx">TP 14 · FN 38 · FP 6 · TN 138</div><div class="cx">无效原因: sample count 196 is below the EVAL.md 2.3 floor of 600; agreement.json missing (only one annotator, kappa not measured)</div><div class="cx">按你的口径 (不用 LLM 即达标): 满足</div><div class="cx">口径: frozen</div>
+<div class="cscript">frustration-detect.ts · 2026-11-02T14:43:05.159Z</div></div><div class="card invalid"><div class="cid">A2</div>
+<div class="cname">骂人检测误报率</div><div class="cval">0.042</div>
+<div class="cthr">阈值 &lt;= 0.05 · <b>无效</b></div>
+<div class="cx">n = 144</div><div class="cx">TP 14 · FN 38 · FP 6 · TN 138</div><div class="cx">无效原因: sample count 196 is below the EVAL.md 2.3 floor of 600; agreement.json missing (only one annotator, kappa not measured)</div><div class="cx">口径: frozen</div>
+<div class="cscript">frustration-detect.ts · 2026-11-02T14:43:05.159Z</div></div><div class="card untested"><div class="cid">A3 <span class="blk">阻塞项</span></div>
+<div class="cname">单条消息重复触发数</div><div class="cval">未测</div>
+<div class="cthr">阈值 = 1 · <b>未测</b></div>
+
+<div class="cscript">frustration-detect.ts --replay</div></div><div class="card invalid"><div class="cid">C1</div>
+<div class="cname">纠正沉淀有效率</div><div class="cval">—</div>
+<div class="cthr">阈值 &gt;= 0.70 · <b>无效</b></div>
+<div class="cx">n = 0</div><div class="cx">无效原因: lessons file missing: tests/fixtures/eval/frustration/lessons.jsonl (review model not run in this environment, no lessons persisted); lesson count 0 is below the floor of 20; no lessons, C1 cannot be computed</div>
+<div class="cscript">lesson-quality.ts · 2026-11-02T14:43:05.112Z</div></div><div class="card invalid"><div class="cid">C2</div>
+<div class="cname">同类错误复发率下降</div><div class="cval">—</div>
+<div class="cthr">阈值 &gt;= 0.50 · <b>无效</b></div>
+
+<div class="cscript">correction-effect.ts</div></div><div class="card untested"><div class="cid">C3</div>
+<div class="cname">同轮改正率</div><div class="cval">未测</div>
+<div class="cthr">阈值 &gt;= 0.60 · <b>未测</b></div>
+
+<div class="cscript">correction-effect.ts --same-turn</div></div></div><h2>骂人检测选型 (不调用模型)</h2>
+<p>样本 196 条 (正例 52), 40 个会话, 样本哈希 <code>7085d7bb58440619</code>。口径: nested grouped CV by session: outer 8 folds, threshold from inner 4-fold out-of-fold scores at FPR &lt;= 0.05; CIs: session-cluster bootstrap 2000x seed 20261101, percentile 95%。
+蓝条 = 召回 (横线是 95% 区间), 橙条 = 误报率 (红色 = 超过 0.05)。</p><svg viewBox="0 0 760 270" class="chart" role="img"><line x1="230" x2="230" y1="22" y2="262" class="grid"/><text x="230" y="16" class="ax">0</text><line x1="357.5" x2="357.5" y1="22" y2="262" class="grid"/><text x="357.5" y="16" class="ax">0.25</text><line x1="485" x2="485" y1="22" y2="262" class="grid"/><text x="485" y="16" class="ax">0.5</text><line x1="612.5" x2="612.5" y1="22" y2="262" class="grid"/><text x="612.5" y="16" class="ax">0.75</text><line x1="740" x2="740" y1="22" y2="262" class="grid"/><text x="740" y="16" class="ax">1</text><line x1="689" x2="689" y1="22" y2="262" class="thr"/><text x="692" y="260" class="ax">A1 0.90</text><line x1="255.5" x2="255.5" y1="22" y2="262" class="thr2"/><text x="258.5" y="260" class="ax">A2 0.05</text><text x="8" y="44" class="lab chosen">A lexicon (现有词表, 不训练) ← 选中</text><rect x="230" y="30" width="137.3076923076923" height="14" class="bar-r"/><line x1="315.52093118271193" x2="435.287641637551" y1="37" y2="37" class="ci"/><text x="371.30769230769226" y="42" class="val">召回 0.269</text><rect x="230" y="47" width="21.25" height="14" class="bar-f"/><text x="255.25" y="59" class="val">误报 0.042</text><text x="8" y="90" class="lab">B rules (人写特征 + 学权重)</text><rect x="230" y="76" width="186.34615384615384" height="14" class="bar-r"/><line x1="356.48261992763935" x2="485.65571421751395" y1="83" y2="83" class="ci"/><text x="420.3461538461538" y="88" class="val">召回 0.365</text><rect x="230" y="93" width="31.875" height="14" class="bar-f over"/><text x="265.875" y="105" class="val">误报 0.063</text><text x="8" y="136" class="lab">C ngram (2-3 元组 LR 小模型)</text><rect x="230" y="122" width="78.46153846153847" height="14" class="bar-r"/><line x1="270.8387069135015" x2="370.37415231689306" y1="129" y2="129" class="ci"/><text x="312.46153846153845" y="134" class="val">召回 0.154</text><rect x="230" y="139" width="31.875" height="14" class="bar-f over"/><text x="265.875" y="151" class="val">误报 0.063</text><text x="8" y="182" class="lab">D rules + ngram</text><rect x="230" y="168" width="127.5" height="14" class="bar-r"/><line x1="307.6883599833382" x2="424.8542605719467" y1="175" y2="175" class="ci"/><text x="361.5" y="180" class="val">召回 0.250</text><rect x="230" y="185" width="24.791666666666668" height="14" class="bar-f"/><text x="258.79166666666663" y="197" class="val">误报 0.049</text><text x="8" y="228" class="lab">E rules + 词表兜底 (B ∪ A)</text><rect x="230" y="214" width="225.57692307692307" height="14" class="bar-r"/><line x1="391.13372066179926" x2="524.0684225432665" y1="221" y2="221" class="ci"/><text x="459.5769230769231" y="226" class="val">召回 0.442</text><rect x="230" y="231" width="42.5" height="14" class="bar-f over"/><text x="276.5" y="243" class="val">误报 0.083</text></svg>
+<p class="pick">选型: <b>A</b> — FPR 点估计 &lt;= 0.05 且过回归门槛的候选按留出召回排序, A 最高 (召回 0.269, FPR 0.042 [0.015, 0.076]); 淘汰: B (回归句 6/15 &lt; A 15/15, 丢了 A 判中的 r06/r07/s01/s02/s03/s04/s05/s06/s07), C (回归句 2/15 &lt; A 15/15, 丢了 A 判中的 r01/r02/r03/r04/r06/r07/s01/s02/s03/s04/s05/s06/s07), D (回归句 2/15 &lt; A 15/15, 丢了 A 判中的 r01/r02/r03/r04/r06/r07/s01/s02/s03/s04/s05/s06/s07), E (FPR 点估计 0.083 &gt; 0.05, 区间 [0.046, 0.133] 不作豁免)</p><table><thead><tr><th>候选</th><th>召回</th><th>召回 bootstrap 95%</th><th>误报率</th><th>误报率 bootstrap 95%</th><th>TP</th><th>FN</th><th>FP</th><th>TN</th><th>特征数</th></tr></thead><tbody><tr><td>A lexicon (现有词表, 不训练)</td><td>0.269</td><td>0.123–0.417</td><td>0.042</td><td>0.015–0.076</td><td>14</td><td>38</td><td>6</td><td>138</td><td>—</td></tr><tr><td>B rules (人写特征 + 学权重)</td><td>0.365</td><td>0.200–0.526</td><td>0.063</td><td>0.027–0.108</td><td>19</td><td>33</td><td>9</td><td>135</td><td>23</td></tr><tr><td>C ngram (2-3 元组 LR 小模型)</td><td>0.154</td><td>0–0.250</td><td>0.063</td><td>0.018–0.121</td><td>8</td><td>44</td><td>9</td><td>135</td><td>2047</td></tr><tr><td>D rules + ngram</td><td>0.250</td><td>0.105–0.333</td><td>0.049</td><td>0.007–0.105</td><td>13</td><td>39</td><td>7</td><td>137</td><td>2070</td></tr><tr><td>E rules + 词表兜底 (B ∪ A)</td><td>0.442</td><td>0.268–0.615</td><td>0.083</td><td>0.046–0.133</td><td>23</td><td>29</td><td>12</td><td>132</td><td>23</td></tr></tbody></table><p>选型规则: <code>strict: exclude iff holdout FPR point estimate &gt; 0.05 or regression gate fails; bootstrap CI reported only, never an exemption; rank kept by holdout recall; if none kept: no candidate qualified, fall back to lexicon A</code>; 字面「上界 &lt;= 0.05」规则下存活: 无。</p><h3>后验口径 (离线, 实时路 OR 助手下一条首句以「你说得对」开头; 不进模型)</h3><table><thead><tr><th>候选</th><th>召回</th><th>召回 bootstrap 95%</th><th>误报率</th><th>误报率 bootstrap 95%</th><th>补回条数</th></tr></thead><tbody><tr><td>A</td><td>0.385</td><td>0.194–0.556</td><td>0.049</td><td>0.018–0.084</td><td>7</td></tr><tr><td>B</td><td>0.404</td><td>0.228–0.567</td><td>0.069</td><td>0.028–0.116</td><td>3</td></tr><tr><td>C</td><td>0.308</td><td>0.063–0.440</td><td>0.069</td><td>0.025–0.123</td><td>9</td></tr><tr><td>D</td><td>0.365</td><td>0.167–0.476</td><td>0.056</td><td>0.013–0.108</td><td>7</td></tr><tr><td>E</td><td>0.481</td><td>0.292–0.652</td><td>0.090</td><td>0.048–0.140</td><td>3</td></tr></tbody></table><h3>当前模型的权重 (前 24 个)</h3><p>阈值 1, 偏置 0。每次判定的得分 = 偏置 + 命中特征的权重之和。</p><svg viewBox="0 0 760 64" class="chart" role="img"><line x1="470" x2="470" y1="0" y2="64" class="grid"/><text x="8" y="17" class="lab">lex:blame-method</text><rect x="470" y="6" width="270" height="12" class="w-pos"/><text x="744" y="16" class="val" text-anchor="start">1</text><text x="8" y="35" class="lab">lex:blame-execution</text><rect x="470" y="24" width="270" height="12" class="w-pos"/><text x="744" y="34" class="val" text-anchor="start">1</text><text x="8" y="53" class="lab">lex:correction</text><rect x="470" y="42" width="270" height="12" class="w-pos"/><text x="744" y="52" class="val" text-anchor="start">1</text></svg><h3>漏判 (A1, 前 30 条)</h3><table><thead><tr><th>sid</th><th>标签</th><th>原文</th></tr></thead><tbody><tr><td>f023</td><td>correction</td><td>是的，直接做。另外，你有误解？我们是指纹代理，没有注册账号脚本，指纹浏览器需要评测是正常的</td></tr><tr><td>f039</td><td>correction</td><td>当前项目我怎么没有看到 PR / commit 触发的 浏览器检测评分的svg回复?</td></tr><tr><td>f048</td><td>correction</td><td>http://127.0.0.1:28340/#/residential 放入到这里啊，你是不是启动的新的 hx-proxy 啊。。</td></tr><tr><td>f053</td><td>correction</td><td>得用链式代理
+proxy -&gt; 出口(良心云) -&gt; cf代理</td></tr><tr><td>f064</td><td>both</td><td>我不是让你说中文吗？我让你持久化到项目里面，你听不懂吗？永远都要说中文</td></tr><tr><td>f069</td><td>correction</td><td>你有测试过，真正能用吗？</td></tr><tr><td>f070</td><td>correction</td><td>我觉得是你的这个风控策略被识别啊，我直接打开是没问题的，但是你调用的话会被识别到 HX-Jungle/workspaces/browser-auto/antibot/RESEARCH-2026-09-03.md 我建议你参考一下这个</td></tr><tr><td>f074</td><td>both</td><td>你怎么找半天搞那么久，不是明显的吗？</td></tr><tr><td>f075</td><td>correction</td><td>我只是要你把已经注册的两个github账号给我移动到我远程服务器上面，也就是帮我注册一下 freebuff</td></tr><tr><td>f077</td><td>correction</td><td>主要目前他也不会去主动的替换账号，或者说更新远程的账号凭证，而是自己新增了一个，导致现在有些账号他并没有完全的删除掉</td></tr><tr><td>f078</td><td>correction</td><td>尽可能快，我们需要协议化。而且目前这个注册我不知道为什么我点击这个轮换之后，他居然会跑好几次那个列表，然后才开始正式的任务。我感觉他有很多额外的工作，根本就不需要他做</td></tr><tr><td>f079</td><td>correction</td><td>游删除被卡住（code 2FA 缺 seed 这个你去修复一下呢 会不会是你的问题，还是上面就确实是缺少了这个导致的 可能要去看一下上游的注册机是怎么样
+
+然后前端的话，你优化一下，我不要这种表情，就是这种文本表情，我不要</td></tr><tr><td>f086</td><td>correction</td><td>所以你为什么不进行注册呢？你光养号有什么用，你又不是新的账号
+
+另外，前端选项选到CF的时候，是不是应该可以选择使用哪个域名，这样会更合理？</td></tr><tr><td>f090</td><td>correction</td><td>继续修吧。目前他的账号感觉和远程不太同步</td></tr><tr><td>f118</td><td>correction</td><td>就是浏览器被风控了。我自己使用 浏览器打开，完全没有被拦截，甚至和ip无关</td></tr><tr><td>f123</td><td>correction</td><td>整理清楚再动手。</td></tr><tr><td>f128</td><td>correction</td><td>开sub agent 客观分析，你的太主观臆想了</td></tr><tr><td>f133</td><td>correction</td><td>另外，注意影子账号。我不希望出影子账号</td></tr><tr><td>f135</td><td>insult</td><td>太慢了</td></tr><tr><td>f143</td><td>correction</td><td>不是协议化了吗？2fa这些东西 为什么还在浏览器上操作？</td></tr><tr><td>f146</td><td>correction</td><td>我还是希望这个注册的时候不依赖浏览器 将其协议化 或者弱协议化 比如说搞一个类似于浏览器的环境，但是比浏览器弱 并且我希望能并行，就是并发量能大一点</td></tr><tr><td>f148</td><td>correction</td><td>为什么我算不出答案？我们完全可以制造一个计算的环境，让它去计算。为什么我算不出答案，你还是没有理解我们的思路，就相当于我们重新实现了一个浏览器，但是它是纯协议的，因此不需要渲染。这样子你能理解了吗？</td></tr><tr><td>f155</td><td>correction</td><td>继续，完成 gh-registrar 的协议化注册任务，注意你应该先完整的了解项目特别是最新最近的编辑的文档</td></tr><tr><td>f159</td><td>correction</td><td>下载github App (安卓版本)，基于skill, 对注册步骤进行协议化触发。你可以使用所有内容，代理必须接入 hx-proxy</td></tr><tr><td>f161</td><td>correction</td><td>那你看看网页怎么协议化注册吧。我现在也有一个会话在攻破这个事情，你看看怎么做</td></tr><tr><td>f162</td><td>correction</td><td>协议化了吗？我不要浏览器的</td></tr><tr><td>f166</td><td>correction</td><td>1. 你确认你的协议是正确的？
+2. 你确认这个是协议？？没有使用浏览器等？
+3. 想办法让 	HX-CF-WsPxy	 成功</td></tr><tr><td>f167</td><td>correction</td><td>目前协议在哪里？给我写到 他项目目录的 AGENTS.md 和 详细的协议解析，确保每一步独立，并且可稳定复现</td></tr><tr><td>f168</td><td>correction</td><td>为什么现在浏览器能过？而协议无法通过？</td></tr><tr><td>f169</td><td>correction</td><td>所以你commit 一下，保存记录；然后伪造一下这全部都指纹，并且是能轮换的，甚至你直接生成新指纹浏览器采集指纹也可以。核心是协议化能和浏览器的指纹都对齐。否则不合理</td></tr></tbody></table><h3>误报 (A2)</h3><table><thead><tr><th>sid</th><th>命中</th><th>得分</th><th>原文</th></tr></thead><tbody><tr><td>f005</td><td>不要解释</td><td>1</td><td>只用一句话回答: 你一共有哪些工具, 逗号分隔, 不要解释</td></tr><tr><td>f008</td><td>不要问甲方.</td><td>1</td><td>甲方说: 配合 /tmp/secab/docs 里的 13 和 14 两篇. 请把这两篇的真实绝对路径查出来并列出. 只回路径, 不要问甲方.</td></tr><tr><td>f051</td><td>我是说</td><td>1</td><td>我是说能代理过 cf 盾的吗？</td></tr><tr><td>f095</td><td>不要猜端点、字段名或枚举值</td><td>1</td><td>我在用 HX-ProxyGroup (代理控制面, 版本 dev)。
+动手前先按下面地址读接入文档, 不要猜端点、字段名或枚举值。
+
+· 接入代理 —— 把我的程序 / 爬虫 / 浏览器自动化接到 HX-ProxyGroup 的节点上
+  </td></tr><tr><td>f111</td><td>应该是</td><td>1</td><td>/hx-webx-onboard  你看看这个这个应该是有一条流水线的东西的吧。就是它不是说接入这个服务之后，还要接入我们的缓存代理服务，以及我们的代理服务器的服务吗？然后中间还可以进行所谓的基于缓存代理服务的抓包?</td></tr><tr><td>f142</td><td>我的意思</td><td>1</td><td>为什么今天能注册这么多账号？他们的IP或者说注册的入口都是同一个吗？我的意思是为什么不会风控，或者说为什么今天看起来那么顺利提提炼一下这些经验，然后commit一下，然后再注册20个账号试试水</td></tr></tbody></table><h3>按标签的命中</h3><table><thead><tr><th>标签</th><th>条数</th><th>命中</th></tr></thead><tbody><tr><td>none</td><td>144</td><td>6</td></tr><tr><td>correction</td><td>43</td><td>8</td></tr><tr><td>both</td><td>7</td><td>5</td></tr><tr><td>insult</td><td>2</td><td>1</td></tr></tbody></table><h2>知识库同步明细</h2><h3>K3 按目录</h3><table><thead><tr><th>目录</th><th>文件数</th><th>入库</th><th>覆盖率</th></tr></thead><tbody><tr><td>blog</td><td>43</td><td>43</td><td>1</td></tr><tr><td>ai-docs</td><td>44</td><td>44</td><td>1</td></tr><tr><td>docs</td><td>935</td><td>935</td><td>1</td></tr></tbody></table></main></body></html>
