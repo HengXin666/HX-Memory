@@ -3,7 +3,11 @@
 更新时间: 2026-11-03 22:45 CST。仓库: `/home/hx/Loli/code/HXLoLis/components/HX-Memory`, 分支 main。没有 push, 没有建分支, 也没有开 PR。
 
 ## 1. 结论
-**是。今晚的全部业务改动都已提交到本地 git。** 用户授权后, 共新增 8 个 `--no-verify` 提交 (5dca675、1352ba2、dc637b2、49501a9、f4589e5、46c680f、e5ed9ac、b55d302)。之后又补了 1 个 `--no-verify` 提交, 把本报告的最终版本收进去。提交后工作区干净。
+**共 10 个提交, 工作区干净。** 今晚的全部业务改动都已经提交到本地 git。
+- 8 组主提交: 5dca675、1352ba2、dc637b2、49501a9、f4589e5、46c680f、e5ed9ac、b55d302。
+- 2 个收尾补提交: 0867678、6eb3590。
+- 另外有 2 个只改本报告的定稿提交 (0d7a6da 和本次更新), 不算在 10 个里。
+- 全部用了 `--no-verify`, 有用户授权。没有 push。
 
 ## 2. 授权与绕过说明
 - 钩子 (`uv run scripts/redlines/agent_notes.py --staged`) 没有人工审核放行的机制。--help 只有 `--repo/--all/--diff/--base/--head/--staged/--json` 这几个参数; 仓库里也找不到审核台账; verify.py 的退出码是 `code = 0 if not issues else 1`, 只要有一条 review 级别的项就退出 1。graph.py 的 `paired_changes` 只看路径是否同批出现。上一轮实测过 "在旧 note 里加复核记录" 的路子, 待审核从 11 项变成 12 项 (多出 note-only-diff), 那次改动已经还原。
@@ -199,7 +203,7 @@ e5ed9ac [build] tsconfig.build 加 lib ES2023, 解 dist 构建阻塞
 - 冲突说明: 21:42 的任务书禁止提交其他会话的报告文件, 22:37 的指令明确要求作为组 8 提交。按最新指令执行。
 - dist/、.hark-tmp/、eval-out/ 都在 .gitignore 里 (第 6、34、28 行), 没有 add。
 
-## 7. 提交后核对 (原文)
+## 7. 提交后核对 (原文, 组 8 之后的快照)
 exec code=0 (这是组 8 提交之后、本报告定稿提交之前的状态。之后只多了一个 `[docs] COMMIT-REPORT 定稿` 提交, 只改了本文件。)
 ```
 $ git log --oneline -12
@@ -291,3 +295,84 @@ dc637b2 [feat] prestep: 把当前任务行并进注入块, 让「继续」真推
 | 5 | 出现 "Tests " 和通过数 | `Tests  1508 passed (1508)`, 通过 |
 | 6 | 出现钩子拦截原文 (含 code-only-diff) | 见第 3 节, 共 11 条, 通过 |
 | 附 | 全部 exec 返回 code=0 | 是 |
+
+## 9. 收尾补提交 (22:44–22:50)
+
+### 口子一: K1/K2 的生成和校验脚本补入库, hash `0867678`
+- 原因: 上一版报告写 "磁盘上实际没有 make-draft.py / verify-gold.py", 这个说法查得不彻底, 是我的错。两个脚本其实在 `.hark-tmp/k1k2/` 下。那个目录在 .gitignore 里 (第 34 行), 所以进不了版本库, draft.jsonl 也就没法重建。
+- 做法: 把两个脚本 cp 到 `tests/fixtures/eval/k1k2/`。两个脚本里都没有写死 .hark-tmp 的路径: make-draft.py 用位置参数 `<博客根> <kb-queries.jsonl> <输出>`, verify-gold.py 的默认值本来就是新位置。所以内容没改。`.hark-tmp/k1k2/fill3.py` 不在指令范围内, 没有移动。
+- 在新位置的实跑输出 (exec code=0):
+```
+code=0
+总计 96
+drwxr-xr-x 2 hx hx  4096 11月 3日 22:44 .
+drwxr-xr-x 5 hx hx  4096 11月 3日 21:59 ..
+-rw-r--r-- 1 hx hx 66572 11月 3日 22:13 draft.jsonl
+-rw-r--r-- 1 hx hx  1805 11月 3日 22:44 make-draft.py
+-rw-r--r-- 1 hx hx   625 11月 3日 22:00 template.jsonl
+-rw-r--r-- 1 hx hx  2195 11月 3日 22:44 verify-gold.py
+-rw-r--r-- 1 hx hx  5482 11月 3日 22:00 WRITING-GUIDE.md
+$ python3 tests/fixtures/eval/k1k2/verify-gold.py /home/hx/Loli/code/HXLoLis/HXLoLi tests/fixtures/eval/k1k2/draft.jsonl
+draft 行数 120; kind {'title': 40, 'detail': 40, 'cross': 40}; 标题层级 {'title': 8, 'h1': 72, 'h2': 40}; 校验文件 160 个 (含 cross 搭档)
+question 为空 120/120; why 为空 120/120
+结果: 全部通过
+EXIT=0
+$ python3 tests/fixtures/eval/k1k2/make-draft.py /home/hx/Loli/code/HXLoLis/HXLoLi tests/fixtures/eval/kb-queries.jsonl .hark-tmp/k1k2/draft-rebuild.jsonl
+120 rows; bad: []
+EXIT=0
+$ cmp tests/fixtures/eval/k1k2/draft.jsonl .hark-tmp/k1k2/draft-rebuild.jsonl
+IDENTICAL (逐字节一致)
+CMP_EXIT=0
+```
+  verify-gold 全部通过。make-draft 重新生成的 120 行, 和已提交的 draft.jsonl 逐字节一致, 说明这份脚手架可以重建。
+- 提交输出:
+```
+code=0
+[main 0867678] [eval] K1/K2 脚手架补上生成与校验脚本
+ 2 files changed, 60 insertions(+)
+ create mode 100644 tests/fixtures/eval/k1k2/make-draft.py
+ create mode 100644 tests/fixtures/eval/k1k2/verify-gold.py
+EXIT=0
+0867678 [eval] K1/K2 脚手架补上生成与校验脚本
+```
+
+### 口子二: tsc 本轮新增的 2 条隐式 any 已修, hash `6eb3590`
+- 只改了 `tests/fixtures/eval/unbiased/tools/retrieve.ts` 第 23 行: `embed: (ts) =>` 和 `embedSync: (ts) =>` 改成 `(ts: string[]) =>`。别的没动 (git diff 只有这一行)。
+- **tsc 错误从 6 条变成 4 条。** 改之前是 6 条: task-state.ts 4 条, retrieve.ts(23,99) 和 (23,131) 各 1 条 TS7006。改之后是 4 条, 只剩 task-state.ts 的 findLastIndex 和它引出的 implicit any。改完复跑原文:
+```
+code=0
+$ npx tsc --noEmit
+src/kernel/task-state.ts(173,21): error TS2550: Property 'findLastIndex' does not exist on type 'string[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2023' or later.
+src/kernel/task-state.ts(173,36): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/kernel/task-state.ts(186,19): error TS2550: Property 'findLastIndex' does not exist on type 'string[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2023' or later.
+src/kernel/task-state.ts(186,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+TSC_EXIT=2
+错误条数=4
+```
+- 提交输出:
+```
+code=0
+[main 6eb3590] [eval] unbiased/tools/retrieve.ts: 给第 23 行 embed/embedSync 回调参数补显式类型
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+EXIT=0
+6eb3590 [eval] unbiased/tools/retrieve.ts: 给第 23 行 embed/embedSync 回调参数补显式类型
+END
+```
+
+## 10. 已知遗留 (等用户定, 没有改)
+- `npx tsc --noEmit` 还有 4 条错误, EXIT=2: task-state.ts 第 173 和 186 行用了 `findLastIndex`, 报 TS2550; 两处的回调参数 `d` 各引出 1 条 TS7006。
+- 根因: tsconfig.build.json 已经加了 lib ES2023 (e5ed9ac), tsconfig.json 没有跟着加。所以构建能过 (`tsc -p tsconfig.build.json` EXIT=0), 全量类型检查不过。
+- 两个方案, 请你选:
+  1. 给 tsconfig.json 也加上 lib ES2023, 和构建配置保持一致。4 条会全部消失。代价是全量类型检查允许用 ES2023 的 API, 运行时要求 Node 20 及以上。
+  2. 把 `tests/fixtures/**` 从 tsc 的 include 里排除。这能防止以后评测工具脚本再引入新错误, 但**消不掉** task-state.ts 那 4 条, 因为它们在 src/ 里。要清零, 还是得选方案 1, 或者改源码不用 findLastIndex。
+- 按指令, 我没有改 tsconfig.json。
+
+## 11. 判据自查 (收尾后)
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | 报告 > 2000 字节 | 25353 字节, 通过 |
+| 2 | 出现 ≥ 10 个不同的 commit hash | 5dca675 1352ba2 dc637b2 49501a9 f4589e5 46c680f e5ed9ac b55d302 0867678 6eb3590 0d7a6da 8bad8c2 8a37fb1, 共 13 个, 通过 |
+| 3 | git status --porcelain 为空 | 本报告提交之后复核, 结果记在提交输出里 (见交付消息)。6eb3590 之后为空: 见上方 c11 输出里 END 前面没有任何行 |
+| 4 | 出现 verify-gold 或 make-draft 的实跑输出 | 见第 9 节, 通过 |
+| 5 | 出现 6 条变 4 条的对照 | 见第 9 节口子二, 通过 |
+| 6 | 保留: Test Files / Tests 1508 / git log --oneline / code-only-diff 拦截原文 | 见第 3、4、7 节, 通过 |
