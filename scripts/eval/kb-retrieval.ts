@@ -131,16 +131,19 @@ function evaluate(src: string, outDir: string): number {
       const paths = res.hits.map((h) => String(h.entry.source ?? "").replace(/^kb:/, ""));
       const rank = paths.findIndex((p) => x.expect_paths.includes(p)) + 1;
       const secHit = x.section ? res.hits.slice(0, 5).some((h) => x.expect_paths.includes(String(h.entry.source).replace(/^kb:/, "")) && String((h.entry as { content?: string }).content ?? "").includes("/ " + x.section)) : null;
-      return { qid: x.qid, kind: x.kind, rank, hit5: rank > 0 && rank <= 5, rr: rank > 0 ? 1 / rank : 0, sectionHit: secHit, top: paths.slice(0, 5) };
+      return { qid: x.qid, kind: x.kind, group: x.dir === "docs" ? "notes" : "own", rank, hit5: rank > 0 && rank <= 5, rr: rank > 0 ? 1 / rank : 0, sectionHit: secHit, top: paths.slice(0, 5) };
     });
     const k1 = rows.filter((r) => r.hit5).length / rows.length;
     const k2 = rows.reduce((a, r) => a + r.rr, 0) / rows.length;
     const byKind = Object.fromEntries(["title", "detail", "cross"].map((k) => { const rs = rows.filter((r) => r.kind === k); return [k, { n: rs.length, hit5: rs.filter((r) => r.hit5).length, mrr: rs.reduce((a, r) => a + r.rr, 0) / (rs.length || 1) }]; }));
+    // EVAL-CRITIQUE 第 2 节: 用户自己的文章 (blog/ + ai-docs/) 与学习笔记 (docs/) 分开报告; 槽位 90% 在 docs/, 只看总数会被笔记主导。
+    const byGroup = Object.fromEntries(["own", "notes"].map((g) => { const rs = rows.filter((r) => r.group === g); return [g, { n: rs.length, hit5: rs.length ? rs.filter((r) => r.hit5).length / rs.length : null, mrr: rs.length ? rs.reduce((a, r) => a + r.rr, 0) / rs.length : null }]; }));
     mkdirSync(outDir, { recursive: true });
     const at = new Date().toISOString();
-    writeFileSync(join(outDir, "K1.json"), JSON.stringify({ metric: "K1", value: k1, threshold: 0.8, n: rows.length, pass: k1 >= 0.8, byKind, at, rows }, null, 2) + "\n");
+    writeFileSync(join(outDir, "K1.json"), JSON.stringify({ metric: "K1", value: k1, threshold: 0.8, n: rows.length, pass: k1 >= 0.8, byKind, byGroup, at, rows }, null, 2) + "\n");
     writeFileSync(join(outDir, "K2.json"), JSON.stringify({ metric: "K2", value: k2, threshold: 0.6, n: rows.length, pass: k2 >= 0.6, byKind, at }, null, 2) + "\n");
     console.log(`K1 Hit@5=${k1.toFixed(4)}  K2 MRR@10=${k2.toFixed(4)}  (n=${rows.length})`);
+    console.log(`分组: 自己的文章 (blog+ai-docs) ${JSON.stringify(byGroup.own)}; 学习笔记 (docs) ${JSON.stringify(byGroup.notes)}`);
     writeReport(REPO);
     return k1 >= 0.8 && k2 >= 0.6 ? 0 : 1;
   } finally {

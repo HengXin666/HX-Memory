@@ -50,7 +50,7 @@ const cases = (JSON.parse(readFileSync(CASES, "utf8")) as { cases: Array<{ id: s
 const byId = new Map(corpus.map((e) => [e.id, e]));
 
 // ---------- 嵌入 + 缓存 ----------
-const remote = new OpenAiCompatibleEmbedder({ baseUrl: src.baseUrl, model: src.model, ...(src.key ? { apiKey: src.key } : {}), timeoutMs: 120_000, batchSize: 16 });
+const remote = new OpenAiCompatibleEmbedder({ baseUrl: src.baseUrl, model: src.model, ...(src.key ? { apiKey: src.key } : {}), timeoutMs: 600_000, batchSize: 16 });
 const cacheFile = join(".tmp", "bench", "emb-cache-" + src.model.replace(/[^A-Za-z0-9_.-]/g, "_") + ".jsonl");
 mkdirSync(dirname(cacheFile), { recursive: true });
 const cache = new Map<string, number[]>();
@@ -58,8 +58,8 @@ if (existsSync(cacheFile)) for (const l of readFileSync(cacheFile, "utf8").split
 const h = (t: string) => createHash("sha1").update(t).digest("hex");
 async function ensure(texts: string[]): Promise<void> {
   const todo = [...new Set(texts)].filter((t) => !cache.has(h(t)));
-  for (let i = 0; i < todo.length; i += 32) {
-    const batch = todo.slice(i, i + 32);
+  for (let i = 0; i < todo.length; i += 4) {
+    const batch = todo.slice(i, i + 4);
     const vs = await remote.embed(batch);
     batch.forEach((t, j) => { const v = l2(vs[j]!); cache.set(h(t), v); appendFileSync(cacheFile, JSON.stringify({ h: h(t), v }) + "\n"); });
     if ((i / 32) % 10 === 0) console.error(`  嵌入 ${Math.min(i + 32, todo.length)}/${todo.length}`);

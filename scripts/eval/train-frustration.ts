@@ -237,6 +237,7 @@ function main(): number {
     protocol: "nested grouped CV by session: outer 8 folds, threshold from inner 4-fold out-of-fold scores at FPR <= 0.05; CIs: session-cluster bootstrap 2000x seed 20261101, percentile 95%",
     selectionRule: "strict: exclude iff holdout FPR point estimate > 0.05 or regression gate fails; bootstrap CI reported only, never an exemption; rank kept by holdout recall; if none kept: no candidate qualified, fall back to lexicon A",
     literalUpperRuleSurvivors: literalUpper,
+    regressionUsedForSelection: true, // 回归句在选型时作硬门槛, 其成绩不是独立证据 (EVAL-CRITIQUE 第 1 节)
     nextAssistantSamplesWithFirstText: samples.filter((s) => (s.nextAssistantFirst ?? "") !== "").length,
     posterior,
     hyper: DEFAULT_TRAIN,
@@ -251,6 +252,7 @@ function main(): number {
   for (const p of posterior) {
     console.log(`posterior ${p.id}: recall ${p.recall?.toFixed(3)} boot[${p.boot.recall.map((v) => v.toFixed(3)).join(", ")}]  fpr ${p.fpr?.toFixed(3)} boot[${p.boot.fpr.map((v) => v.toFixed(3)).join(", ")}]  TP${p.tp} FN${p.fn} FP${p.fp} TN${p.tn}  added ${p.addedHits.length}`);
   }
+  console.log("注意: 回归句集 (regression.jsonl, 16 条, 来源 user-2026-11-01) 在选型时作硬门槛用过, 上面的「回归 x/15」不是独立证据 (EVAL-CRITIQUE 第 1 节)");
   console.log("字面规则 (上界 <= 0.05) 存活: " + (literalUpper.join(",") || "无"));
   console.log("选型: " + pick.id + " — " + pick.why);
   writeReport(REPO);

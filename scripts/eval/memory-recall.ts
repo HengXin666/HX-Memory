@@ -133,6 +133,8 @@ const out = {
   ...r,
   m2Strict: rate(r.strict, r.judged), m2Loose: rate(r.loose, r.judged), threshold: THRESHOLD,
   placebo: { judged: pj, strict: rate(ps, pj), loose: rate(pl, pj) },
+  // EVAL-CRITIQUE 第 5 节改法 3: 报告时扣掉安慰剂 (真实值 − 安慰剂值), 这才是能归因到注入的部分。
+  net: { strict: r.judged && pj ? r.strict / r.judged - ps / pj : null, loose: r.judged && pj ? r.loose / r.judged - pl / pj : null },
   pass: r.judged > 0 && (r.strict / r.judged) >= THRESHOLD,
   samples: samples.slice(0, 60),
 };
@@ -141,6 +143,7 @@ writeFileSync(join(OUT, "M2.json"), JSON.stringify(out, null, 2) + "\n");
 const f3 = (x: number | null) => (x === null ? "—" : x.toFixed(3));
 console.log(`M2_strict=${f3(out.m2Strict)} (${r.strict}/${r.judged})  M2_loose=${f3(out.m2Loose)} (${r.loose}/${r.judged})  threshold ${THRESHOLD}  pass=${out.pass}`);
 console.log(`安慰剂 (条目配别的会话的回答): strict ${f3(rate(ps, pj))} (${ps}/${pj})  loose ${f3(rate(pl, pj))} (${pl}/${pj})`);
+console.log(`扣除安慰剂后: strict ${f3(out.net.strict)}  loose ${f3(out.net.loose)}  (这才是能归因到注入的部分; 「遵守」需要判官, 未测)`);
 console.log(`注入 ${r.injections} 次 / ${r.injectedEntries} 条; 库里已无 ${r.missingEntry}, 会话缺 ${r.missingSession}, 找不到回答 ${r.missingAnswer}; doc 条目 ${r.doc}`);
 for (const [k, v] of Object.entries(r.byKind).sort((a, b) => b[1].judged - a[1].judged)) console.log(`  ${k}: strict ${v.strict}/${v.judged}  loose ${v.loose}/${v.judged}`);
 console.log("口径: 引用核对 (无判官); EVAL M2 的判官 + 20% 人工复核未做。产物 " + join(OUT, "M2.json"));
