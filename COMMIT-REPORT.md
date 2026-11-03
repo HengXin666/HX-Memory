@@ -1,9 +1,9 @@
 # COMMIT-REPORT: HX-Memory 今晚改动的提交记录
 
-更新时间: 2026-11-03 22:4x CST。仓库: `/home/hx/Loli/code/HXLoLis/components/HX-Memory`, 分支 main。没有 push, 没有建分支, 也没有开 PR。
+更新时间: 2026-11-03 22:45 CST。仓库: `/home/hx/Loli/code/HXLoLis/components/HX-Memory`, 分支 main。没有 push, 没有建分支, 也没有开 PR。
 
 ## 1. 结论
-__CONCLUSION__
+**是。今晚的全部业务改动都已提交到本地 git。** 用户授权后, 共新增 8 个 `--no-verify` 提交 (5dca675、1352ba2、dc637b2、49501a9、f4589e5、46c680f、e5ed9ac、b55d302)。之后又补了 1 个 `--no-verify` 提交, 把本报告的最终版本收进去。提交后工作区干净。
 
 ## 2. 授权与绕过说明
 - 钩子 (`uv run scripts/redlines/agent_notes.py --staged`) 没有人工审核放行的机制。--help 只有 `--repo/--all/--diff/--base/--head/--staged/--json` 这几个参数; 仓库里也找不到审核台账; verify.py 的退出码是 `code = 0 if not issues else 1`, 只要有一条 review 级别的项就退出 1。graph.py 的 `paired_changes` 只看路径是否同批出现。上一轮实测过 "在旧 note 里加复核记录" 的路子, 待审核从 11 项变成 12 项 (多出 note-only-diff), 那次改动已经还原。
@@ -66,7 +66,7 @@ npm notice run 'tsc' -p tsconfig.build.json --noEmit
 - 组 5 `f4589e5` [eval] K1/K2 脚手架, 4 个文件: k1k2-score.ts, WRITING-GUIDE.md, draft.jsonl, template.jsonl。磁盘上实际没有 make-draft.py / verify-gold.py, 和任务书的描述不一致。
 - 组 6 `46c680f` [eval] 无偏评测集, 9 个文件: MANIFEST.md, cases.jsonl, tools/ 下 7 个
 - 组 7 `e5ed9ac` [build] tsconfig.build 加 lib ES2023, 1 个文件
-- 组 8 `__G8__` [docs] 本轮执行记录, 7 个文件: BLIND-AUDIT-3.md, COMMIT-REPORT.md, DIST-REBUILD.md, EVAL-UNBIASED.md, JUDGE-SETUP.md, K1K2-SCAFFOLD.md, PRESTEP-WIRING.md
+- 组 8 `b55d302` [docs] 本轮执行记录, 7 个文件: BLIND-AUDIT-3.md, COMMIT-REPORT.md, DIST-REBUILD.md, EVAL-UNBIASED.md, JUDGE-SETUP.md, K1K2-SCAFFOLD.md, PRESTEP-WIRING.md
 - 更早已有的提交: `8bad8c2` [docs] 今晚的评测结论与三轮修复记录 (8 个 md), `8a37fb1` [docs] 计划/评测定义/各轮报告与盲审原文。
 
 组 1 到 7 的原样输出:
@@ -200,7 +200,94 @@ e5ed9ac [build] tsconfig.build 加 lib ES2023, 解 dist 构建阻塞
 - dist/、.hark-tmp/、eval-out/ 都在 .gitignore 里 (第 6、34、28 行), 没有 add。
 
 ## 7. 提交后核对 (原文)
-__POST__
+exec code=0 (这是组 8 提交之后、本报告定稿提交之前的状态。之后只多了一个 `[docs] COMMIT-REPORT 定稿` 提交, 只改了本文件。)
+```
+$ git log --oneline -12
+b55d302 [docs] 本轮执行记录: 盲审三轮、判官配置、dist 重建、prestep 接线、K1K2 脚手架、无偏评测
+e5ed9ac [build] tsconfig.build 加 lib ES2023, 解 dist 构建阻塞
+46c680f [eval] 无偏评测集: 54 条跨会话 case 与对照结果
+f4589e5 [eval] K1/K2 人写题脚手架: 120 条空槽位 + 判分脚本 + 出题指引
+49501a9 [eval] 评测脚本与数据: M2 安慰剂对照、挫折候选 v2、定性对比
+dc637b2 [feat] prestep: 把当前任务行并进注入块, 让「继续」真推得出「继续什么」
+1352ba2 [feat] kernel: task-state 回答「继续什么」
+5dca675 [fix] trigger: intent 命中不再被 always-on 短路
+8bad8c2 [docs] 今晚的评测结论与三轮修复记录
+8a37fb1 [docs] 计划/评测定义/各轮报告与盲审原文 (BLIND-AUDIT*.md 为第三方证据, 未改动)
+4a847a5 [chore] gates: verify-structure/verify-docs/verify.sh 与 tsconfig/vitest 配置; docs-gate 两处引用修正
+9fd8840 [feat] eval: M2 引用核对 (含安慰剂对照)、C2 correction-effect、评测集自审脚本、朴素基线对照、评测页
+
+$ git status --porcelain
+(空)
+
+$ git show --stat --format=%h%x20%s HEAD~7..HEAD
+b55d302 [docs] 本轮执行记录: 盲审三轮、判官配置、dist 重建、prestep 接线、K1K2 脚手架、无偏评测
+
+ BLIND-AUDIT-3.md  | 374 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ COMMIT-REPORT.md  | 206 ++++++++++++++++++++++++++++++
+ DIST-REBUILD.md   | 172 +++++++++++++++++++++++++
+ EVAL-UNBIASED.md  | 156 +++++++++++++++++++++++
+ JUDGE-SETUP.md    |  96 ++++++++++++++
+ K1K2-SCAFFOLD.md  | 133 +++++++++++++++++++
+ PRESTEP-WIRING.md | 279 ++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 1416 insertions(+)
+e5ed9ac [build] tsconfig.build 加 lib ES2023, 解 dist 构建阻塞
+
+ tsconfig.build.json | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+46c680f [eval] 无偏评测集: 54 条跨会话 case 与对照结果
+
+ tests/fixtures/eval/unbiased/MANIFEST.md           | 82 ++++++++++++++++++++++
+ tests/fixtures/eval/unbiased/cases.jsonl           | 54 ++++++++++++++
+ tests/fixtures/eval/unbiased/tools/audit_old.py    | 27 +++++++
+ tests/fixtures/eval/unbiased/tools/build_cases.py  | 81 +++++++++++++++++++++
+ .../fixtures/eval/unbiased/tools/extract_turns.ts  | 18 +++++
+ tests/fixtures/eval/unbiased/tools/judge_lex.py    | 58 +++++++++++++++
+ tests/fixtures/eval/unbiased/tools/retrieve.ts     | 39 ++++++++++
+ tests/fixtures/eval/unbiased/tools/retrieve_lex.ts | 24 +++++++
+ .../fixtures/eval/unbiased/tools/select_queries.py | 33 +++++++++
+ 9 files changed, 416 insertions(+)
+f4589e5 [eval] K1/K2 人写题脚手架: 120 条空槽位 + 判分脚本 + 出题指引
+
+ scripts/eval/k1k2-score.ts                | 145 ++++++++++++++++++++++++++++++
+ tests/fixtures/eval/k1k2/WRITING-GUIDE.md |  71 +++++++++++++++
+ tests/fixtures/eval/k1k2/draft.jsonl      | 120 +++++++++++++++++++++++++
+ tests/fixtures/eval/k1k2/template.jsonl   |   1 +
+ 4 files changed, 337 insertions(+)
+49501a9 [eval] 评测脚本与数据: M2 安慰剂对照、挫折候选 v2、定性对比
+
+ bench/naive-vs-hybrid.ts                           |   6 +-
+ bench/qualitative.ts                               |  55 ++
+ bench/sample-subset.ts                             |  55 ++
+ docs/eval-report.html                              |   2 +-
+ scripts/eval/frustration-sample-v2.ts              |  70 +++
+ scripts/eval/kb-retrieval.ts                       |   7 +-
+ scripts/eval/memory-recall.ts                      |   3 +
+ scripts/eval/train-frustration.ts                  |   2 +
+ tests/fixtures/eval/README.md                      |  14 +
+ .../fixtures/eval/frustration/candidates-v2.jsonl  | 632 +++++++++++++++++++++
+ 10 files changed, 840 insertions(+), 6 deletions(-)
+dc637b2 [feat] prestep: 把当前任务行并进注入块, 让「继续」真推得出「继续什么」
+
+ src/adapters/dsh/prestep.ts             | 48 ++++++++++++++++++-
+ tests/kernel/prestep-task-state.test.ts | 83 +++++++++++++++++++++++++++++++++
+ 2 files changed, 129 insertions(+), 2 deletions(-)
+1352ba2 [feat] kernel: task-state 回答「继续什么」
+
+ .../2026-11-03-bare-continuation-fallback.md       |  52 +++
+ .../2026-11-03-task-state-what-to-continue.md      |  56 +++
+ src/kernel/task-continuation.ts                    |  96 +++++
+ src/kernel/task-state.ts                           | 399 +++++++++++++++++++++
+ tests/kernel/task-state.test.ts                    | 207 +++++++++++
+ 5 files changed, 810 insertions(+)
+```
 
 ## 8. 判据自查
-__CHECK__
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | COMMIT-REPORT.md > 2000 字节 | 19834 字节, 通过 |
+| 2 | 报告里有 ≥ 8 个不同的 commit hash | 5dca675 1352ba2 dc637b2 49501a9 f4589e5 46c680f e5ed9ac b55d302 8bad8c2 8a37fb1, 共 10 个, 通过 |
+| 3 | 出现 Test Files | `Test Files  200 passed (200)`, 通过 |
+| 4 | 出现 git log --oneline 的输出 | 见第 7 节, 通过 |
+| 5 | 出现 "Tests " 和通过数 | `Tests  1508 passed (1508)`, 通过 |
+| 6 | 出现钩子拦截原文 (含 code-only-diff) | 见第 3 节, 共 11 条, 通过 |
+| 附 | 全部 exec 返回 code=0 | 是 |
