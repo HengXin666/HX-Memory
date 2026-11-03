@@ -36,6 +36,39 @@ export {
   type PriorInjections,
 } from "./injection-dedupe.js";
 import type { ProjectScopeArg } from "../../kernel/project-lineage.ts";
+import { computeTaskState, type TaskState } from "../../kernel/task-state.ts";
+import { sessionEvents } from "./session-events.js";
+
+/** task-state 的全量历史: 模型可见会话事件 (sessionEvents, 按 surface 过滤) + 本步 claimed 批次 (按 id 去重)。 */
+export function historyForTaskState(session: unknown, claimed: readonly unknown[]): unknown[] {
+  const out: unknown[] = [];
+  const ids = new Set<unknown>();
+  for (const ev of sessionEvents(session)) {
+    const d = ev.data as { message?: unknown } | undefined;
+    const m = ev.type === "user/message" ? { role: "user", ...(d as object) } : ev.type === "assistant/message" || ev.type === "tool/result" ? d?.message : undefined;
+    if (!m || typeof m !== "object") continue;
+    if ((m as { id?: unknown }).id !== undefined) ids.add((m as { id?: unknown }).id);
+    out.push(m);
+  }
+  for (const m of claimed) if (!ids.has((m as { id?: unknown } | null)?.id ?? Symbol())) out.push(m);
+  return out;
+}
+
+/** 「继续什么」行。续接短句: 有上一明确动作才写 (force=单独成块); 否则可信度 ≥0.4 才附 goal。blockedOn 只跟随 previousAction。 */
+export function taskStateLine(s: TaskState, text: string, lang: "zh" | "en"): { line: string; force: boolean } {
+  const zh = lang === "zh";
+  if (s.continuing) {
+    if (!s.previousAction) return { line: "", force: false };
+    const files = s.previousFiles.length ? (zh ? "; 涉及 " : "; files ") + s.previousFiles.join(zh ? "、" : ", ") : "";
+    const blocked = s.blockedOn ? (zh ? "; 未闭合的失败: " : "; still failing: ") + s.blockedOn.slice(0, 120) : "";
+    const said = text.trim().slice(0, 20);
+    const line = zh
+      ? `【当前任务】用户本轮只说「${said}」= 继续上一任务「${s.previousTurn ?? ""}」(动作: ${s.previousAction}${files}${blocked})。接着做这件事, 不要另起话题。`
+      : `[Current task] The user only said "${said}": continue the previous task "${s.previousTurn ?? ""}" (action: ${s.previousAction}${files}${blocked}). Carry on with it.`;
+    return { line, force: true };
+  }
+  return s.goal && s.confidence >= 0.4 ? { line: (zh ? "【当前任务】" : "[Current task] ") + s.goal, force: false } : { line: "", force: false };
+}
 
 /** 从会话消息里提取最新一条**直接用户**文本 (content 可为 string 或 parts 数组)。 */
 export function latestUserText(messages: unknown[]): string {
@@ -166,6 +199,8 @@ export function makePreStepHandler(
      * 与 externalPreface 一样不受 first 模式限制: 纠正不能等到下一次会话。
      */
     frustration?: (input: { sessionId: string; step: number; messages: readonly unknown[]; cwd: string }) => Promise<string>;
+    /** 当前任务行 (task-state; 默认开)。false = 不算不并。 */
+    taskState?: () => boolean;
   },
 ) {
   // scopeOf 优先 (带祖先链); 只有 projectOf / 都没有时退化为单值语义。
@@ -263,7 +298,16 @@ export function makePreStepHandler(
         cwd: agent.session.header?.cwd ?? "",
       })) ?? ""
     ).trim();
-    const extra = [external, frustration].filter(Boolean).join("\n\n");
+    // 当前任务 (PRESTEP-WIRING.md): 续接短句且有上一动作 → 单独也成块 (并进 extra); 否则只随块附 goal。
+    let task = { line: "", force: false };
+    try {
+      if (options.taskState?.() !== false) {
+        const history = historyForTaskState(agent.session, payload.messages);
+        task = taskStateLine(computeTaskState({ cwd: agent.session.header?.cwd ?? "", messages: history, project }), text, language());
+      }
+    } catch { /* task-state 是增强: 失败不许拖垮注入 */ }
+    const sideBody = [external, frustration].filter(Boolean).join("\n\n");
+    const extra = [task.force ? task.line : "", sideBody].filter(Boolean).join("\n\n");
     // first 模式: 本会话已经有过**记忆条目块** → 不再进入注入通道 (连检索都不做)。
     // 外置宿主有当轮内容时例外 (挫折纠正不能等到下一次会话)。
     if (injectMode() === "first" && prior.ids.size > 0 && !extra) {
@@ -314,7 +358,7 @@ export function makePreStepHandler(
       return decision;
     }
     const injectedText = composeMemoryBlock({
-      body: [bound, extra].filter(Boolean).join("\n"),
+      body: [task.line, bound, sideBody].filter(Boolean).join("\n"),
       guidance: pending,
       ...(negativeHint ? { negativeHint } : {}),
       language: language(),
