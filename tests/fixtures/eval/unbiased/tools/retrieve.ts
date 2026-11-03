@@ -20,7 +20,7 @@ let miss = 0; const chunkIndex: { id: string; v: number[] }[] = [];
 for (const e of corpus) for (const c of chunks(e.content)) { try { chunkIndex.push({ id: e.id, v: vec(c) }); } catch { miss++; } }
 const naive = (q: string) => { const qv = vec(q), best = new Map<string, number>(); for (const c of chunkIndex) { const s = dot(qv, c.v); if (s > (best.get(c.id) ?? -9)) best.set(c.id, s); } return [...best].sort((a, b) => b[1] - a[1]).map((x) => x[0]); };
 const dim = vec(qs[0].text).length;
-const cached: SyncEmbedder = { id: "cached:Qwen3-Embedding-0.6B@" + dim, dim, floor: 0.3, embed: (ts) => ts.map(vec), embedSync: (ts) => ts.map(vec) } as any;
+const cached: SyncEmbedder = { id: "cached:Qwen3-Embedding-0.6B@" + dim, dim, floor: 0.3, embed: (ts: string[]) => ts.map(vec), embedSync: (ts: string[]) => ts.map(vec) } as any;
 function hybrid(kind: "lexical" | "real") {
   const root = mkdtempSync(join(tmpdir(), "hx-unb-"));
   const st = openMemoryStack(root, { episodeRetentionDays: 0, autoEvolve: false, embedder: kind === "lexical" ? new LexicalEmbedder() : cached });
