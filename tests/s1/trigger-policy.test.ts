@@ -191,6 +191,56 @@ describe("触发决策: 四通道", () => {
     expect(custom.decide({ text: "DEPLOY-42 是什么", hasAlwaysOn: false }).inject).toBe(true);
     expect(DEFAULT_INTENTS.length).toBeGreaterThanOrEqual(6);
   });
+
+  // ---- 2026-11-03: 短路顺序修复 (旧实现里 hasAlwaysOn 恒真时以下三个 mode 结构上不可达) ----
+  it("意图命中不被 always-on 吞掉: mode=intent, always-on 预算叠加而不是替代", () => {
+    const decision = policy.decide({ text: "我们当时为什么选 pnpm？", hasAlwaysOn: true });
+    expect(decision.inject).toBe(true);
+    expect(decision.mode).toBe("intent");
+    expect(decision.intent).not.toBeNull();
+    // 叠加: 预算必须同时覆盖 always-on (400) 与意图召回 (300), 否则 always-on 会吃光意图召回的预算
+    expect(decision.budgetTokens).toBe(700);
+    expect(decision.reason).toContain("叠加");
+  });
+
+  it("账本 39 行回归: 同话题 + 上一轮已注入 + 命中 session-continuation → 仍以 intent 注入 (不再 skip-similar)", () => {
+    const decision = policy.decide({
+      text: "接着做剩下的部分",
+      hasAlwaysOn: true,
+      previousQuery: "把剩下的部分做完",
+      lastInjectedAt: "Mon 2026-06-01 8:00 AM CST (UTC+08:00)",
+    });
+    expect(decision.topicDrift).toBeLessThan(0.9);
+    expect(decision.intent).toBe("session-continuation");
+    expect(decision.mode).toBe("intent");
+    expect(decision.inject).toBe(true);
+  });
+
+  it("drift-refresh 在有 always-on 时也可达 (换话题 + 上一轮注入过)", () => {
+    const decision = policy.decide({
+      text: "前端按钮圆角改成 8px",
+      hasAlwaysOn: true,
+      previousQuery: "容器并发上限怎么设",
+      lastInjectedAt: "Mon 2026-06-01 8:00 AM CST (UTC+08:00)",
+    });
+    expect(decision.mode).toBe("drift-refresh");
+    expect(decision.inject).toBe(true);
+    expect(decision.budgetTokens).toBe(700);
+  });
+
+  it("decideFromSignals 与 decide 同口径 (账本回放用的就是这个核心)", () => {
+    const viaText = policy.decide({ text: "我们上次怎么做的", hasAlwaysOn: true, lastInjectedAt: null });
+    const viaSignals = policy.decideFromSignals({
+      detected: viaText.intent
+        ? { id: viaText.intent, label: "x", hits: 1, confidence: viaText.confidence }
+        : null,
+      drift: viaText.topicDrift,
+      hasAlwaysOn: true,
+      lastInjectedAt: null,
+    });
+    expect(viaSignals.mode).toBe(viaText.mode);
+    expect(viaSignals.budgetTokens).toBe(viaText.budgetTokens);
+  });
 });
 
 describe("always-on 内容选择 (保底但受预算约束)", () => {

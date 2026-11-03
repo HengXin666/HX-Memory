@@ -149,74 +149,115 @@ export class TriggerPolicy {
   }): TriggerDecision {
     const drift = topicDriftOf(input.text, input.previousQuery);
     const detected = detectIntent(input.text, this.intents);
+    return this.decideFromSignals({
+      detected: detected
+        ? { id: detected.intent.id, label: detected.intent.label, hits: detected.hits, confidence: detected.confidence }
+        : null,
+      drift,
+      hasAlwaysOn: input.hasAlwaysOn,
+      lastInjectedAt: input.lastInjectedAt ?? null,
+    });
+  }
+
+  /**
+   * 决策核心 (纯函数): 只吃"已算好的信号", 不再碰文本。
+   * .agents/notes/implemented/bug-fix/2026-11-03-intent-before-alwayson-short-circuit.md
+   * 单独暴露是为了**回放**: 触发账本 (schedule/*.jsonl) 只记了 intent/confidence/topicDrift,
+   * 没记原文; 用同一个核心把账本行重放一遍, 才能证明线上真实输入在新顺序下会走到哪个 mode。
+   *
+   * ⚠ 2026-11-03 修复 (短路顺序): 此前 hasAlwaysOn 分支排在最前并直接 return,
+   * 而线上恒有跨项目规则 ⇒ hasAlwaysOn 恒真 ⇒ intent / drift-refresh 两个 mode 结构上不可达
+   * (账本 1800 行: always-on 992 / skip-similar 752, mode=intent 0 条; 其中 39 行
+   * "命中 session-continuation 却被判成 skip-similar, 什么都没注入")。
+   * 新顺序 (按"当前任务"优先):
+   *   1. 意图命中 → mode=intent。always-on 是**叠加** (预算 = intent + always-on),
+   *      不是替代; always-on 条目已注入过的由 binder 差量过滤掉, 意图召回的条目照常进来。
+   *   2. 上一轮注入过且话题切换 → mode=drift-refresh (同样叠加 always-on 预算)。
+   *   3. 上一轮注入过且同话题、无意图 → skip-similar (只在这里出现)。
+   *   4. 有 always-on → mode=always-on (会话首轮/从未注入过)。
+   *   5. 其余 → skip-no-signal。
+   */
+  decideFromSignals(s: {
+    detected: { id: string; label: string; hits: number; confidence: number } | null;
+    drift: number;
+    hasAlwaysOn: boolean;
+    lastInjectedAt: string | null;
+  }): TriggerDecision {
+    const { detected, drift } = s;
     const confidence = detected?.confidence ?? 0;
+    const overlay = s.hasAlwaysOn ? this.alwaysOnBudget : 0;
+    const overlayNote = s.hasAlwaysOn ? "; always-on 作为叠加一并给出" : "";
 
-    // 通道 1: always-on 保底  不看意图, 无条件注入 (这是"模型没意识"时的唯一保证)。
-    if (input.hasAlwaysOn) {
-      // 但同一话题的连续追问不重复灌 (上一轮刚注入过且话题没变)。
-      if (input.lastInjectedAt && drift < this.driftThreshold) {
-        return {
-          inject: false,
-          intent: detected?.intent.id ?? null,
-          confidence,
-          topicDrift: drift,
-          mode: "skip-similar",
-          reason:
-            "always-on 内容已在同一话题上一轮注入过 (drift=" +
-            drift.toFixed(2) +
-            "), 跳过重复注入以省预算",
-          budgetTokens: 0,
-        };
-      }
-      return {
-        inject: true,
-        intent: detected?.intent.id ?? null,
-        confidence,
-        topicDrift: drift,
-        mode: "always-on",
-        reason:
-          "always-on 保底通道: 无条件注入跨项目规则/关键事实" +
-          (detected ? " (本轮还命中意图 " + detected.intent.id + ")" : ""),
-        budgetTokens: this.alwaysOnBudget + (detected ? this.intentBudget : 0),
-      };
-    }
-
-    // 通道 2: 意图门控  识别"回忆型提问", 不依赖项目是否声明过绑定。
+    // 通道 2 (优先): 意图门控  当前这句话在问"之前/继续/为什么", 这是当前任务的直接信号,
+    // 不允许被 always-on 判重吞掉。
     if (detected && confidence >= this.minConfidence) {
       return {
         inject: true,
-        intent: detected.intent.id,
+        intent: detected.id,
         confidence,
         topicDrift: drift,
         mode: "intent",
         reason:
           "命中回忆意图「" +
-          detected.intent.label +
+          detected.label +
           "」(" +
           detected.hits +
           " 条模式, 置信度 " +
           confidence.toFixed(2) +
-          ")",
-        budgetTokens: this.intentBudget,
+          ")" +
+          overlayNote,
+        budgetTokens: this.intentBudget + overlay,
       };
     }
 
     // 通道 3: 话题切换  上一轮注入过但本轮换了话题, 强制重查 (旧上下文可能已失效)。
-    if (input.lastInjectedAt && drift >= this.driftThreshold) {
+    if (s.lastInjectedAt && drift >= this.driftThreshold) {
       return {
         inject: true,
-        intent: detected?.intent.id ?? null,
+        intent: detected?.id ?? null,
         confidence,
         topicDrift: drift,
         mode: "drift-refresh",
-        reason: "话题已切换 (drift=" + drift.toFixed(2) + "), 上一轮注入的内容不再适用, 强制重查",
-        budgetTokens: this.intentBudget,
+        reason:
+          "话题已切换 (drift=" + drift.toFixed(2) + "), 上一轮注入的内容不再适用, 强制重查" + overlayNote,
+        budgetTokens: this.intentBudget + overlay,
+      };
+    }
+
+    // 去重: 只用于"没有意图命中"的同话题连续轮次。
+    if (s.hasAlwaysOn && s.lastInjectedAt && drift < this.driftThreshold) {
+      return {
+        inject: false,
+        intent: detected?.id ?? null,
+        confidence,
+        topicDrift: drift,
+        mode: "skip-similar",
+        reason:
+          "同一话题上一轮已注入过 (drift=" +
+          drift.toFixed(2) +
+          ") 且本轮未命中意图, 跳过重复注入以省预算",
+        budgetTokens: 0,
+      };
+    }
+
+    // 通道 1: always-on 保底  会话里还没注入过时无条件给出 (模型没意识到要查时的保证)。
+    if (s.hasAlwaysOn) {
+      return {
+        inject: true,
+        intent: detected?.id ?? null,
+        confidence,
+        topicDrift: drift,
+        mode: "always-on",
+        reason:
+          "always-on 保底通道: 无条件注入跨项目规则/关键事实" +
+          (detected ? " (本轮还命中意图 " + detected.id + ", 置信度未过门槛)" : ""),
+        budgetTokens: this.alwaysOnBudget,
       };
     }
 
     return {
       inject: false,
-      intent: detected?.intent.id ?? null,
+      intent: detected?.id ?? null,
       confidence,
       topicDrift: drift,
       mode: "skip-no-signal",
