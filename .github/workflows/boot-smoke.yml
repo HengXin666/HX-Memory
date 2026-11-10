@@ -48,7 +48,9 @@ jobs:
       # 宿主版本只有一个来源: package.json 的 dsh.host (不是这里写死的字面量)。
       # 为什么必须同源: 曾经这里写死 0.1.2-rc.1 而线上跑 0.1.5-rc.1, 于是"跨实例 marker 导致
       # 端点整组 404"这类**宿主版本差异**缺陷在门禁里完全看不见  它测的是另一个组合。
-      - name: Resolve host version (single source: package.json dsh.host)
+      # step name 里含 ": " 时必须加引号, 否则裸标量会被 YAML 当成映射键值分隔符,
+      # 整份 workflow 解析失败 (GitHub 侧回退成用文件路径当 workflow 名, 门禁静默失效).
+      - name: 'Resolve host version (single source: package.json dsh.host)'
         id: host
         # set -e 很重要: 解析失败时 `version="$(...)"` 会让这一步失败。
         # 只写成 `echo "version=$(...)"` 的话, 命令替换失败会被 echo 的成功掩盖,
